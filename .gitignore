@@ -1,3 +1,7 @@
+# venv
+.venv/
+# zip files
+misc/
 # ---> macOS
 # General
 .DS_Store
@@ -5,7 +9,8 @@
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
