@@ -48,10 +48,12 @@ def get_corpus_stats() -> None:
         train_dist = [len(tokenize(t)) for t in train_texts_by_label]
         test_dist = [len(tokenize(t)) for t in test_text]
         print(
-            f"{corpus} {task} training has # Avg. {round(np.mean(train_dist))} (std. {round(np.std(train_dist))})."
+            f"{corpus} {task} training has # Avg. "
+            f"{round(np.mean(train_dist))} (std. {round(np.std(train_dist))})."
         )
         print(
-            f"{corpus} {task} testing has # Avg. {round(np.mean(test_dist))} (std. {round(np.std(test_dist))})."
+            f"{corpus} {task} testing has # Avg. "
+            f"{round(np.mean(test_dist))} (std. {round(np.std(test_dist))})."
         )
 
     # RJ
