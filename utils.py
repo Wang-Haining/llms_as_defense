@@ -36,7 +36,7 @@ def get_corpus_stats() -> None:
         if get_raw_func is None:
             raise ValueError(f"Unknown corpus: {corpus}")
 
-        train_text, train_label, test_text, _ = get_raw_func(task)
+        train_text, train_label, test_text, test_label = get_raw_func(task)
         train_texts_by_label = []
         unique_labels = set(train_label)
         for label in unique_labels:
@@ -47,6 +47,12 @@ def get_corpus_stats() -> None:
             train_texts_by_label.append(concat_text)
         train_dist = [len(tokenize(t)) for t in train_texts_by_label]
         test_dist = [len(tokenize(t)) for t in test_text]
+
+        assert set(train_label) == set(test_label)
+
+        print(
+            f"{corpus} {task} has {len(set(test_label))} candidates."
+        )
         print(
             f"{corpus} {task} training has # Avg. "
             f"{round(np.mean(train_dist))} (std. {round(np.std(train_dist))})."
@@ -55,9 +61,10 @@ def get_corpus_stats() -> None:
             f"{corpus} {task} testing has # Avg. "
             f"{round(np.mean(test_dist))} (std. {round(np.std(test_dist))})."
         )
+        print('*'*88)
 
     # RJ
-    for task in ["control", "imitation", "obfuscation"]:
+    for task in ["control", "imitation", "obfuscation", "special_english"]:
         _corpus_stat("rj", task)
     # EBG
     for task in ["no_protection", "imitation", "obfuscation"]:
@@ -77,46 +84,41 @@ def load_rj(
     the cross-topic scenario of authorship attribution attacks.
 
     Args:
-        task: One of ['control', 'imitation', 'obfuscation'], which corresponds to
-            strategies 'no protection', '(manual) imitation',
-            and '(manual) obfuscation', respectively.
+        task: One of ['control', 'imitation', 'obfuscation', 'special_english'], which
+            corresponds to strategies 'no protection', '(manual) imitation', '(manual)
+            obfuscation', and '(manual) blandification', respectively.
         corpus_dir: Path to RJ corpus.
 
     Returns:
         Text/label of train/test sets.
     """
-    if task in ["control", "imitation", "obfuscation"]:
-        train_text, train_label, test_text, test_label = [], [], [], []
-        authors = [
-            f.name.split(".")[0]
-            for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task))
-            if not f.name.startswith(".")
-        ]
-        # cfeec8 does not have training data
-        for dir_ in [
-            os.path.join(corpus_dir, author) for author in authors if author != "cfeec8"
-        ]:
-            for raw in os.scandir(dir_):
-                train_text.append(open(raw.path, "r", encoding="utf8").read())
-                train_label.append(raw.name.split("_")[0])
-        # read in testing
-        test_text, test_label = zip(
-            *[
-                (
-                    open(
-                        f.path,
-                        "r",
-                        encoding=chardet.detect(open(f.path, "rb").read())["encoding"],
-                    ).read(),
-                    f.name.split(".")[0],
-                )
-                for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task))
-                if ".txt" in f.name
-            ]
-        )
-        return train_text, train_label, list(test_text), list(test_label)
-    else:
+    if task not in ["control", "imitation", "obfuscation", "special_english"]:
         raise ValueError(f"Unknown task: {task}.")
+
+    train_text, train_label, test_text, test_label = [], [], [], []
+    authors = [
+        f.name.split(".")[0]
+        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task))
+        if not f.name.startswith(".")
+    ]
+    # cfeec8 does not have training data
+    try:
+        authors.remove('cfeec8')
+    except ValueError:
+        pass
+
+    for dir_ in [os.path.join(corpus_dir, author) for author in authors]:
+        for raw in os.scandir(dir_):
+            train_text.append(open(raw.path, "r", encoding="utf8").read())
+            train_label.append(raw.name.split("_")[0])
+    # read in testing
+    for author in authors:
+        path = os.path.join(corpus_dir, "attacks_" + task, author + '.txt')
+        enc = chardet.detect(open(path, "rb").read())["encoding"]
+        test_text.append(open(path, encoding=enc).read())
+        test_label.append(author)
+    return train_text, train_label, test_text, test_label
+
 
 
 def load_ebg(
