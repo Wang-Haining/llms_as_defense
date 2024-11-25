@@ -470,7 +470,7 @@ if __name__ == "__main__":
         "--corpus",
         type=str,
         required=True,
-        choices=["RJ", "EBG", "LCMC"],
+        choices=["rj", "ebg", "lcmc"],
         help="Corpus to evaluate",
     )
     parser.add_argument(
