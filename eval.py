@@ -193,7 +193,7 @@ def main(args):
                                 Trainer, TrainingArguments, EarlyStoppingCallback)
         from roberta_cv import RobertaCV, CommonDataset
     # load data
-    loaders = {"RJ": load_rj, "EBG": load_ebg, "LCMC": load_lcmc}
+    loaders = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
     train_text, train_labels, test_text, test_labels = loaders[args.corpus](args.task)
 
     # create results directory
