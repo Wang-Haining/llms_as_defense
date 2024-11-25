@@ -483,9 +483,6 @@ if __name__ == "__main__":
         choices=["roberta", "logreg", "svm"],
         help="Model to evaluate",
     )
-    parser.add_argument(
-        "--no-cuda", action="store_true", help="Disable CUDA even if available"
-    )
 
     args = parser.parse_args()
     main(args)
