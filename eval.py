@@ -87,7 +87,7 @@ def evaluate_logistic_regression(
             (
                 "logreg",
                 LogisticRegression(
-                    C=1.0, solver="lbfgs", max_iter=5000, multi_class="multinomial"
+                    C=1.0, solver="lbfgs", max_iter=5000
                 ),
             ),
         ]
