@@ -161,25 +161,36 @@ def evaluate_traditional_model(
 
 
 def save_prediction_results(
-    results: Dict, corpus: str, task: str, model: str, output_dir: Path
+        results: Dict,
+        corpus: str,
+        task: str,
+        model: str,
+        output_dir: Path
 ) -> None:
-    """Save prediction results consistently"""
+    """Save prediction results with clear label-prediction correspondence
+
+    The saved .npz file will contain:
+    - y_true: array of true labels
+    - y_pred_probs: array of predicted probabilities
+    - label_mapping: array of author IDs corresponding to probability columns
+    - feature_type: string indicating feature engineering method
+    """
     # create model-specific directory
     model_dir = output_dir / corpus / task / model
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # save predictions
+    # get unique labels in the order they were used for training
+    # ensure probability columns match author IDs
+    unique_labels = np.unique(results["y_true"])
+
+    # save predictions with label mapping
     np.savez(
         model_dir / "predictions.npz",
         y_true=results["y_true"],
         y_pred_probs=results["y_pred_probs"],
-        feature_type=results.get("feature_type", "roberta"),
+        label_mapping=unique_labels,  # map column index to author ID
+        feature_type=results.get("feature_type", "roberta")
     )
-
-    # save additional metrics if available
-    if "metrics" in results:
-        with open(model_dir / "metrics.json", "w") as f:
-            json.dump(results["metrics"], f)
 
     logger.info(f"Saved results to {model_dir}")
 
@@ -188,10 +199,7 @@ def main(args):
     # import RoBERTa-related modules only if needed
     if args.model == "roberta":
         import torch
-        import wandb
-        from transformers import (RobertaForSequenceClassification, RobertaTokenizer,
-                                Trainer, TrainingArguments, EarlyStoppingCallback)
-        from roberta_cv import RobertaCV, CommonDataset
+        from roberta_cv import RobertaCV
     # load data
     loaders = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
     train_text, train_labels, test_text, test_labels = loaders[args.corpus](args.task)
@@ -207,6 +215,7 @@ def main(args):
         save_prediction_results(results, args.corpus, args.task, args.model, output_dir)
 
     else:  # roberta
+        torch.manual_seed(42)
         roberta = RobertaCV()
         results = roberta.train_and_evaluate(
             train_text, train_labels, test_text, test_labels, args.corpus, args.task
@@ -225,7 +234,8 @@ if __name__ == "__main__":
         help="Corpus to evaluate",
     )
     parser.add_argument(
-        "--task", type=str, required=True, help="Task/condition to evaluate"
+        "--task", type=str, required=True,
+        help="Task/condition to evaluate"
     )
     parser.add_argument(
         "--model",
