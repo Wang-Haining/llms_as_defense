@@ -48,18 +48,15 @@ Notes:
 import argparse
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-import torch
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.svm import SVC
-import wandb
 
 from utilities import (load_ebg, load_lcmc, load_rj, vectorize_koppel512,
                        vectorize_writeprints_static)
@@ -194,7 +191,7 @@ def main(args):
         import wandb
         from transformers import (RobertaForSequenceClassification, RobertaTokenizer,
                                 Trainer, TrainingArguments, EarlyStoppingCallback)
-        from roberta_cv import RobertaCV  # Assuming you'll move RoBERTa class to separate file
+        from roberta_cv import RobertaCV, CommonDataset
     # load data
     loaders = {"RJ": load_rj, "EBG": load_ebg, "LCMC": load_lcmc}
     train_text, train_labels, test_text, test_labels = loaders[args.corpus](args.task)
