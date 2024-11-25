@@ -55,7 +55,7 @@ import numpy as np
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import Normalizer, StandardScaler
+from sklearn.preprocessing import LabelEncoder, Normalizer, StandardScaler
 from sklearn.svm import SVC
 
 from utils import (load_ebg, load_lcmc, load_rj, vectorize_koppel512,
@@ -167,28 +167,23 @@ def save_prediction_results(
         model: str,
         output_dir: Path
 ) -> None:
-    """Save prediction results with clear label-prediction correspondence
-
-    The saved .npz file will contain:
-    - y_true: array of true labels
-    - y_pred_probs: array of predicted probabilities
-    - label_mapping: array of author IDs corresponding to probability columns
-    - feature_type: string indicating feature engineering method
-    """
-    # create model-specific directory
+    """Save prediction results with both string IDs and numerical indices"""
     model_dir = output_dir / corpus / task / model
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # get unique labels in the order they were used for training
-    # ensure probability columns match author IDs
-    unique_labels = np.unique(results["y_true"])
+    # get unique labels and create mapping
+    le = LabelEncoder()
+    y_true_str = results["y_true"]  # Original string labels
+    y_true_num = le.fit_transform(y_true_str)  # Numerical indices
 
-    # save predictions with label mapping
+    # save predictions with both string and numerical mappings
     np.savez(
         model_dir / "predictions.npz",
-        y_true=results["y_true"],
+        y_true_str=y_true_str,  # original string labels
+        y_true_num=y_true_num,  # numerical indices
         y_pred_probs=results["y_pred_probs"],
-        label_mapping=unique_labels,  # map column index to author ID
+        label_mapping_str=le.classes_,  # string labels in order
+        label_mapping_num=np.arange(len(le.classes_)),  # corresponding indices
         feature_type=results.get("feature_type", "roberta")
     )
 

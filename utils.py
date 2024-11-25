@@ -10,7 +10,7 @@ import json
 import os
 import random
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import chardet
 import numpy as np
@@ -595,3 +595,43 @@ def defense_effectiveness(pre_metrics, post_metrics):
     effectiveness['gini_change'] = post_metrics['gini'] - pre_metrics['gini']
 
     return effectiveness
+
+
+def load_prediction_results(result_path: str) -> Dict:
+    """Load predictions and convert to format needed by evaluation functions"""
+    data = np.load(result_path)
+
+    return {
+        "y_true": data["y_true_num"],  # use numerical indices for evaluation
+        "y_pred_probs": data["y_pred_probs"],
+        "label_mapping_str": data["label_mapping_str"],
+        "label_mapping_num": data["label_mapping_num"]
+    }
+
+
+def evaluate_defense(pre_path: str, post_path: str) -> Dict:
+    """Evaluate defense effectiveness using pre and post treatment results"""
+    pre_results = load_prediction_results(pre_path)
+    post_results = load_prediction_results(post_path)
+
+    # calculate metrics
+    pre_metrics = evaluate_attribution_defense(
+        pre_results["y_true"],
+        pre_results["y_pred_probs"],
+        pre_post="pre"
+    )
+
+    post_metrics = evaluate_attribution_defense(
+        post_results["y_true"],
+        post_results["y_pred_probs"],
+        pre_post="post"
+    )
+
+    # calculate effectiveness
+    effectiveness = defense_effectiveness(pre_metrics, post_metrics)
+
+    return {
+        "pre_metrics": pre_metrics,
+        "post_metrics": post_metrics,
+        "effectiveness": effectiveness
+    }
