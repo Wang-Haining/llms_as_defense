@@ -58,7 +58,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.svm import SVC
 
-from utilities import (load_ebg, load_lcmc, load_rj, vectorize_koppel512,
+from utils import (load_ebg, load_lcmc, load_rj, vectorize_koppel512,
                        vectorize_writeprints_static)
 
 # setup logging
