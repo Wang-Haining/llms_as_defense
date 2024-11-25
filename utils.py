@@ -15,6 +15,8 @@ from typing import List, Tuple
 import chardet
 import numpy as np
 from sacremoses import MosesTokenizer
+from writeprints_static import WriteprintsStatic
+from sklearn.metrics import average_precision_score
 
 
 def get_corpus_stats() -> None:
@@ -394,3 +396,202 @@ def load_lcmc(
             print(f"LCMC V1.1-Interview is saved to {path_to_json}.")
 
     return train_text, train_label, test_text, test_label
+
+
+def vectorize_writeprints_static(docs):
+    """
+    Extract `writeprints-static` features from a list of texts. Done by PyPI library
+    `writeprints-static` v0.0.2.
+    Args:
+        docs: a list of str.
+    Returns:
+         a np.array of writeprints-static numeric.
+    """
+    vec = WriteprintsStatic()
+    features = vec.transform(docs)
+
+    return features.toarray()
+
+
+def vectorize_koppel512(docs):
+    """
+    Extract `Koppel512` function words count.
+    Args:
+        docs: a list of str.
+    Returns:
+         a np.array of Koppel512 numeric.
+    """
+    func_words = open("resources/koppel_function_words.txt", "r").read().splitlines()
+
+    return np.array(
+        [
+            [
+                len(re.findall(r"\b" + func_word + r"\b", doc.lower()))
+                for func_word in func_words
+            ]
+            for doc in docs
+        ]
+    )
+
+
+def gini_coefficient(array):
+    """
+    Calculate the Gini coefficient of an array.
+        - Value of 0 expresses perfect equality (all predictions equally likely)
+        - Value of 1 expresses maximal inequality (one prediction has all probability)
+    """
+    array = np.array(array)
+    if np.amin(array) < 0:
+        array -= np.amin(array)
+    array = array + 1e-10  # avoid division by zero
+    array = np.sort(array)
+    index = np.arange(1, array.shape[0] + 1)
+    n = array.shape[0]
+    return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
+
+
+def ndcg_score(y_true, y_pred_probs, k=None):
+    """
+    Calculate Normalized Discounted Cumulative Gain.
+        - Measures ranking quality considering position importance
+        - Normalized version allows comparison across different numbers of authors
+
+    Args:
+        y_true: true author index
+        y_pred_probs: predicted probabilities for each author
+        k: number of positions to consider (None for all)
+    """
+
+    def dcg(y_true, y_pred_probs, k):
+        # sort predictions in descending order and get indices
+        sorted_indices = np.argsort(y_pred_probs)[::-1]
+        if k:
+            sorted_indices = sorted_indices[:k]
+
+        # calculate DCG
+        gains = [1.0 if idx == y_true else 0.0 for idx in sorted_indices]
+        discounts = [1.0 / np.log2(i + 2) for i in range(len(gains))]
+        return np.sum(gains * np.array(discounts))
+
+    # calculate actual DCG
+    actual_dcg = dcg(y_true, y_pred_probs, k)
+
+    # calculate ideal DCG (true author ranked first)
+    ideal_probs = np.zeros_like(y_pred_probs)
+    ideal_probs[y_true] = 1.0
+    ideal_dcg = dcg(y_true, ideal_probs, k)
+
+    if ideal_dcg == 0:
+        return 0.0
+
+    return actual_dcg / ideal_dcg
+
+
+def evaluate_attribution_defense(y_true, y_pred_probs, pre_post="pre"):
+    """
+    Evaluate effectiveness of authorship attribution defense with enhanced metrics.
+
+    Args:
+        y_true: array-like of shape (n_samples,)
+            True author labels
+        y_pred_probs: array-like of shape (n_samples, n_authors)
+            Predicted probabilities for each author
+        pre_post: str
+            Whether these are pre- or post-defense predictions
+
+    Returns:
+        dict: Dictionary containing various metrics
+    """
+    metrics = {}
+
+    # 1. Mean Reciprocal Rank (MRR)
+    ranks = []
+    for i in range(len(y_true)):
+        true_author = y_true[i]
+        pred_probs = y_pred_probs[i]
+        rank = len(pred_probs) - np.where(np.argsort(pred_probs) == true_author)[0][0]
+        ranks.append(1 / rank)
+    metrics['mrr'] = np.mean(ranks)
+
+    # 2. Mean Average Precision (MAP)
+    metrics['map'] = average_precision_score(
+        y_true.reshape(-1, 1) == np.arange(y_pred_probs.shape[1]),
+        y_pred_probs
+    )
+
+    # 3. Entropy of predictions
+    entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
+    metrics['entropy'] = np.mean(entropies)
+    metrics['entropy_std'] = np.std(entropies)
+
+    # 4. Confidence Drop/Gain
+    confidence_gaps = []
+    for probs in y_pred_probs:
+        sorted_probs = np.sort(probs)
+        confidence_gaps.append(sorted_probs[-1] - sorted_probs[-2])
+    metrics['conf_gap'] = np.mean(confidence_gaps)
+
+    # 5. Top-K Accuracy for k=1,3,5
+    for k in [1, 3, 5]:
+        top_k_acc = np.mean([
+            true_author in np.argsort(probs)[-k:]
+            for true_author, probs in zip(y_true, y_pred_probs)
+        ])
+        metrics[f'top_{k}_acc'] = top_k_acc
+
+    # 6. NDCG at different k values
+    for k in [1, 3, 5, None]:
+        ndcg_scores = []
+        for i in range(len(y_true)):
+            ndcg = ndcg_score(y_true[i], y_pred_probs[i], k)
+            ndcg_scores.append(ndcg)
+        metrics[f'ndcg@{k if k else "all"}'] = np.mean(ndcg_scores)
+
+    # 7. Gini Coefficient
+    gini_scores = []
+    for probs in y_pred_probs:
+        gini_scores.append(gini_coefficient(probs))
+    metrics['gini'] = np.mean(gini_scores)
+    metrics['gini_std'] = np.std(gini_scores)
+
+    return metrics
+
+
+def defense_effectiveness(pre_metrics, post_metrics):
+    """
+    Calculate effectiveness of the defense by comparing pre and post metrics.
+
+    Args:
+        pre_metrics: dict
+            Metrics before applying defense
+        post_metrics: dict
+            Metrics after applying defense
+
+    Returns:
+        dict: Effectiveness metrics with interpretation guidelines
+    """
+    effectiveness = {}
+
+    # relative changes in key metrics
+    for metric in ['mrr', 'map', 'conf_gap']:
+        rel_change = (post_metrics[metric] - pre_metrics[metric]) / pre_metrics[metric]
+        effectiveness[f'{metric}_change'] = rel_change
+
+    # entropy increase (desired for defense)
+    effectiveness['entropy_increase'] = post_metrics['entropy'] - pre_metrics['entropy']
+
+    # average rank improvement
+    effectiveness['avg_rank_improvement'] = (1 / post_metrics['mrr']) - (
+                1 / pre_metrics['mrr'])
+
+    # NDCG degradation (desired for defense)
+    for k in [1, 3, 5, None]:
+        k_str = f'@{k if k else "all"}'
+        effectiveness[f'ndcg{k_str}_change'] = (
+                post_metrics[f'ndcg{k_str}'] - pre_metrics[f'ndcg{k_str}']
+        )
+
+    # Gini coefficient change
+    effectiveness['gini_change'] = post_metrics['gini'] - pre_metrics['gini']
+
+    return effectiveness
