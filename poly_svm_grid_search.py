@@ -31,7 +31,7 @@ def create_svm_pipeline() -> Pipeline:
 
 
 def grid_search_svm(
-    X_train: np.ndarray, y_train: np.ndarray, n_jobs: int = -1
+        X_train: np.ndarray, y_train: np.ndarray, n_jobs: int = -1
 ) -> Tuple[Dict, float]:
     """
     Perform grid search for SVM parameters.
@@ -67,11 +67,18 @@ def grid_search_svm(
     # perform grid search
     grid_search.fit(X_train, y_train)
 
-    return grid_search.best_params_, grid_search.best_score_
+    # convert NumPy types to native Python types in best_params
+    best_params = {
+        key: int(value) if isinstance(value, np.integer) else
+        float(value) if isinstance(value, np.floating) else value
+        for key, value in grid_search.best_params_.items()
+    }
+
+    return best_params, float(grid_search.best_score_)
 
 
 def optimize_svm_for_corpus(
-    corpus_name: str, data_loader, output_dir: Path, n_jobs: int = -1
+        corpus_name: str, data_loader, output_dir: Path, n_jobs: int = -1
 ) -> Dict:
     """
     Optimize SVM parameters for a specific corpus.
@@ -90,6 +97,12 @@ def optimize_svm_for_corpus(
     # load data (use control/no_protection)
     task = "control" if corpus_name == "rj" else "no_protection"
     train_text, train_labels, test_text, test_labels = data_loader(task)
+
+    # convert labels to native Python types
+    train_labels = [int(label) if isinstance(label, np.integer) else label
+                    for label in train_labels]
+    test_labels = [int(label) if isinstance(label, np.integer) else label
+                   for label in test_labels]
 
     # extract Writeprints-static features
     X_train = vectorize_writeprints_static(train_text)
@@ -127,6 +140,26 @@ def optimize_svm_for_corpus(
     return results
 
 
+def print_summary(all_results: Dict):
+    """Print a summary of optimization results for all corpora."""
+    logger.info("\n" + "=" * 50)
+    logger.info("OPTIMIZATION SUMMARY")
+    logger.info("=" * 50)
+
+    for corpus_name, results in all_results.items():
+        logger.info(f"\n{corpus_name.upper()} Corpus:")
+        logger.info(f"Best Parameters:")
+        for param, value in results["best_parameters"].items():
+            logger.info(f"  {param}: {value}")
+        logger.info(f"CV Accuracy: {results['cv_accuracy']:.3f}")
+        logger.info(f"Test Accuracy: {results['test_accuracy']:.3f}")
+        logger.info(f"Number of authors: {results['n_authors']}")
+        logger.info(f"Training samples: {results['n_train_samples']}")
+        logger.info(f"Test samples: {results['n_test_samples']}")
+
+    logger.info("\n" + "=" * 50)
+
+
 def main():
     # setup output directory
     output_dir = Path("results/optimization/svm")
@@ -144,10 +177,14 @@ def main():
             all_results[corpus_name] = results
         except Exception as e:
             logger.error(f"Error optimizing {corpus_name}: {str(e)}")
+            raise  # Re-raise the exception to see the full traceback
 
     # save combined results
     with open(output_dir / "all_optimization_results.json", "w") as f:
         json.dump(all_results, f, indent=2)
+
+    # print summary of results
+    print_summary(all_results)
 
 
 if __name__ == "__main__":
