@@ -223,11 +223,14 @@ class RobertaCV:
                 test_probs = torch.nn.functional.softmax(
                     torch.from_numpy(test_output.predictions), dim=-1
                 ).numpy()
+                test_preds = np.argmax(test_probs, axis=1)
+                test_accuracy = np.mean(test_preds == test_labels_num)
 
             # log metrics
             fold_metrics = {
                 "val_loss": val_output.metrics["test_loss"],
                 "val_accuracy": val_accuracy,
+                "test_accuracy": test_accuracy,
             }
             wandb.log({**fold_metrics, "fold": fold})
 
@@ -268,16 +271,24 @@ class RobertaCV:
         )
 
         # calculate ensemble metrics
-        ensemble_accuracy = np.mean(
+        ensemble_val_accuracy = np.mean(
             [m["val_accuracy"] for m in results["fold_metrics"]]
         )
-        ensemble_std = np.std([m["val_accuracy"] for m in results["fold_metrics"]])
+        ensemble_val_std = np.std([m["val_accuracy"] for m in results["fold_metrics"]])
+
+        ensemble_test_accuracy = np.mean(
+            [m["test_accuracy"] for m in results["fold_metrics"]]
+        )
+        ensemble_test_std = np.std(
+            [m["test_accuracy"] for m in results["fold_metrics"]])
 
         # log final ensemble metrics
         wandb.log(
             {
-                "ensemble_accuracy": ensemble_accuracy,
-                "ensemble_accuracy_std": ensemble_std,
+                "ensemble_val_accuracy": ensemble_val_accuracy,
+                "ensemble_val_accuracy_std": ensemble_val_std,
+                "ensemble_test_accuracy": ensemble_test_accuracy,
+                "ensemble_test_accuracy_std": ensemble_test_std,
                 "completed_folds": self.n_splits,
             }
         )
@@ -289,7 +300,9 @@ class RobertaCV:
             "fold_metrics": results["fold_metrics"],
             "model_paths": results["model_paths"],
             "ensemble_metrics": {
-                "mean_accuracy": ensemble_accuracy,
-                "std_accuracy": ensemble_std,
+                "mean_val_accuracy": ensemble_val_accuracy,
+                "std_val_accuracy": ensemble_val_std,
+                "mean_test_accuracy": ensemble_test_accuracy,
+                "std_test_accuracy": ensemble_test_std,
             },
         }
