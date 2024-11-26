@@ -1,45 +1,37 @@
-import numpy as np
-from pathlib import Path
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler, Normalizer
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from utils import (
-    load_rj,
-    load_ebg,
-    load_lcmc,
-    vectorize_writeprints_static,
-)
-import logging
-from typing import Dict, Tuple
 import json
+import logging
+from pathlib import Path
+from typing import Dict, Tuple
+
+import numpy as np
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import Normalizer, StandardScaler
+from sklearn.svm import SVC
+from tqdm import tqdm
+
+from utils import load_ebg, load_lcmc, load_rj, vectorize_writeprints_static
 
 # setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 def create_svm_pipeline() -> Pipeline:
     """Create SVM pipeline with Writeprints-static features"""
-    return Pipeline([
-        ("normalizer", Normalizer(norm="l1")),
-        ("scaler", StandardScaler()),
-        ("svm", SVC(
-            kernel="poly",
-            gamma="scale",
-            probability=True,
-            max_iter=-1
-        ))
-    ])
+    return Pipeline(
+        [
+            ("normalizer", Normalizer(norm="l1")),
+            ("scaler", StandardScaler()),
+            ("svm", SVC(kernel="poly", gamma="scale", probability=True, max_iter=-1)),
+        ]
+    )
 
 
 def grid_search_svm(
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        n_jobs: int = -1
+    X_train: np.ndarray, y_train: np.ndarray, n_jobs: int = -1
 ) -> Tuple[Dict, float]:
     """
     Perform grid search for SVM parameters.
@@ -57,9 +49,9 @@ def grid_search_svm(
 
     # define param grid
     param_grid = {
-        'svm__C': np.logspace(-3, 3, num=7),  # 1e-3 ~ 1e3
-        'svm__degree': np.arange(2, 9),  # 2 ~ 8
-        'svm__coef0': [0, 1, 10, 100, 1000]  #
+        "svm__C": np.logspace(-3, 3, num=7),  # 1e-3 ~ 1e3
+        "svm__degree": np.arange(2, 9),  # 2 ~ 8
+        "svm__coef0": [0, 1, 10, 100, 1000],  #
     }
 
     # setup grid search with stratified k-fold
@@ -67,9 +59,9 @@ def grid_search_svm(
         pipeline,
         param_grid,
         cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=42),
-        scoring='accuracy',
+        scoring="accuracy",
         n_jobs=n_jobs,
-        verbose=2
+        verbose=2,
     )
 
     # perform grid search
@@ -79,10 +71,7 @@ def grid_search_svm(
 
 
 def optimize_svm_for_corpus(
-        corpus_name: str,
-        data_loader,
-        output_dir: Path,
-        n_jobs: int = -1
+    corpus_name: str, data_loader, output_dir: Path, n_jobs: int = -1
 ) -> Dict:
     """
     Optimize SVM parameters for a specific corpus.
@@ -123,7 +112,7 @@ def optimize_svm_for_corpus(
         "test_accuracy": float(test_score),
         "n_authors": len(set(train_labels)),
         "n_train_samples": len(train_labels),
-        "n_test_samples": len(test_labels)
+        "n_test_samples": len(test_labels),
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -143,26 +132,20 @@ def main():
     output_dir = Path("results/optimization/svm")
 
     # define corpora
-    corpora = {
-        "rj": load_rj,
-        "ebg": load_ebg,
-        "lcmc": load_lcmc
-    }
+    corpora = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
 
     # optimize for each corpus
     all_results = {}
-    for corpus_name, data_loader in corpora.items():
+    for corpus_name, data_loader in tqdm(corpora.items(), desc="Optimizing corpora"):
         try:
             results = optimize_svm_for_corpus(
-                corpus_name=corpus_name,
-                data_loader=data_loader,
-                output_dir=output_dir
+                corpus_name=corpus_name, data_loader=data_loader, output_dir=output_dir
             )
             all_results[corpus_name] = results
         except Exception as e:
             logger.error(f"Error optimizing {corpus_name}: {str(e)}")
 
-    # Save combined results
+    # save combined results
     with open(output_dir / "all_optimization_results.json", "w") as f:
         json.dump(all_results, f, indent=2)
 
@@ -171,9 +154,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Optimize poly SVM parameters for each corpus")
-    parser.add_argument("--n-jobs", type=int, default=-1,
-                        help="Number of parallel jobs for grid search")
+        description="Optimize poly SVM parameters for each corpus"
+    )
+    parser.add_argument(
+        "--n-jobs", type=int, default=-1, help="Number of parallel jobs for grid search"
+    )
     args = parser.parse_args()
 
     main()
