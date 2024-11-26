@@ -51,7 +51,7 @@ def grid_search_svm(
     param_grid = {
         "svm__C": np.logspace(-3, 3, num=7),  # 1e-3 ~ 1e3
         "svm__degree": np.arange(2, 9),  # 2 ~ 8
-        "svm__coef0": [0, 1, 10, 100, 1000],  #
+        "svm__coef0": [0, 1, 10, 100, 1000],
     }
 
     # setup grid search with stratified k-fold
