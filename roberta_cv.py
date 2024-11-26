@@ -46,7 +46,7 @@ class RobertaCV:
         self.output_dir = Path(output_dir)
         self.seed = seed
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
         # initialize label encoder for consistent label mapping
         self.label_encoder = LabelEncoder()
