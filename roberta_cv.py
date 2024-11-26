@@ -74,7 +74,7 @@ class RobertaCV:
             logging_steps=1,
             save_steps=1,
             eval_steps=1,
-            evaluation_strategy="steps",
+            eval_strategy="steps",
             save_strategy="steps",
             logging_strategy="steps",
             bf16=True,
