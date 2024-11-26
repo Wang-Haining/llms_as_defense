@@ -34,7 +34,7 @@ class RobertaCV:
     def __init__(
             self,
             output_dir: str,
-            per_device_train_batch_size: int = 16,
+            per_device_train_batch_size: int = 64,
             n_splits: int = 10,
             model_name: str = "FacebookAI/roberta-base",
             seed: int = 42,
