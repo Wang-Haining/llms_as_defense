@@ -80,7 +80,7 @@ class RobertaCV:
             bf16=True,
             overwrite_output_dir=True,
             num_train_epochs=200,
-            save_total_limit=3,
+            save_total_limit=1,
             report_to="wandb",
         )
 
@@ -216,6 +216,8 @@ class RobertaCV:
                 val_probs = torch.nn.functional.softmax(
                     torch.from_numpy(val_output.predictions), dim=-1
                 ).numpy()
+                val_preds = np.argmax(val_probs, axis=1)
+                val_accuracy = np.mean(val_preds == fold_val_labels)
 
                 test_output = trainer.predict(test_dataset)
                 test_probs = torch.nn.functional.softmax(
@@ -225,7 +227,7 @@ class RobertaCV:
             # log metrics
             fold_metrics = {
                 "val_loss": val_output.metrics["test_loss"],
-                "val_accuracy": val_output.metrics["test_accuracy"],
+                "val_accuracy": val_accuracy,
             }
             wandb.log({**fold_metrics, "fold": fold})
 
