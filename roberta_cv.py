@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 import wandb
 from sklearn.model_selection import KFold
+from sklearn.preprocessing import LabelEncoder
 from transformers import (
     EarlyStoppingCallback,
     RobertaForSequenceClassification,
@@ -16,8 +17,6 @@ from transformers import (
 
 
 class CommonDataset(torch.utils.data.Dataset):
-    """Required by HuggingFace Trainer API"""
-
     def __init__(self, encodings, labels):
         self.encodings = encodings
         self.labels = labels
@@ -33,33 +32,40 @@ class CommonDataset(torch.utils.data.Dataset):
 
 class RobertaCV:
     def __init__(
-        self,
-        per_device_train_batch_size: int = 16,
-        n_splits: int = 10,
-        model_name: str = "roberta-base",
-        base_dir: str = "results/baselines",
-        seed: int = 42,
+            self,
+            output_dir: str,
+            per_device_train_batch_size: int = 16,
+            n_splits: int = 10,
+            model_name: str = "FacebookAI/roberta-base",
+            seed: int = 42,
     ):
         self.per_device_train_batch_size = per_device_train_batch_size
         self.n_splits = n_splits
         self.model_name = model_name
-        self.base_dir = Path(base_dir)
+        self.model = model_name.split('/')[-1].lower()
+        self.output_dir = Path(output_dir)
         self.seed = seed
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        # initialize label encoder for consistent label mapping
+        self.label_encoder = LabelEncoder()
+
     def get_training_args(
-        self, fold: int, output_dir: str, run_name: str
+            self, output_dir: str, run_name: str, fold: int
     ) -> TrainingArguments:
         """Get training arguments with wandb integration"""
+        # avoid collision
+        fold_seed = (self.seed * 31337 + fold) % (2**32)
+
         return TrainingArguments(
             output_dir=output_dir,
             run_name=run_name,
-            seed=self.seed,
+            seed=fold_seed,
             do_eval=True,
             learning_rate=3e-5,
             per_device_train_batch_size=self.per_device_train_batch_size,
-            per_device_eval_batch_size=8,
+            per_device_eval_batch_size=self.per_device_train_batch_size,
             warmup_ratio=0.1,
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
@@ -78,31 +84,64 @@ class RobertaCV:
             report_to="wandb",
         )
 
+    def save_fold_predictions(
+            self,
+            fold_dir: Path,
+            fold_result: Dict,
+            label_mapping_str: np.ndarray,
+            label_mapping_num: np.ndarray,
+    ) -> None:
+        """Save fold predictions in a consistent format, focusing on test results"""
+        # save predictions with both string and numerical mappings
+        np.savez(
+            fold_dir / "predictions.npz",
+            y_true_str=fold_result["test_true"],  # original string labels
+            y_true_num=self.label_encoder.transform(fold_result["test_true"]),
+            y_pred_probs=fold_result["test_pred_probs"],
+            label_mapping_str=label_mapping_str,
+            label_mapping_num=label_mapping_num,
+            feature_type=self.model,
+            fold=fold_result["fold"],
+            val_indices=fold_result["val_indices"],  # keep for reproducibility
+        )
+
+        # save metrics separately
+        with open(fold_dir / "metrics.json", "w") as f:
+            json.dump(fold_result["metrics"], f)
+
     def train_and_evaluate(
-        self,
-        train_text: List[str],
-        train_labels: List[int],
-        test_text: List[str],
-        test_labels: List[int],
-        corpus: str,
-        task: str,
+            self,
+            train_text: List[str],
+            train_labels: List[int],
+            test_text: List[str],
+            test_labels: List[int],
+            corpus: str,
+            task: str,
     ) -> Dict:
-        """Run 10-fold CV with wandb logging"""
+        """Run 10-fold CV with wandb logging and consistent result saving"""
+        # fit label encoder on all labels
+        all_labels = list(train_labels) + list(test_labels)
+        self.label_encoder.fit(all_labels)
+
+        # get label mappings
+        label_mapping_str = self.label_encoder.classes_
+        label_mapping_num = np.arange(len(label_mapping_str))
 
         # create experiment directory
-        exp_dir = self.base_dir / corpus / task / "roberta"
+        exp_dir = self.output_dir / corpus / task / self.model
         exp_dir.mkdir(parents=True, exist_ok=True)
 
         # initialize wandb for ensemble
         wandb.init(
             project="LLM as Defense",
             group=f"{corpus}_{task}",
-            name=f"{corpus}_{task}_roberta",
+            name=f"{corpus}_{task}_{self.model}",
             config={
-                "model": "roberta-base",
+                "model": self.model,
                 "n_splits": self.n_splits,
                 "seed": self.seed,
                 "n_authors": len(set(train_labels)),
+                "device": self.device,
             },
         )
 
@@ -120,7 +159,7 @@ class RobertaCV:
             fold_dir.mkdir(exist_ok=True)
 
             # initialize fold-specific wandb run
-            run_name = f"{corpus}_{task}_roberta_fold_{fold}"
+            run_name = f"{corpus}_{task}_{self.model}_fold_{fold}"
             wandb.init(
                 project="LLM as Defense",
                 group=f"{corpus}_{task}",
@@ -156,9 +195,11 @@ class RobertaCV:
                 self.model_name, num_labels=len(set(train_labels))
             ).to(self.device)
 
-            # training args with wandb run name
+            # training args with wandb run name and fold-specific seed
             training_args = self.get_training_args(
-                fold=fold, output_dir=str(fold_dir / "ckpts"), run_name=run_name
+                output_dir=str(fold_dir / "ckpts"),
+                run_name=run_name,
+                fold=fold
             )
 
             # initialize trainer
@@ -167,10 +208,9 @@ class RobertaCV:
                 args=training_args,
                 train_dataset=train_dataset,
                 eval_dataset=val_dataset,
-                callbacks=[EarlyStoppingCallback(early_stopping_patience=50)],
+                callbacks=[EarlyStoppingCallback(early_stopping_patience=20)],
             )
 
-            # train
             trainer.train()
 
             # save best model
@@ -197,7 +237,7 @@ class RobertaCV:
             }
             wandb.log({**fold_metrics, "fold": fold})
 
-            # save fold results
+            # prepare and save fold results
             fold_result = {
                 "fold": fold,
                 "val_indices": val_idx.tolist(),
@@ -208,12 +248,9 @@ class RobertaCV:
                 "metrics": fold_metrics,
             }
 
-            np.savez(
-                fold_dir / "predictions.npz",
-                **{k: v for k, v in fold_result.items() if k != "metrics"},
+            self.save_fold_predictions(
+                fold_dir, fold_result, label_mapping_str, label_mapping_num
             )
-            with open(fold_dir / "metrics.json", "w") as f:
-                json.dump(fold_metrics, f)
 
             # update results
             results["fold_predictions"].append(fold_result)
@@ -222,22 +259,25 @@ class RobertaCV:
 
             wandb.finish()
 
-            # cleanup
+            # tear down
             del model, trainer
             torch.cuda.empty_cache()
 
-        # calculate ensemble predictions
+        # calculate and save ensemble predictions
         test_predictions_array = np.array(results["test_predictions"])
         test_ensemble_probs = np.mean(test_predictions_array, axis=0)
         test_ensemble_std = np.std(test_predictions_array, axis=0)
 
-        # save ensemble results
+        # save ensemble results in the same format as traditional ML models
         np.savez(
             exp_dir / "ensemble_predictions.npz",
-            y_pred_probs=test_ensemble_probs,  # mean_probs
+            y_true_str=test_labels,
+            y_true_num=self.label_encoder.transform(test_labels),
+            y_pred_probs=test_ensemble_probs,  # matches traditional ML format
             std_probs=test_ensemble_std,
-            true_labels=test_labels,
-            feature_type="roberta",
+            label_mapping_str=label_mapping_str,
+            label_mapping_num=label_mapping_num,
+            feature_type=self.model
         )
 
         # calculate ensemble metrics

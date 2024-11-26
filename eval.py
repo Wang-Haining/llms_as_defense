@@ -8,7 +8,7 @@ The implementation includes three attribution models:
 3. RoBERTa with 10-fold cross-validation
 
 Directory Structure:
-results/baselines/
+results/baselines/              # or other supplied subdirectory through `save_path`
 ├── {corpus}/                    # RJ, EBG, or LCMC
 │   ├── {task}/                 # e.g., control, imitation, obfuscation
 │   │   ├── logreg/
@@ -67,7 +67,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-RESULTS_DIR = "results/baselines"
+RESULTS_DIR = "results"
 
 
 def evaluate_logistic_regression(
@@ -173,8 +173,8 @@ def save_prediction_results(
 
     # get unique labels and create mapping
     le = LabelEncoder()
-    y_true_str = results["y_true"]  # Original string labels
-    y_true_num = le.fit_transform(y_true_str)  # Numerical indices
+    y_true_str = results["y_true"]  # original string labels
+    y_true_num = le.fit_transform(y_true_str)  # numerical indices
 
     # save predictions with both string and numerical mappings
     np.savez(
@@ -202,7 +202,7 @@ def main(args):
     # todo: substitute the test_texts here
 
     # create results directory
-    output_dir = Path(RESULTS_DIR)
+    output_dir = Path(RESULTS_DIR) / args.save_path
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.model in ["logreg", "svm"]:
@@ -213,8 +213,8 @@ def main(args):
 
     else:  # roberta
         torch.manual_seed(42)
-        roberta = RobertaCV()
-        results = roberta.train_and_evaluate(
+        roberta = RobertaCV(output_dir)
+        roberta.train_and_evaluate(
             train_text, train_labels, test_text, test_labels, args.corpus, args.task
         )
 
@@ -222,6 +222,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate authorship attribution models"
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        required=True,
+        help="subdirectory under results",
     )
     parser.add_argument(
         "--corpus",
