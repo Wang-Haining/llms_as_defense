@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -56,7 +56,7 @@ class RobertaCV:
     ) -> TrainingArguments:
         """Get training arguments with wandb integration"""
         # avoid collision
-        fold_seed = (self.seed * 31337 + fold) % (2**32)
+        fold_seed = (self.seed * 31337 + fold) % (2 ** 32)
 
         return TrainingArguments(
             output_dir=output_dir,
@@ -88,21 +88,13 @@ class RobertaCV:
             self,
             fold_dir: Path,
             fold_result: Dict,
-            label_mapping_str: np.ndarray,
-            label_mapping_num: np.ndarray,
     ) -> None:
-        """Save fold predictions in a consistent format, focusing on test results"""
-        # save predictions with both string and numerical mappings
+        """Save fold predictions matching traditional ML format"""
         np.savez(
             fold_dir / "predictions.npz",
-            y_true_str=fold_result["test_true"],  # original string labels
-            y_true_num=self.label_encoder.transform(fold_result["test_true"]),
+            y_true=fold_result["test_true"],
             y_pred_probs=fold_result["test_pred_probs"],
-            label_mapping_str=label_mapping_str,
-            label_mapping_num=label_mapping_num,
             feature_type=self.model,
-            fold=fold_result["fold"],
-            val_indices=fold_result["val_indices"],  # keep for reproducibility
         )
 
         # save metrics separately
@@ -123,9 +115,9 @@ class RobertaCV:
         all_labels = list(train_labels) + list(test_labels)
         self.label_encoder.fit(all_labels)
 
-        # get label mappings
-        label_mapping_str = self.label_encoder.classes_
-        label_mapping_num = np.arange(len(label_mapping_str))
+        # transform all labels to numerical indices
+        train_labels_num = self.label_encoder.transform(train_labels)
+        test_labels_num = self.label_encoder.transform(test_labels)
 
         # create experiment directory
         exp_dir = self.output_dir / corpus / task / self.model
@@ -168,11 +160,11 @@ class RobertaCV:
                 reinit=True,
             )
 
-            # prepare fold data
+            # prepare fold data with numerical labels
             fold_train_text = [train_text[i] for i in train_idx]
-            fold_train_labels = [train_labels[i] for i in train_idx]
+            fold_train_labels = train_labels_num[train_idx]
             fold_val_text = [train_text[i] for i in val_idx]
-            fold_val_labels = [train_labels[i] for i in val_idx]
+            fold_val_labels = train_labels_num[val_idx]
 
             # tokenize
             train_encodings = self.tokenizer(
@@ -188,7 +180,7 @@ class RobertaCV:
             # create datasets
             train_dataset = CommonDataset(train_encodings, fold_train_labels)
             val_dataset = CommonDataset(val_encodings, fold_val_labels)
-            test_dataset = CommonDataset(test_encodings, test_labels)
+            test_dataset = CommonDataset(test_encodings, test_labels_num)
 
             # initialize model
             model = RobertaForSequenceClassification.from_pretrained(
@@ -237,20 +229,16 @@ class RobertaCV:
             }
             wandb.log({**fold_metrics, "fold": fold})
 
-            # prepare and save fold results
+            # prepare fold results (only test predictions like traditional ML)
             fold_result = {
                 "fold": fold,
-                "val_indices": val_idx.tolist(),
-                "val_true": fold_val_labels,
-                "val_pred_probs": val_probs,
                 "test_true": test_labels,
                 "test_pred_probs": test_probs,
                 "metrics": fold_metrics,
             }
 
-            self.save_fold_predictions(
-                fold_dir, fold_result, label_mapping_str, label_mapping_num
-            )
+            # save fold predictions
+            self.save_fold_predictions(fold_dir, fold_result)
 
             # update results
             results["fold_predictions"].append(fold_result)
@@ -268,15 +256,12 @@ class RobertaCV:
         test_ensemble_probs = np.mean(test_predictions_array, axis=0)
         test_ensemble_std = np.std(test_predictions_array, axis=0)
 
-        # save ensemble results in the same format as traditional ML models
+        # save ensemble results matching traditional ML format
         np.savez(
             exp_dir / "ensemble_predictions.npz",
-            y_true_str=test_labels,
-            y_true_num=self.label_encoder.transform(test_labels),
-            y_pred_probs=test_ensemble_probs,  # matches traditional ML format
+            y_true=test_labels,
+            y_pred_probs=test_ensemble_probs,
             std_probs=test_ensemble_std,
-            label_mapping_str=label_mapping_str,
-            label_mapping_num=label_mapping_num,
             feature_type=self.model
         )
 
