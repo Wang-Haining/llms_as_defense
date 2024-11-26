@@ -120,11 +120,11 @@ def evaluate_svm(
             (
                 "svm",
                 SVC(
-                    C=0.01,
+                    C=0.1,
                     kernel="poly",
-                    degree=3,
+                    degree=2,
                     gamma="scale",
-                    coef0=100,
+                    coef0=10,
                     max_iter=-1,
                     probability=True,
                 ),
@@ -198,6 +198,8 @@ def main(args):
     # load data
     loaders = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
     train_text, train_labels, test_text, test_labels = loaders[args.corpus](args.task)
+
+    # todo: substitute the test_texts here
 
     # create results directory
     output_dir = Path(RESULTS_DIR)
