@@ -157,7 +157,8 @@ if __name__ == "__main__":
         description="Optimize poly SVM parameters for each corpus"
     )
     parser.add_argument(
-        "--n-jobs", type=int, default=-1, help="Number of parallel jobs for grid search"
+        "--n-jobs", type=int, default=-1,
+        help="Number of parallel jobs for grid search"
     )
     args = parser.parse_args()
 
