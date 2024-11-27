@@ -213,7 +213,7 @@ def main(args):
 
     else:  # roberta
         torch.manual_seed(42)
-        roberta = RobertaCV(output_dir)
+        roberta = RobertaCV(output_dir, save_path)
         roberta.train_and_evaluate(
             train_text, train_labels, test_text, test_labels, args.corpus, args.task
         )
@@ -227,7 +227,7 @@ if __name__ == "__main__":
         "--save_path",
         type=str,
         required=True,
-        help="subdirectory under results",
+        help="subdirectory under results, as a marker of RQ or baselines",
     )
     parser.add_argument(
         "--corpus",

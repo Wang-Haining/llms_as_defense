@@ -35,6 +35,7 @@ class RobertaCV:
     def __init__(
             self,
             output_dir: str,
+            save_path: str,
             per_device_train_batch_size: int = 128,
             n_splits: int = 10,
             model_name: str = "FacebookAI/roberta-base",
@@ -45,7 +46,7 @@ class RobertaCV:
         self.model_name = model_name
         self.model = model_name.split('/')[-1].lower()
         self.output_dir = Path(output_dir)
-        self.save_path = output_dir.split('/')[-1]
+        self.save_path = save_path
         self.seed = seed
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
