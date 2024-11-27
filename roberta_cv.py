@@ -15,6 +15,7 @@ from transformers import (
     TrainingArguments,
 )
 
+PROJECT_NAME = 'LLM as Defense'
 
 class CommonDataset(torch.utils.data.Dataset):
     def __init__(self, encodings, labels):
@@ -125,7 +126,7 @@ class RobertaCV:
 
         # initialize wandb for ensemble
         wandb.init(
-            project="LLM as Defense",
+            project=PROJECT_NAME,
             group=f"{corpus}_{task}",
             name=f"{corpus}_{task}_{self.model}",
             config={
@@ -153,7 +154,7 @@ class RobertaCV:
             # initialize fold-specific wandb run
             run_name = f"{corpus}_{task}_{self.model}_fold_{fold}"
             wandb.init(
-                project="LLM as Defense",
+                project=PROJECT_NAME,
                 group=f"{corpus}_{task}",
                 name=run_name,
                 config={"fold": fold},
@@ -256,6 +257,21 @@ class RobertaCV:
             del model, trainer
             torch.cuda.empty_cache()
 
+        # reinitialize the main wandb run before ensemble
+        wandb.init(
+            project=PROJECT_NAME,
+            group=f"{corpus}_{task}",
+            name=f"{corpus}_{task}_{self.model}_ensemble",
+            config={
+                "model": self.model,
+                "n_splits": self.n_splits,
+                "seed": self.seed,
+                "n_authors": len(set(train_labels)),
+                "device": self.device,
+            },
+            reinit=True
+        )
+
         # calculate and save ensemble predictions
         test_predictions_array = np.array(results["test_predictions"])
         test_ensemble_probs = np.mean(test_predictions_array, axis=0)
@@ -293,6 +309,7 @@ class RobertaCV:
             }
         )
 
+        # Finish the final wandb run
         wandb.finish()
 
         return {
