@@ -202,6 +202,7 @@ def main(args):
     # todo: substitute the test_texts here
 
     # create results directory
+    # args.save_path is an indicator of RQ (or baselines)
     output_dir = Path(RESULTS_DIR) / args.save_path
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -213,7 +214,7 @@ def main(args):
 
     else:  # roberta
         torch.manual_seed(42)
-        roberta = RobertaCV(output_dir, save_path)
+        roberta = RobertaCV(output_dir, args.save_path)
         roberta.train_and_evaluate(
             train_text, train_labels, test_text, test_labels, args.corpus, args.task
         )
