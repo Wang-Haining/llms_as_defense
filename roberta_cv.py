@@ -45,6 +45,7 @@ class RobertaCV:
         self.model_name = model_name
         self.model = model_name.split('/')[-1].lower()
         self.output_dir = Path(output_dir)
+        self.save_path = output_dir.split('/')[-1]
         self.seed = seed
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -127,7 +128,7 @@ class RobertaCV:
         # initialize wandb for ensemble
         wandb.init(
             project=PROJECT_NAME,
-            group=f"{corpus}_{task}",
+            group=f"{self.save_path}_{corpus}_{task}",
             name=f"{corpus}_{task}_{self.model}",
             config={
                 "model": self.model,
@@ -155,7 +156,7 @@ class RobertaCV:
             run_name = f"{corpus}_{task}_{self.model}_fold_{fold}"
             wandb.init(
                 project=PROJECT_NAME,
-                group=f"{corpus}_{task}",
+                group=f"{self.save_path}_{corpus}_{task}",
                 name=run_name,
                 config={"fold": fold},
                 reinit=True,
@@ -260,7 +261,7 @@ class RobertaCV:
         # reinitialize the main wandb run before ensemble
         wandb.init(
             project=PROJECT_NAME,
-            group=f"{corpus}_{task}",
+            group=f"{self.save_path}_{corpus}_{task}",
             name=f"{corpus}_{task}_{self.model}_ensemble",
             config={
                 "model": self.model,
