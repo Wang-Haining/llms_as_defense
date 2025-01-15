@@ -78,7 +78,7 @@ def main(args):
             'learning_rate': args.learning_rate,
             'batch_size': args.batch_size,
             'num_epochs': args.num_epochs,
-            'warmup_ratio': args.warmup_ratio
+            'warmup_steps': args.warmup_steps
         }
     )
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=3e-5)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_epochs", type=int, default=2000)
-    parser.add_argument("--warmup_ratio", type=float, default=50)
+    parser.add_argument("--warmup_steps", type=int, default=50)
 
     args = parser.parse_args()
 

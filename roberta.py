@@ -63,7 +63,7 @@ class RobertaBest:
             per_device_train_batch_size=self.training_args.get('batch_size', 32),
             per_device_eval_batch_size=self.training_args.get('batch_size', 32),
             num_train_epochs=self.training_args.get('num_epochs', 2000),
-            warmup_ratio=self.training_args.get('warmup_ratio', 50),
+            warmup_steps=self.training_args.get('warmup_steps', 50),
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
