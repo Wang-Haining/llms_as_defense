@@ -10,6 +10,7 @@ import json
 import os
 import random
 import re
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 import chardet
@@ -647,15 +648,30 @@ def defense_effectiveness(pre_metrics, post_metrics):
 
 
 def load_prediction_results(result_path: str) -> Dict:
-    """Load predictions and convert to format needed by evaluation functions"""
+    """Load predictions"""
     data = np.load(result_path)
-
     return {
-        "y_true": data["y_true_num"],  # use numerical indices for evaluation
-        "y_pred_probs": data["y_pred_probs"],
-        "label_mapping_str": data["label_mapping_str"],
-        "label_mapping_num": data["label_mapping_num"]
+        "y_true": data["y_true"],
+        "y_pred_probs": data["y_pred_probs"]
     }
+
+
+def save_prediction_results(
+        results: Dict,
+        corpus: str,
+        task: str,
+        model: str,
+        output_dir: Path
+) -> None:
+    """Save prediction results"""
+    model_dir = output_dir / corpus / task / model
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    np.savez(
+        model_dir / "predictions.npz",
+        y_true=results["y_true"],
+        y_pred_probs=results["y_pred_probs"]
+    )
 
 
 def evaluate_defense(pre_path: str, post_path: str) -> Dict:
@@ -667,13 +683,11 @@ def evaluate_defense(pre_path: str, post_path: str) -> Dict:
     pre_metrics = evaluate_attribution_defense(
         pre_results["y_true"],
         pre_results["y_pred_probs"],
-        pre_post="pre"
     )
 
     post_metrics = evaluate_attribution_defense(
         post_results["y_true"],
         post_results["y_pred_probs"],
-        pre_post="post"
     )
 
     # calculate effectiveness
