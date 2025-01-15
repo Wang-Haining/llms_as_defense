@@ -101,15 +101,27 @@ class RobertaBest:
         best_seed = None
         best_fold = None
 
-        # initialize wandb run once for all seeds
+        # create descriptive experiment name
+        experiment_name = f"{corpus}_{task}"
+
+        # initialize wandb run with descriptive naming
         wandb.init(
             project=PROJECT_NAME,
-            group=f"{self.save_path}_{corpus}_{task}",
-            name=f"{corpus}_{task}_roberta",
+            group=f"{experiment_name}",
+            name=f"roberta_{experiment_name}",
+            tags=[corpus, task, "roberta", self.model_name],
             config={
+                "model_type": "roberta",
+                "model_name": self.model_name,
+                "corpus": corpus,
+                "task": task,
                 "seeds": self.seeds,
                 "n_splits": self.n_splits,
                 "n_authors": len(np.unique(train_labels)),
+                "learning_rate": self.training_args.get('learning_rate', 3e-5),
+                "batch_size": self.training_args.get('batch_size', 32),
+                "num_epochs": self.training_args.get('num_epochs', 2000),
+                "warmup_steps": self.training_args.get('warmup_steps', 50),
             },
         )
 
@@ -122,6 +134,9 @@ class RobertaBest:
             kf = KFold(n_splits=self.n_splits, shuffle=True, random_state=seed)
 
             for fold, (train_idx, val_idx) in enumerate(kf.split(train_text)):
+                # create a descriptive fold name
+                fold_name = f"seed_{seed}_fold_{fold}"
+
                 # prepare fold data
                 fold_train_text = [train_text[i] for i in train_idx]
                 fold_train_labels = train_labels[train_idx]
@@ -154,8 +169,9 @@ class RobertaBest:
                 trainer = Trainer(
                     model=model,
                     args=self.get_training_args(
-                        output_dir=str(exp_dir / f"seed_{seed}_fold_{fold}"),
-                        run_name=f"{corpus}_{task}_roberta_s{seed}_f{fold}"
+                        output_dir=str(exp_dir / fold_name),
+                        # More descriptive run name for trainer
+                        run_name=f"{experiment_name}_{fold_name}"
                     ),
                     train_dataset=train_dataset,
                     eval_dataset=val_dataset,
@@ -175,12 +191,15 @@ class RobertaBest:
                     )
                 }
 
-                # log metrics with seed and fold info
+                # log metrics with more detailed context
                 wandb.log({
                     'seed': seed,
                     'fold': fold,
+                    'fold_name': fold_name,
                     'val_loss': val_metrics['loss'],
-                    'val_accuracy': val_metrics['accuracy']
+                    'val_accuracy': val_metrics['accuracy'],
+                    'epoch': trainer.state.epoch,
+                    'global_step': trainer.state.global_step,
                 })
 
                 # get test probabilities
@@ -196,6 +215,14 @@ class RobertaBest:
                     best_overall_probs = test_probs
                     best_seed = seed
                     best_fold = fold
+
+        # log final best model information
+        wandb.log({
+            'best_seed': best_seed,
+            'best_fold': best_fold,
+            'best_val_loss': best_overall_metrics['loss'],
+            'best_val_accuracy': best_overall_metrics['accuracy'],
+        })
 
         wandb.finish()
 
@@ -228,7 +255,6 @@ class RobertaBest:
             "best_fold": best_fold,
             "best_val_metrics": best_overall_metrics
         }
-
 
 class RobertaPredictor:
     """Utility class for making predictions with saved RoBERTa models"""
