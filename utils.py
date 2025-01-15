@@ -153,7 +153,7 @@ def load_rj(
     train_text, train_label, test_text, test_label = [], [], [], []
     authors = [
         f.name.split(".")[0]
-        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task if task != 'no_protection' else 'control'))
+        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task if task != 'no_protection' else 'attacks_control'))
         if not f.name.startswith(".")
     ]
     # cfeec8 does not have training data
