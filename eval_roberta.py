@@ -68,7 +68,7 @@ def evaluate_corpus_task(
 
 def main(args):
     # initialize wandb
-    wandb.init(project="LLM as Defense")
+    # wandb.init(project="LLM as Defense")
 
     # initialize model with training params
     model = RobertaBest(

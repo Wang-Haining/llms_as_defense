@@ -170,7 +170,6 @@ class RobertaBest:
                     model=model,
                     args=self.get_training_args(
                         output_dir=str(exp_dir / fold_name),
-                        # More descriptive run name for trainer
                         run_name=f"{experiment_name}_{fold_name}"
                     ),
                     train_dataset=train_dataset,
