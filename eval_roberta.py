@@ -144,10 +144,10 @@ if __name__ == "__main__":
     )
 
     # training arguments
-    parser.add_argument("--learning_rate", type=float, default=3e-4)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--num_epochs", type=int, default=2000)
-    parser.add_argument("--warmup_steps", type=int, default=50)
+    parser.add_argument("--num_epochs", type=int, default=100)
+    parser.add_argument("--warmup_steps", type=int, default=20)
 
     args = parser.parse_args()
 
