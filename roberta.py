@@ -63,8 +63,8 @@ class RobertaBest:
             learning_rate=self.training_args.get('learning_rate', 3e-5),
             per_device_train_batch_size=self.training_args.get('batch_size', 32),
             per_device_eval_batch_size=self.training_args.get('batch_size', 32),
-            num_train_epochs=self.training_args.get('num_epochs', 2000),
-            warmup_steps=self.training_args.get('warmup_steps', 50),
+            num_train_epochs=self.training_args.get('num_epochs', 100),
+            warmup_steps=self.training_args.get('warmup_steps', 20),
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
@@ -78,7 +78,10 @@ class RobertaBest:
             bf16=True,
             save_total_limit=1,
             report_to="wandb",
+            ddp_find_unused_parameters=False,
+            no_cuda=self.device == "cpu",
         )
+
     def train_and_evaluate(
             self,
             train_text: List[str],
@@ -98,6 +101,18 @@ class RobertaBest:
         best_seed = None
         best_fold = None
 
+        # initialize wandb run once for all seeds
+        wandb.init(
+            project=PROJECT_NAME,
+            group=f"{self.save_path}_{corpus}_{task}",
+            name=f"{corpus}_{task}_roberta",
+            config={
+                "seeds": self.seeds,
+                "n_splits": self.n_splits,
+                "n_authors": len(np.unique(train_labels)),
+            },
+        )
+
         for seed in self.seeds:
             # set all random seeds
             torch.manual_seed(seed)
@@ -105,18 +120,6 @@ class RobertaBest:
             torch.cuda.manual_seed_all(seed)
 
             kf = KFold(n_splits=self.n_splits, shuffle=True, random_state=seed)
-
-            wandb.init(
-                project=PROJECT_NAME,
-                group=f"{self.save_path}_{corpus}_{task}",
-                name=f"{corpus}_{task}_roberta_seed_{seed}",
-                config={
-                    "seed": seed,
-                    "n_splits": self.n_splits,
-                    "n_authors": len(np.unique(train_labels)),
-                },
-                reinit=True
-            )
 
             for fold, (train_idx, val_idx) in enumerate(kf.split(train_text)):
                 # prepare fold data
@@ -151,8 +154,8 @@ class RobertaBest:
                 trainer = Trainer(
                     model=model,
                     args=self.get_training_args(
-                        output_dir=str(exp_dir / f"fold_{fold}"),
-                        run_name=f"{corpus}_{task}_roberta_fold_{fold}"
+                        output_dir=str(exp_dir / f"seed_{seed}_fold_{fold}"),
+                        run_name=f"{corpus}_{task}_roberta_s{seed}_f{fold}"
                     ),
                     train_dataset=train_dataset,
                     eval_dataset=val_dataset,
@@ -163,7 +166,7 @@ class RobertaBest:
 
                 # evaluate
                 val_output = trainer.predict(val_dataset)
-                test_output = trainer.predict(test_dataset)  # Get test predictions
+                test_output = trainer.predict(test_dataset)
 
                 val_metrics = {
                     'loss': val_output.metrics['test_loss'],
@@ -171,6 +174,14 @@ class RobertaBest:
                         np.argmax(val_output.predictions, axis=1) == fold_val_labels
                     )
                 }
+
+                # log metrics with seed and fold info
+                wandb.log({
+                    'seed': seed,
+                    'fold': fold,
+                    'val_loss': val_metrics['loss'],
+                    'val_accuracy': val_metrics['accuracy']
+                })
 
                 # get test probabilities
                 test_probs = torch.nn.functional.softmax(
@@ -186,7 +197,7 @@ class RobertaBest:
                     best_seed = seed
                     best_fold = fold
 
-            wandb.finish()
+        wandb.finish()
 
         # save best overall model and its metadata
         best_model_dir = exp_dir / f"best_model_seed{best_seed}_fold{best_fold}"
