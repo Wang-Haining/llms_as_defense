@@ -151,9 +151,10 @@ def load_rj(
         raise ValueError(f"Unknown task: {task}.")
 
     train_text, train_label, test_text, test_label = [], [], [], []
+    subdir = "attacks_" + task if task != 'no_protection' else 'attacks_control'
     authors = [
         f.name.split(".")[0]
-        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task if task != 'no_protection' else 'attacks_control'))
+        for f in os.scandir(os.path.join(corpus_dir, subdir))
         if not f.name.startswith(".")
     ]
     # cfeec8 does not have training data
@@ -168,7 +169,7 @@ def load_rj(
             train_label.append(raw.name.split("_")[0])
     # read in testing
     for author in authors:
-        path = os.path.join(corpus_dir, "attacks_" + task, author + '.txt')
+        path = os.path.join(corpus_dir, subdir, author + '.txt')
         enc = chardet.detect(open(path, "rb").read())["encoding"]
         test_text.append(open(path, encoding=enc).read())
         test_label.append(author)
