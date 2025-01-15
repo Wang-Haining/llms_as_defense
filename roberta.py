@@ -24,7 +24,8 @@ class CommonDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         item = {k: torch.tensor(v[idx]) for k, v in self.encodings.items()}
-        item["labels"] = torch.tensor(self.labels[idx])
+        # ensure labels are returned as a tensor with proper shape
+        item["labels"] = torch.tensor(self.labels[idx], dtype=torch.long).view(1)
         return item
 
     def __len__(self):
