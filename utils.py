@@ -1,6 +1,6 @@
 """
 This module contains helper functions used to reproduce results in *Defending Against
-Authorship Attribution Attacks With Large Language Models*.
+Authorship Attribution Attacks with Large Language Models*.
 """
 
 __author__ = 'hw56@indiana.edu'
@@ -10,13 +10,14 @@ import json
 import os
 import random
 import re
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 import chardet
 import numpy as np
 from sacremoses import MosesTokenizer
-from writeprints_static import WriteprintsStatic
 from sklearn.metrics import average_precision_score
+from sklearn.preprocessing import LabelEncoder
+from writeprints_static import WriteprintsStatic
 
 
 def get_corpus_stats() -> None:
@@ -66,7 +67,7 @@ def get_corpus_stats() -> None:
         print('*'*88)
 
     # RJ
-    for task in ["control", "imitation", "obfuscation", "special_english"]:
+    for task in ["no_protection", "imitation", "obfuscation", "special_english"]:
         _corpus_stat("rj", task)
     # EBG
     for task in ["no_protection", "imitation", "obfuscation"]:
@@ -74,6 +75,57 @@ def get_corpus_stats() -> None:
     # LCMC v.1.1-Interview
     for task in ["no_protection"]:
         _corpus_stat("lcmc", task)
+
+
+def load_corpus(corpus: str, task: str) -> Tuple[
+    List[str], np.ndarray, List[str], np.ndarray]:
+    """
+    Unified data loader that ensures consistent label encoding across different models.
+
+    Args:
+        corpus: One of ['rj', 'ebg', 'lcmc']
+        task: Task/condition to load
+            - RJ: ['no_protection', 'imitation', 'obfuscation', 'special_english']
+            - EBG: ['no_protection', 'imitation', 'obfuscation']
+            - LCMC: ['no_protection']
+
+    Returns:
+        Tuple containing:
+            - train_text: List[str] training texts
+            - train_label: np.ndarray encoded training labels (numerical indices)
+            - test_text: List[str] test texts
+            - test_label: np.ndarray encoded test labels (numerical indices)
+    """
+    # validate inputs
+    valid_corpora = {
+        'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
+        'ebg': ['no_protection', 'imitation', 'obfuscation'],
+        'lcmc': ['no_protection']
+    }
+
+    if corpus not in valid_corpora:
+        raise ValueError(f"Unknown corpus: {corpus}")
+    if task not in valid_corpora[corpus]:
+        raise ValueError(f"Unknown task '{task}' for corpus '{corpus}'")
+
+    # load raw data using specific data loaders
+    loaders = {
+        'rj': load_rj,
+        'ebg': load_ebg,
+        'lcmc': load_lcmc
+    }
+
+    train_text, train_labels_raw, test_text, test_labels_raw = loaders[corpus](task)
+
+    # encode labels for consistency
+    le = LabelEncoder()
+    all_labels = train_labels_raw + test_labels_raw
+    le.fit(all_labels)
+
+    train_label = le.transform(train_labels_raw)
+    test_label = le.transform(test_labels_raw)
+
+    return train_text, train_label, test_text, test_label
 
 
 def load_rj(
@@ -86,21 +138,21 @@ def load_rj(
     the cross-topic scenario of authorship attribution attacks.
 
     Args:
-        task: One of ['control', 'imitation', 'obfuscation', 'special_english'], which
-            corresponds to strategies 'no protection', '(manual) imitation', '(manual)
-            obfuscation', and '(manual) blandification', respectively.
+        task: One of ['no_protection', 'imitation', 'obfuscation', 'special_english'],
+            which corresponds to strategies 'no protection', '(manual) imitation',
+            '(manual) obfuscation', and '(manual) simplification', respectively.
         corpus_dir: Path to RJ corpus.
 
     Returns:
         Text/label of train/test sets.
     """
-    if task not in ["control", "imitation", "obfuscation", "special_english"]:
+    if task not in ["no_protection", "imitation", "obfuscation", "special_english"]:
         raise ValueError(f"Unknown task: {task}.")
 
     train_text, train_label, test_text, test_label = [], [], [], []
     authors = [
         f.name.split(".")[0]
-        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task))
+        for f in os.scandir(os.path.join(corpus_dir, "attacks_" + task if task != 'no_protection' else 'control'))
         if not f.name.startswith(".")
     ]
     # cfeec8 does not have training data
@@ -120,7 +172,6 @@ def load_rj(
         test_text.append(open(path, encoding=enc).read())
         test_label.append(author)
     return train_text, train_label, test_text, test_label
-
 
 
 def load_ebg(
@@ -487,7 +538,7 @@ def ndcg_score(y_true, y_pred_probs, k=None):
     return actual_dcg / ideal_dcg
 
 
-def evaluate_attribution_defense(y_true, y_pred_probs, pre_post="pre"):
+def evaluate_attribution_defense(y_true, y_pred_probs):
     """
     Evaluate effectiveness of authorship attribution defense with enhanced metrics.
 
@@ -496,8 +547,6 @@ def evaluate_attribution_defense(y_true, y_pred_probs, pre_post="pre"):
             True author labels
         y_pred_probs: array-like of shape (n_samples, n_authors)
             Predicted probabilities for each author
-        pre_post: str
-            Whether these are pre- or post-defense predictions
 
     Returns:
         dict: Dictionary containing various metrics
