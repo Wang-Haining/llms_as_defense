@@ -49,6 +49,7 @@ from typing import Dict, List
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model._sgd_fast import Regression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (FunctionTransformer, Normalizer,
                                    StandardScaler)
@@ -377,3 +378,83 @@ if __name__ == "__main__":
         )
 
     main(args)
+
+# ==================================================
+# Logistic Regression
+# ==================================================
+# 2025-01-15 21:38:56,993 - INFO - Processing corpus: rj
+# 2025-01-15 21:38:56,993 - INFO - Evaluating rj-no_protection
+# 2025-01-15 21:38:57,308 - INFO - Training logreg model...
+# 2025-01-15 21:39:09,275 - INFO - Results for rj-no_protection using logreg: accuracy=0.2857
+# 2025-01-15 21:39:09,275 - INFO - Model saved at: results/rj/no_protection/logreg/model, accuracy: 0.2857
+# 2025-01-15 21:39:09,276 - INFO - Evaluating rj-imitation
+# 2025-01-15 21:39:09,602 - INFO - Training logreg model...
+# 2025-01-15 21:39:17,540 - INFO - Results for rj-imitation using logreg: accuracy=0.1176
+# 2025-01-15 21:39:17,540 - INFO - Model saved at: results/rj/imitation/logreg/model, accuracy: 0.1176
+# 2025-01-15 21:39:17,540 - INFO - Evaluating rj-obfuscation
+# 2025-01-15 21:39:18,126 - INFO - Training logreg model...
+# 2025-01-15 21:39:34,574 - INFO - Results for rj-obfuscation using logreg: accuracy=0.0741
+# 2025-01-15 21:39:34,575 - INFO - Model saved at: results/rj/obfuscation/logreg/model, accuracy: 0.0741
+# 2025-01-15 21:39:34,575 - INFO - Evaluating rj-special_english
+# 2025-01-15 21:39:34,923 - INFO - Training logreg model...
+# 2025-01-15 21:39:43,552 - INFO - Results for rj-special_english using logreg: accuracy=0.1667
+# 2025-01-15 21:39:43,552 - INFO - Model saved at: results/rj/special_english/logreg/model, accuracy: 0.1667
+# 2025-01-15 21:39:43,552 - INFO - Processing corpus: ebg
+# 2025-01-15 21:39:43,552 - INFO - Evaluating ebg-no_protection
+# 2025-01-15 21:39:48,668 - INFO - Training logreg model...
+# 2025-01-15 21:40:21,793 - INFO - Results for ebg-no_protection using logreg: accuracy=0.6667
+# 2025-01-15 21:40:21,793 - INFO - Model saved at: results/ebg/no_protection/logreg/model, accuracy: 0.6667
+# 2025-01-15 21:40:21,794 - INFO - Evaluating ebg-imitation
+# 2025-01-15 21:40:26,566 - INFO - Training logreg model...
+# 2025-01-15 21:41:00,678 - INFO - Results for ebg-imitation using logreg: accuracy=0.0889
+# 2025-01-15 21:41:00,679 - INFO - Model saved at: results/ebg/imitation/logreg/model, accuracy: 0.0889
+# 2025-01-15 21:41:00,679 - INFO - Evaluating ebg-obfuscation
+# 2025-01-15 21:41:05,377 - INFO - Training logreg model...
+# 2025-01-15 21:41:39,734 - INFO - Results for ebg-obfuscation using logreg: accuracy=0.0222
+# 2025-01-15 21:41:39,734 - INFO - Model saved at: results/ebg/obfuscation/logreg/model, accuracy: 0.0222
+# 2025-01-15 21:41:39,735 - INFO - Processing corpus: lcmc
+# 2025-01-15 21:41:39,737 - INFO - Evaluating lcmc-no_protection
+# Loading saved LCMC no_protection.
+# 2025-01-15 21:41:39,743 - INFO - Training logreg model...
+# 2025-01-15 21:41:56,229 - INFO - Results for lcmc-no_protection using logreg: accuracy=0.2381
+# 2025-01-15 21:41:56,230 - INFO - Model saved at: results/lcmc/no_protection/logreg/model, accuracy: 0.2381
+
+# ==================================================
+# SVM
+# ==================================================
+# 2025-01-15 21:43:01,941 - INFO - Processing corpus: rj
+# 2025-01-15 21:43:01,941 - INFO - Evaluating rj-no_protection
+# 2025-01-15 21:43:02,123 - INFO - Training svm model...
+# 2025-01-15 21:43:22,474 - INFO - Results for rj-no_protection using svm: accuracy=0.2857
+# 2025-01-15 21:43:22,474 - INFO - Model saved at: results/rj/no_protection/svm/model, accuracy: 0.2857
+# 2025-01-15 21:43:22,474 - INFO - Evaluating rj-imitation
+# 2025-01-15 21:43:22,671 - INFO - Training svm model...
+# 2025-01-15 21:43:40,356 - INFO - Results for rj-imitation using svm: accuracy=0.1176
+# 2025-01-15 21:43:40,356 - INFO - Model saved at: results/rj/imitation/svm/model, accuracy: 0.1176
+# 2025-01-15 21:43:40,356 - INFO - Evaluating rj-obfuscation
+# 2025-01-15 21:43:40,651 - INFO - Training svm model...
+# 2025-01-15 21:44:08,752 - INFO - Results for rj-obfuscation using svm: accuracy=0.0000
+# 2025-01-15 21:44:08,752 - INFO - Model saved at: results/rj/obfuscation/svm/model, accuracy: 0.0000
+# 2025-01-15 21:44:08,753 - INFO - Evaluating rj-special_english
+# 2025-01-15 21:44:08,927 - INFO - Training svm model...
+# 2025-01-15 21:44:27,530 - INFO - Results for rj-special_english using svm: accuracy=0.2778
+# 2025-01-15 21:44:27,530 - INFO - Model saved at: results/rj/special_english/svm/model, accuracy: 0.2778
+# 2025-01-15 21:44:27,530 - INFO - Processing corpus: ebg
+# 2025-01-15 21:44:27,530 - INFO - Evaluating ebg-no_protection
+# 2025-01-15 21:44:32,686 - INFO - Training svm model...
+# 2025-01-15 21:45:20,419 - INFO - Results for ebg-no_protection using svm: accuracy=0.7778
+# 2025-01-15 21:45:20,419 - INFO - Model saved at: results/ebg/no_protection/svm/model, accuracy: 0.7778
+# 2025-01-15 21:45:20,419 - INFO - Evaluating ebg-imitation
+# 2025-01-15 21:45:25,211 - INFO - Training svm model...
+# 2025-01-15 21:46:15,686 - INFO - Results for ebg-imitation using svm: accuracy=0.0000
+# 2025-01-15 21:46:15,686 - INFO - Model saved at: results/ebg/imitation/svm/model, accuracy: 0.0000
+# 2025-01-15 21:46:15,686 - INFO - Evaluating ebg-obfuscation
+# 2025-01-15 21:46:20,409 - INFO - Training svm model...
+# 2025-01-15 21:47:09,869 - INFO - Results for ebg-obfuscation using svm: accuracy=0.1333
+# 2025-01-15 21:47:09,869 - INFO - Model saved at: results/ebg/obfuscation/svm/model, accuracy: 0.1333
+# 2025-01-15 21:47:09,869 - INFO - Processing corpus: lcmc
+# 2025-01-15 21:47:09,869 - INFO - Evaluating lcmc-no_protection
+# Loading saved LCMC no_protection.
+# 2025-01-15 21:47:09,875 - INFO - Training svm model...
+# 2025-01-15 21:47:31,809 - INFO - Results for lcmc-no_protection using svm: accuracy=0.1905
+# 2025-01-15 21:47:31,809 - INFO - Model saved at: results/lcmc/no_protection/svm/model, accuracy: 0.1905
