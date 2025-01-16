@@ -52,9 +52,6 @@ def grid_search_logreg(
     # define param grid
     param_grid = {
         "logreg__C": np.logspace(-4, 4, num=9),  # 1e-4 ~ 1e4
-        "logreg__solver": ["lbfgs", "newton-cg", "sag", "saga"],
-        "logreg__l1_ratio": [None, 0.1, 0.5, 0.9],  # None = no elastic net
-        "logreg__class_weight": [None, "balanced"],
     }
 
     # setup stratified k-fold
