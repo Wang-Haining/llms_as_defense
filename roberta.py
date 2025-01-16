@@ -14,6 +14,9 @@ from transformers import (
     TrainingArguments,
 )
 
+__author__ = 'hw56@indiana.edu'
+__license__ = 'OBSD'
+
 PROJECT_NAME = 'LLM as Defense'
 
 
@@ -251,12 +254,7 @@ class RobertaPredictor:
     """Utility class for making predictions with saved RoBERTa models"""
 
     def __init__(self, model_path: str):
-        """
-        Initialize predictor with a saved model
-
-        Args:
-            model_path: Path to directory containing saved model and metadata
-        """
+        """Initialize predictor with a saved model"""
         self.model_path = Path(model_path)
 
         # load metadata
@@ -273,16 +271,8 @@ class RobertaPredictor:
         self.model.to(self.device)
         self.model.eval()
 
-    def predict(self, texts: List[str]) -> np.ndarray:
-        """
-        Get probability predictions for texts
-
-        Args:
-            texts: List of texts to predict
-
-        Returns:
-            numpy array of prediction probabilities (n_samples, n_classes)
-        """
+    def predict_proba(self, texts):
+        """Get probability predictions for texts"""
         # tokenize
         encodings = self.tokenizer(
             texts,
@@ -298,7 +288,3 @@ class RobertaPredictor:
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
 
         return probs.cpu().numpy()
-
-    def predict_proba(self, texts: List[str]) -> np.ndarray:
-        """Alias for predict() to match sklearn interface"""
-        return self.predict(texts)
