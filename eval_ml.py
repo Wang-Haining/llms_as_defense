@@ -122,15 +122,18 @@ class MLModel:
             output_dir: str,
             save_path: str,
             model_type: str = "logreg",
-            corpus: str = None  # add corpus parameter
+            corpus: str = None
     ):
         self.output_dir = Path(output_dir)
         self.save_path = save_path
         self.model_type = model_type
         self.corpus = corpus
+        if corpus is not None:
+            self._initialize_pipeline(corpus)
 
-        # initialize model pipeline based on type with feature extraction included
-        if model_type == "logreg":
+    def _initialize_pipeline(self, corpus: str):
+        """Initialize the pipeline with appropriate parameters for the given corpus"""
+        if self.model_type == "logreg":
             # use corpus-specific parameters based on grid search results
             if corpus == 'rj':
                 logreg_params = {
