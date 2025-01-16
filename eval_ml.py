@@ -191,6 +191,13 @@ class MLModel:
                 ("classifier", SVC(**svm_params))
             ])
 
+    def set_corpus(self, corpus: str):
+        """Update pipeline with corpus-specific parameters"""
+        if corpus not in ['rj', 'ebg', 'lcmc']:
+            raise ValueError(f"unrecognized corpus type: {corpus}")
+        self.corpus = corpus
+        self._initialize_pipeline(corpus)
+
     def train_and_evaluate(
             self,
             train_text: List[str],
@@ -279,12 +286,11 @@ def evaluate_corpus_task(
 
 
 def main(args):
-    # initialize model with corpus information
+    # initialize model with default parameters
     model = MLModel(
         output_dir=args.output_dir,
         save_path=args.save_path,
-        model_type=args.model,
-        corpus=args.corpus
+        model_type=args.model
     )
 
     # determine what to evaluate
@@ -298,6 +304,8 @@ def main(args):
     # evaluate specified scenarios
     for corpus in corpora:
         logger.info(f"Processing corpus: {corpus}")
+        # update model parameters for current corpus
+        model.set_corpus(corpus)
 
         if args.task:
             if args.task not in CORPUS_TASK_MAP[corpus]:
