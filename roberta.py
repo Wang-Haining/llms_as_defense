@@ -226,9 +226,10 @@ class RobertaBest:
         wandb.finish()
 
         # save best overall model and its metadata
-        best_model_dir = exp_dir / f"best_model_seed{best_seed}_fold{best_fold}"
-        best_overall_model.save_pretrained(best_model_dir)
-        self.tokenizer.save_pretrained(best_model_dir)
+        model_dir = exp_dir / "model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        best_overall_model.save_pretrained(model_dir)
+        self.tokenizer.save_pretrained(model_dir)
 
         # save model metadata
         metadata = {
@@ -238,7 +239,7 @@ class RobertaBest:
             "model_name": self.model_name,
             "n_labels": len(np.unique(train_labels))
         }
-        with open(best_model_dir / "metadata.json", "w") as f:
+        with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
         # save predictions
@@ -249,11 +250,12 @@ class RobertaBest:
         )
 
         return {
-            "best_model_path": str(best_model_dir),
+            "model_path": str(model_dir),
             "best_seed": best_seed,
             "best_fold": best_fold,
             "best_val_metrics": best_overall_metrics
         }
+
 
 class RobertaPredictor:
     """Utility class for making predictions with saved RoBERTa models"""
