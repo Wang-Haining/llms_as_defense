@@ -8,6 +8,7 @@ __license__ = 'OBSD'
 
 import json
 import os
+import pickle
 import random
 import re
 from pathlib import Path
@@ -699,3 +700,45 @@ def evaluate_defense(pre_path: str, post_path: str) -> Dict:
         "post_metrics": post_metrics,
         "effectiveness": effectiveness
     }
+
+
+class LogisticRegressionPredictor:
+    """Utility class for making predictions with saved LogisticRegression models"""
+
+    def __init__(self, model_path: str):
+        """Initialize predictor with a saved model"""
+        self.model_path = Path(model_path)
+
+        # load metadata
+        with open(self.model_path / "metadata.json", "r") as f:
+            self.metadata = json.load(f)
+
+        # load model
+        with open(self.model_path / "model.pkl", "rb") as f:
+            self.model = pickle.load(f)
+
+    def predict_proba(self, texts):
+        """Get probability predictions for texts"""
+        features = vectorize_koppel512(texts)
+        return self.model.predict_proba(features)
+
+
+class SVMPredictor:
+    """Utility class for making predictions with saved SVM models"""
+
+    def __init__(self, model_path: str):
+        """Initialize predictor with a saved model"""
+        self.model_path = Path(model_path)
+
+        # load metadata
+        with open(self.model_path / "metadata.json", "r") as f:
+            self.metadata = json.load(f)
+
+        # load model
+        with open(self.model_path / "model.pkl", "rb") as f:
+            self.model = pickle.load(f)
+
+    def predict_proba(self, texts):
+        """Get probability predictions for texts"""
+        features = vectorize_writeprints_static(texts)
+        return self.model.predict_proba(features)
