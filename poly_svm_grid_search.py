@@ -1,4 +1,5 @@
 import json
+import json
 import logging
 from pathlib import Path
 from typing import Dict, Tuple
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_svm_pipeline() -> Pipeline:
-    """Create SVM pipeline with Writeprints-static features"""
+    """create SVM pipeline with writeprints-static features"""
     return Pipeline(
         [
             ("normalizer", Normalizer(norm="l1")),
@@ -31,43 +32,59 @@ def create_svm_pipeline() -> Pipeline:
 
 
 def grid_search_svm(
-        X_train: np.ndarray, y_train: np.ndarray, n_jobs: int = -1
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        n_jobs: int = -1
 ) -> Tuple[Dict, float]:
     """
-    Perform grid search for SVM parameters.
+    perform grid search for SVM parameters.
 
-    Args:
-        X_train: Training features
-        y_train: Training labels
-        n_jobs: Number of parallel jobs
+    args:
+        X_train: training features
+        y_train: training labels
+        n_jobs: number of parallel jobs
 
-    Returns:
-        best_params: Dictionary of best parameters
-        best_score: Best CV score
+    returns:
+        best_params: dictionary of best parameters
+        best_score: best CV score
     """
     pipeline = create_svm_pipeline()
 
-    # define param grid
+    # more granular param grid
     param_grid = {
-        "svm__C": np.logspace(-3, 3, num=7),  # 1e-3 ~ 1e3
-        "svm__degree": np.arange(2, 9),  # 2 ~ 8
-        "svm__coef0": [0, 1, 10, 100, 1000],
+        "svm__C": np.logspace(-4, 4, num=9),  # 1e-4 ~ 1e4
+        "svm__degree": [2, 3, 4],  # focus on lower degrees for efficiency
+        "svm__coef0": [0.0, 0.1, 1.0, 10.0, 100.0],
     }
 
-    # setup grid search with stratified k-fold
+    # setup stratified k-fold
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    # setup grid search
     grid_search = GridSearchCV(
         pipeline,
         param_grid,
-        cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=42),
+        cv=cv,
         scoring="accuracy",
         n_jobs=n_jobs,
         verbose=2,
+        return_train_score=True
     )
 
     # perform grid search
     grid_search.fit(X_train, y_train)
 
-    # convert NumPy types to native Python types in best_params
+    # log detailed results
+    cv_results = grid_search.cv_results_
+    for mean_score, std_score, params in zip(
+            cv_results['mean_test_score'],
+            cv_results['std_test_score'],
+            cv_results['params']
+    ):
+        logger.info(
+            f"CV accuracy: {mean_score:.3f} (+/- {std_score * 2:.3f}) for {params}")
+
+    # convert NumPy types to native Python types
     best_params = {
         key: int(value) if isinstance(value, np.integer) else
         float(value) if isinstance(value, np.floating) else value
@@ -78,35 +95,51 @@ def grid_search_svm(
 
 
 def optimize_svm_for_corpus(
-        corpus_name: str, data_loader, output_dir: Path, n_jobs: int = -1
+        corpus_name: str,
+        data_loader,
+        output_dir: Path,
+        n_jobs: int = -1
 ) -> Dict:
     """
-    Optimize SVM parameters for a specific corpus.
+    optimize SVM parameters for a specific corpus.
 
-    Args:
-        corpus_name: Name of the corpus
-        data_loader: Function to load corpus data
-        output_dir: Directory to save results
-        n_jobs: Number of parallel jobs
+    args:
+        corpus_name: name of the corpus
+        data_loader: function to load corpus data
+        output_dir: directory to save results
+        n_jobs: number of parallel jobs
 
-    Returns:
-        Dictionary with optimization results
+    returns:
+        dictionary with optimization results
     """
-    logger.info(f"Optimizing SVM for {corpus_name} corpus")
+    logger.info(f"optimizing SVM for {corpus_name} corpus")
 
-    # load data (use control/no_protection)
-    task = "control" if corpus_name == "rj" else "no_protection"
+    # load data (use control/no_protection baseline)
+    task = "no_protection"
     train_text, train_labels, test_text, test_labels = data_loader(task)
 
-    # convert labels to native Python types
-    train_labels = [int(label) if isinstance(label, np.integer) else label
-                    for label in train_labels]
-    test_labels = [int(label) if isinstance(label, np.integer) else label
-                   for label in test_labels]
+    # verify label consistency
+    train_unique = set(train_labels)
+    test_unique = set(test_labels)
+    if train_unique != test_unique:
+        logger.warning(
+            f"label mismatch! Train labels: {train_unique}, Test labels: {test_unique}")
 
-    # extract Writeprints-static features
+    logger.info(
+        f"data loaded - Train: {len(train_text)} samples, Test: {len(test_text)} samples")
+    logger.info(f"number of authors: {len(train_unique)}")
+
+    # extract writeprints-static features
     X_train = vectorize_writeprints_static(train_text)
     X_test = vectorize_writeprints_static(test_text)
+
+    logger.info(f"features extracted - Train: {X_train.shape}, Test: {X_test.shape}")
+
+    # check for zero features
+    zero_features_train = np.sum(X_train.sum(axis=0) == 0)
+    zero_features_test = np.sum(X_test.sum(axis=0) == 0)
+    logger.info(
+        f"zero features - Train: {zero_features_train}, Test: {zero_features_test}")
 
     # perform grid search
     best_params, cv_score = grid_search_svm(X_train, train_labels, n_jobs)
@@ -126,38 +159,21 @@ def optimize_svm_for_corpus(
         "n_authors": len(set(train_labels)),
         "n_train_samples": len(train_labels),
         "n_test_samples": len(test_labels),
+        "feature_dims": X_train.shape[1],
+        "zero_features_train": int(zero_features_train),
+        "zero_features_test": int(zero_features_test),
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(output_dir / f"{corpus_name.lower()}_svm_optimization.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    logger.info(f"Results for {corpus_name}:")
-    logger.info(f"Best parameters: {best_params}")
+    logger.info(f"results for {corpus_name}:")
+    logger.info(f"best parameters: {best_params}")
     logger.info(f"CV accuracy: {cv_score:.3f}")
-    logger.info(f"Test accuracy: {test_score:.3f}")
+    logger.info(f"test accuracy: {test_score:.3f}")
 
     return results
-
-
-def print_summary(all_results: Dict):
-    """Print a summary of optimization results for all corpora."""
-    logger.info("\n" + "=" * 50)
-    logger.info("OPTIMIZATION SUMMARY")
-    logger.info("=" * 50)
-
-    for corpus_name, results in all_results.items():
-        logger.info(f"\n{corpus_name.upper()} Corpus:")
-        logger.info(f"Best Parameters:")
-        for param, value in results["best_parameters"].items():
-            logger.info(f"  {param}: {value}")
-        logger.info(f"CV Accuracy: {results['cv_accuracy']:.3f}")
-        logger.info(f"Test Accuracy: {results['test_accuracy']:.3f}")
-        logger.info(f"Number of authors: {results['n_authors']}")
-        logger.info(f"Training samples: {results['n_train_samples']}")
-        logger.info(f"Test samples: {results['n_test_samples']}")
-
-    logger.info("\n" + "=" * 50)
 
 
 def main():
@@ -165,37 +181,60 @@ def main():
     output_dir = Path("results/optimization/svm")
 
     # define corpora
-    corpora = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
+    corpora = {
+        "rj": load_rj,
+        "ebg": load_ebg,
+        "lcmc": load_lcmc
+    }
 
     # optimize for each corpus
     all_results = {}
-    for corpus_name, data_loader in tqdm(corpora.items(), desc="Optimizing corpora"):
+    for corpus_name, data_loader in tqdm(corpora.items(), desc="optimizing corpora"):
         try:
             results = optimize_svm_for_corpus(
-                corpus_name=corpus_name, data_loader=data_loader, output_dir=output_dir
+                corpus_name=corpus_name,
+                data_loader=data_loader,
+                output_dir=output_dir,
+                n_jobs=-1  # use all cores
             )
             all_results[corpus_name] = results
         except Exception as e:
-            logger.error(f"Error optimizing {corpus_name}: {str(e)}")
-            raise  # Re-raise the exception to see the full traceback
+            logger.error(f"error optimizing {corpus_name}: {str(e)}")
+            raise  # re-raise to see full traceback
 
     # save combined results
     with open(output_dir / "all_optimization_results.json", "w") as f:
         json.dump(all_results, f, indent=2)
 
-    # print summary of results
-    print_summary(all_results)
+    # print summary
+    logger.info("\n" + "=" * 50)
+    logger.info("optimization summary")
+    logger.info("=" * 50)
+
+    for corpus_name, results in all_results.items():
+        logger.info(f"\n{corpus_name.upper()} corpus:")
+        logger.info(f"best parameters:")
+        for param, value in results["best_parameters"].items():
+            logger.info(f"  {param}: {value}")
+        logger.info(f"CV accuracy: {results['cv_accuracy']:.3f}")
+        logger.info(f"test accuracy: {results['test_accuracy']:.3f}")
+        logger.info(f"number of authors: {results['n_authors']}")
+        logger.info(f"training samples: {results['n_train_samples']}")
+        logger.info(f"test samples: {results['n_test_samples']}")
+        logger.info(f"feature dimensions: {results['feature_dims']}")
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Optimize poly SVM parameters for each corpus"
+        description="optimize SVM parameters for each corpus"
     )
     parser.add_argument(
-        "--n-jobs", type=int, default=-1,
-        help="Number of parallel jobs for grid search"
+        "--n-jobs",
+        type=int,
+        default=-1,
+        help="number of parallel jobs for grid search"
     )
     args = parser.parse_args()
 
