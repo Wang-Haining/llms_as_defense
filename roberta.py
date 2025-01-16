@@ -91,41 +91,40 @@ class RobertaBest:
             corpus: str,
             task: str,
     ) -> Dict:
-        """Train models with multiple seeds and CV, save best model"""
+        """Train models with multiple seeds and CV, save best model."""
         exp_dir = self.output_dir / corpus / task / "roberta"
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        best_overall_metrics = {'loss': float('inf'), 'accuracy': 0}
+        best_overall_metrics = {"loss": float("inf"), "accuracy": 0}
         best_overall_model = None
         best_overall_probs = None
         best_seed = None
         best_fold = None
 
-        # create descriptive experiment name
-        experiment_name = f"{corpus}_{task}"
-
-        # initialize wandb run with descriptive naming
-        wandb.init(
-            project=PROJECT_NAME,
-            group=f"{experiment_name}",
-            name=f"roberta_{experiment_name}",
-            tags=[corpus, task, "roberta", self.model_name],
-            config={
-                "model_type": "roberta",
-                "model_name": self.model_name,
-                "corpus": corpus,
-                "task": task,
-                "seeds": self.seeds,
-                "n_splits": self.n_splits,
-                "n_authors": len(np.unique(train_labels)),
-                "learning_rate": self.training_args.get('learning_rate', 3e-5),
-                "batch_size": self.training_args.get('batch_size', 32),
-                "num_epochs": self.training_args.get('num_epochs', 2000),
-                "warmup_steps": self.training_args.get('warmup_steps', 50),
-            },
-        )
+        experiment_group = f"{corpus}_{task}_roberta"
 
         for seed in self.seeds:
+            # start a new run for each seed
+            wandb.init(
+                project=PROJECT_NAME,
+                group=experiment_group,
+                name=f"roberta_{corpus}_{task}_seed_{seed}",
+                tags=[corpus, task, "roberta", self.model_name],
+                config={
+                    "model_type": "roberta",
+                    "model_name": self.model_name,
+                    "corpus": corpus,
+                    "task": task,
+                    "seed": seed,
+                    "n_splits": self.n_splits,
+                    "n_authors": len(np.unique(train_labels)),
+                    "learning_rate": self.training_args.get("learning_rate", 3e-5),
+                    "batch_size": self.training_args.get("batch_size", 32),
+                    "num_epochs": self.training_args.get("num_epochs", 100),
+                    "warmup_steps": self.training_args.get("warmup_steps", 20),
+                },
+            )
+
             # set all random seeds
             torch.manual_seed(seed)
             np.random.seed(seed)
@@ -135,7 +134,7 @@ class RobertaBest:
 
             for fold, (train_idx, val_idx) in enumerate(kf.split(train_text)):
                 # create a descriptive fold name
-                fold_name = f"seed_{seed}_fold_{fold}"
+                fold_name = f"fold_{fold}"
 
                 # prepare fold data
                 fold_train_text = [train_text[i] for i in train_idx]
@@ -159,18 +158,17 @@ class RobertaBest:
                 val_dataset = CommonDataset(val_encodings, fold_val_labels)
                 test_dataset = CommonDataset(test_encodings, test_labels)
 
-                # initialize model
+                # init model
                 model = RobertaForSequenceClassification.from_pretrained(
                     self.model_name,
                     num_labels=len(np.unique(train_labels))
                 ).to(self.device)
 
-                # train
                 trainer = Trainer(
                     model=model,
                     args=self.get_training_args(
-                        output_dir=str(exp_dir / fold_name),
-                        run_name=f"{experiment_name}_{fold_name}"
+                        output_dir=str(exp_dir / f"seed_{seed}_{fold_name}"),
+                        run_name=f"{corpus}_{task}_seed_{seed}_{fold_name}",
                     ),
                     train_dataset=train_dataset,
                     eval_dataset=val_dataset,
@@ -179,27 +177,25 @@ class RobertaBest:
 
                 trainer.train()
 
-                # evaluate
                 val_output = trainer.predict(val_dataset)
                 test_output = trainer.predict(test_dataset)
 
                 val_metrics = {
-                    'loss': val_output.metrics['test_loss'],
-                    'accuracy': np.mean(
+                    "loss": val_output.metrics["test_loss"],
+                    "accuracy": np.mean(
                         np.argmax(val_output.predictions, axis=1) == fold_val_labels
-                    )
+                    ),
                 }
 
-                # log metrics with more detailed context
-                wandb.log({
-                    'seed': seed,
-                    'fold': fold,
-                    'fold_name': fold_name,
-                    'val_loss': val_metrics['loss'],
-                    'val_accuracy': val_metrics['accuracy'],
-                    'epoch': trainer.state.epoch,
-                    'global_step': trainer.state.global_step,
-                })
+                wandb.log(
+                    {
+                        "fold_name": fold_name,
+                        "val_loss": val_metrics["loss"],
+                        "val_accuracy": val_metrics["accuracy"],
+                        "epoch": trainer.state.epoch,
+                        "global_step": trainer.state.global_step,
+                    }
+                )
 
                 # get test probabilities
                 test_probs = torch.nn.functional.softmax(
@@ -207,37 +203,31 @@ class RobertaBest:
                 ).numpy()
 
                 # update best overall model if better
-                if val_metrics['loss'] < best_overall_metrics['loss'] and \
-                        val_metrics['accuracy'] > best_overall_metrics['accuracy']:
+                if (
+                        val_metrics["loss"] < best_overall_metrics["loss"]
+                        and val_metrics["accuracy"] > best_overall_metrics["accuracy"]
+                ):
                     best_overall_metrics = val_metrics
                     best_overall_model = model
                     best_overall_probs = test_probs
                     best_seed = seed
                     best_fold = fold
 
-        # log final best model information
-        wandb.log({
-            'best_seed': best_seed,
-            'best_fold': best_fold,
-            'best_val_loss': best_overall_metrics['loss'],
-            'best_val_accuracy': best_overall_metrics['accuracy'],
-        })
+            # move on to the next seed
+            wandb.finish()
 
-        wandb.finish()
-
-        # save best overall model and its metadata
+        # save best overall model and metadata
         model_dir = exp_dir / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
         best_overall_model.save_pretrained(model_dir)
         self.tokenizer.save_pretrained(model_dir)
 
-        # save model metadata
         metadata = {
             "seed": best_seed,
             "fold": best_fold,
             "val_metrics": best_overall_metrics,
             "model_name": self.model_name,
-            "n_labels": len(np.unique(train_labels))
+            "n_labels": len(np.unique(train_labels)),
         }
         with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
@@ -246,14 +236,14 @@ class RobertaBest:
         np.savez(
             exp_dir / "predictions.npz",
             y_true=test_labels,
-            y_pred_probs=best_overall_probs
+            y_pred_probs=best_overall_probs,
         )
 
         return {
             "model_path": str(model_dir),
             "best_seed": best_seed,
             "best_fold": best_fold,
-            "best_val_metrics": best_overall_metrics
+            "best_val_metrics": best_overall_metrics,
         }
 
 
