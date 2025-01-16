@@ -235,3 +235,39 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main()
+
+
+# ==================================================
+# 2025-01-15 21:25:38,367 - INFO - OPTIMIZATION SUMMARY
+# ==================================================
+# 2025-01-15 21:25:38,368 - INFO -
+# RJ corpus:
+# 2025-01-15 21:25:38,368 - INFO - best parameters:
+# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 100.0
+# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.776
+# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.286
+# 2025-01-15 21:25:38,368 - INFO - number of authors: 21
+# 2025-01-15 21:25:38,368 - INFO - training samples: 254
+# 2025-01-15 21:25:38,368 - INFO - test samples: 21
+# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
+# 2025-01-15 21:25:38,368 - INFO -
+# EBG corpus:
+# 2025-01-15 21:25:38,368 - INFO - best parameters:
+# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 1.0
+# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.647
+# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.667
+# 2025-01-15 21:25:38,368 - INFO - number of authors: 45
+# 2025-01-15 21:25:38,368 - INFO - training samples: 654
+# 2025-01-15 21:25:38,368 - INFO - test samples: 45
+# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
+# 2025-01-15 21:25:38,368 - INFO -
+# LCMC corpus:
+# 2025-01-15 21:25:38,368 - INFO - best parameters:
+# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 0.01
+# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.585
+# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.238
+# 2025-01-15 21:25:38,368 - INFO - number of authors: 21
+# 2025-01-15 21:25:38,368 - INFO - training samples: 378
+# 2025-01-15 21:25:38,368 - INFO - test samples: 21
+# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
+# ==================================================
