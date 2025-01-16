@@ -104,8 +104,8 @@ def analyze_feature_shifts(corpus, normal_task='no_protection',
     features_mod_scaled = scaler.transform(features_mod)
 
     # Get unique authors that appear in both sets
-    normal_authors = set(test_labels_normal)
-    mod_authors = set(test_labels_mod)
+    normal_authors = set(np.unique(test_labels_normal))
+    mod_authors = set(np.unique(test_labels_mod))
     common_authors = normal_authors.intersection(mod_authors)
 
     print(f"Authors in normal: {len(normal_authors)}")
@@ -117,15 +117,14 @@ def analyze_feature_shifts(corpus, normal_task='no_protection',
     similarities = []
 
     for author in common_authors:
-        # Find this author's samples
-        normal_idx = test_labels_normal.index(
-            author) if author in test_labels_normal else None
-        mod_idx = test_labels_mod.index(author) if author in test_labels_mod else None
+        # Find this author's samples using numpy where
+        normal_idx = np.where(test_labels_normal == author)[0]
+        mod_idx = np.where(test_labels_mod == author)[0]
 
-        if normal_idx is not None and mod_idx is not None:
+        if len(normal_idx) > 0 and len(mod_idx) > 0:
             # Get features for this author
-            author_normal = features_normal_scaled[normal_idx]
-            author_mod = features_mod_scaled[mod_idx]
+            author_normal = features_normal_scaled[normal_idx[0]]
+            author_mod = features_mod_scaled[mod_idx[0]]
 
             # Calculate shift
             shift = np.abs(author_normal - author_mod)
@@ -156,7 +155,7 @@ def analyze_feature_shifts(corpus, normal_task='no_protection',
     return {
         "mean_shift": float(np.mean(all_shifts)),
         "max_shift": float(np.mean(np.max(all_shifts, axis=1))),
-        "feature_similarity": float(np.mean(similarities)),
+        "feature_similarity": float(np.mean(similarities)) if similarities else 0.0,
         "n_authors": len(all_shifts)
     }
 
@@ -165,10 +164,13 @@ print("Starting analysis...")
 results = {}
 for corpus in ['rj', 'ebg']:
     print(f"\n{'=' * 50}")
+    print(f"Analyzing corpus: {corpus}")
+
     # Compare no_protection vs obfuscation
     results[f"{corpus}_obfuscation"] = analyze_feature_shifts(
         corpus, 'no_protection', 'obfuscation'
     )
+
     # Compare no_protection vs imitation
     results[f"{corpus}_imitation"] = analyze_feature_shifts(
         corpus, 'no_protection', 'imitation'
