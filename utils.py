@@ -715,12 +715,20 @@ class LogisticRegressionPredictor:
 
         # load model
         with open(self.model_path / "model.pkl", "rb") as f:
-            self.model = pickle.load(f)
+            # model is a full pipeline including feature extraction and preprocessing
+            self.pipeline = pickle.load(f)
 
-    def predict_proba(self, texts):
-        """Get probability predictions for texts"""
-        features = vectorize_koppel512(texts)
-        return self.model.predict_proba(features)
+    def predict_proba(self, texts: List[str]) -> np.ndarray:
+        """
+        Get probability predictions for texts.
+
+        Args:
+            texts: List of raw text strings to predict on
+
+        Returns:
+            Numpy array of prediction probabilities (n_samples, n_classes)
+        """
+        return self.pipeline.predict_proba(texts)
 
 
 class SVMPredictor:
@@ -736,9 +744,17 @@ class SVMPredictor:
 
         # load model
         with open(self.model_path / "model.pkl", "rb") as f:
-            self.model = pickle.load(f)
+            # model is a full pipeline including feature extraction and preprocessing
+            self.pipeline = pickle.load(f)
 
-    def predict_proba(self, texts):
-        """Get probability predictions for texts"""
-        features = vectorize_writeprints_static(texts)
-        return self.model.predict_proba(features)
+    def predict_proba(self, texts: List[str]) -> np.ndarray:
+        """
+        Get probability predictions for texts.
+
+        Args:
+            texts: List of raw text strings to predict on
+
+        Returns:
+            Numpy array of prediction probabilities (n_samples, n_classes)
+        """
+        return self.pipeline.predict_proba(texts)

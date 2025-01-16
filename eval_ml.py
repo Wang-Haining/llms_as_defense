@@ -50,7 +50,8 @@ from typing import Dict, List
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import Normalizer, StandardScaler
+from sklearn.preprocessing import (FunctionTransformer, Normalizer,
+                                   StandardScaler)
 from sklearn.svm import SVC
 
 from utils import (load_corpus, vectorize_koppel512,
@@ -126,9 +127,10 @@ class MLModel:
         self.save_path = save_path
         self.model_type = model_type
 
-        # initialize model pipeline based on type
+        # initialize model pipeline based on type with feature extraction included
         if model_type == "logreg":
-            self.model = Pipeline([
+            self.pipeline = Pipeline([
+                ("features", FunctionTransformer(vectorize_koppel512)),
                 ("normalizer", Normalizer(norm="l1")),
                 ("scaler", StandardScaler()),
                 ("classifier", LogisticRegression(
@@ -137,9 +139,9 @@ class MLModel:
                     max_iter=5000
                 ))
             ])
-            self.vectorize = vectorize_koppel512
         else:  # svm
-            self.model = Pipeline([
+            self.pipeline = Pipeline([
+                ("features", FunctionTransformer(vectorize_writeprints_static)),
                 ("normalizer", Normalizer(norm="l1")),
                 ("scaler", StandardScaler()),
                 ("classifier", SVC(
@@ -152,7 +154,6 @@ class MLModel:
                     probability=True
                 ))
             ])
-            self.vectorize = vectorize_writeprints_static
 
     def train_and_evaluate(
             self,
@@ -167,23 +168,19 @@ class MLModel:
         exp_dir = self.output_dir / corpus / task / self.model_type
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        # extract features
-        X_train = self.vectorize(train_text)
-        X_test = self.vectorize(test_text)
-
         # train model
         logger.info(f"Training {self.model_type} model...")
-        self.model.fit(X_train, train_labels)
+        self.pipeline.fit(train_text, train_labels)
 
         # get predictions
-        test_probs = self.model.predict_proba(X_test)
+        test_probs = self.pipeline.predict_proba(test_text)
 
         # save model
         model_dir = exp_dir / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
 
         with open(model_dir / "model.pkl", "wb") as f:
-            pickle.dump(self.model, f)
+            pickle.dump(self.pipeline, f)
 
         # save metadata
         metadata = {
@@ -215,7 +212,6 @@ class MLModel:
             "model_path": str(model_dir),
             "accuracy": accuracy
         }
-
 
 def evaluate_corpus_task(
         model: MLModel,
