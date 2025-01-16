@@ -204,7 +204,7 @@ def main():
 
     # print summary
     logger.info("\n" + "=" * 50)
-    logger.info("optimization summary")
+    logger.info("OPTIMIZATION SUMMARY")
     logger.info("=" * 50)
 
     for corpus_name, results in all_results.items():
