@@ -121,38 +121,74 @@ class MLModel:
             self,
             output_dir: str,
             save_path: str,
-            model_type: str = "logreg"
+            model_type: str = "logreg",
+            corpus: str = None  # add corpus parameter
     ):
         self.output_dir = Path(output_dir)
         self.save_path = save_path
         self.model_type = model_type
+        self.corpus = corpus
 
         # initialize model pipeline based on type with feature extraction included
         if model_type == "logreg":
+            # use corpus-specific parameters based on grid search results
+            if corpus == 'rj':
+                logreg_params = {
+                    'C': 100.0,
+                    'solver': 'lbfgs',
+                    'max_iter': 5000,
+                }
+            elif corpus == 'ebg':
+                logreg_params = {
+                    'C': 1.0,
+                    'solver': 'lbfgs',
+                    'max_iter': 5000,
+                }
+            elif corpus == 'lcmc':
+                logreg_params = {
+                    'C': 0.01,
+                    'solver': 'lbfgs',
+                    'max_iter': 5000,
+                }
+            else:
+                raise ValueError(f"unrecognized corpus type: {corpus}")
+
             self.pipeline = Pipeline([
                 ("features", FunctionTransformer(vectorize_koppel512)),
                 ("normalizer", Normalizer(norm="l1")),
                 ("scaler", StandardScaler()),
-                ("classifier", LogisticRegression(
-                    C=1.0,
-                    solver="lbfgs",
-                    max_iter=5000
-                ))
+                ("classifier", LogisticRegression(**logreg_params))
             ])
         else:  # svm
+            # use corpus-specific parameters based on grid search results
+            if corpus in ['rj', 'ebg']:
+                svm_params = {
+                    'C': 0.0001,
+                    'kernel': 'poly',
+                    'degree': 3,
+                    'gamma': 'scale',
+                    'coef0': 100.0,
+                    'max_iter': -1,
+                    'probability': True
+                }
+            elif corpus == 'lcmc':
+                svm_params = {
+                    'C': 0.1,
+                    'kernel': 'poly',
+                    'degree': 2,
+                    'gamma': 'scale',
+                    'coef0': 10.0,
+                    'max_iter': -1,
+                    'probability': True
+                }
+            else:
+                raise ValueError(f"unrecognized corpus type: {corpus}")
+
             self.pipeline = Pipeline([
                 ("features", FunctionTransformer(vectorize_writeprints_static)),
                 ("normalizer", Normalizer(norm="l1")),
                 ("scaler", StandardScaler()),
-                ("classifier", SVC(
-                    C=0.1,
-                    kernel="poly",
-                    degree=2,
-                    gamma="scale",
-                    coef0=10,
-                    max_iter=-1,
-                    probability=True
-                ))
+                ("classifier", SVC(**svm_params))
             ])
 
     def train_and_evaluate(
@@ -213,6 +249,7 @@ class MLModel:
             "accuracy": accuracy
         }
 
+
 def evaluate_corpus_task(
         model: MLModel,
         corpus: str,
@@ -242,11 +279,12 @@ def evaluate_corpus_task(
 
 
 def main(args):
-    # initialize model
+    # initialize model with corpus information
     model = MLModel(
         output_dir=args.output_dir,
         save_path=args.save_path,
-        model_type=args.model
+        model_type=args.model,
+        corpus=args.corpus
     )
 
     # determine what to evaluate
@@ -280,7 +318,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate traditional ML models across different corpora and scenarios"
+        description="Evaluate traditional ML models across different corpora and tasks"
     )
     # corpus and task selection
     parser.add_argument(
