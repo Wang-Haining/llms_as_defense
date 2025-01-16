@@ -83,12 +83,14 @@ from utils import load_corpus
 
 def analyze_feature_shifts(corpus, normal_task='no_protection',
                            modified_task='obfuscation'):
-    """Analyze how features shift between normal and modified writing."""
+    """Analyze how features shift between normal and modified writing styles."""
     print(f"\nAnalyzing feature shifts for {corpus}")
 
-    # Load normal and modified texts
-    train_normal, labels_normal, test_normal, _ = load_corpus(corpus, normal_task)
-    train_mod, labels_mod, test_mod, _ = load_corpus(corpus, modified_task)
+    # Load data
+    train_normal, labels_normal, test_normal, test_labels_normal = load_corpus(corpus,
+                                                                               normal_task)
+    train_mod, labels_mod, test_mod, test_labels_mod = load_corpus(corpus,
+                                                                   modified_task)
 
     # Extract features
     vec = WriteprintsStatic()
@@ -101,24 +103,41 @@ def analyze_feature_shifts(corpus, normal_task='no_protection',
     features_normal_scaled = scaler.transform(features_normal)
     features_mod_scaled = scaler.transform(features_mod)
 
+    # Get unique authors that appear in both sets
+    normal_authors = set(test_labels_normal)
+    mod_authors = set(test_labels_mod)
+    common_authors = normal_authors.intersection(mod_authors)
+
+    print(f"Authors in normal: {len(normal_authors)}")
+    print(f"Authors in modified: {len(mod_authors)}")
+    print(f"Common authors: {len(common_authors)}")
+
     # Compare distributions per author
     all_shifts = []
-    for author in np.unique(labels_normal):
-        # Find this author's samples
-        normal_idx = np.where(labels_normal == author)[0]
-        mod_idx = np.where(labels_mod == author)[0]
+    similarities = []
 
-        if len(normal_idx) > 0 and len(mod_idx) > 0:
+    for author in common_authors:
+        # Find this author's samples
+        normal_idx = test_labels_normal.index(
+            author) if author in test_labels_normal else None
+        mod_idx = test_labels_mod.index(author) if author in test_labels_mod else None
+
+        if normal_idx is not None and mod_idx is not None:
             # Get features for this author
-            author_normal = features_normal_scaled[normal_idx[0]]
-            author_mod = features_mod_scaled[mod_idx[0]]
+            author_normal = features_normal_scaled[normal_idx]
+            author_mod = features_mod_scaled[mod_idx]
 
             # Calculate shift
             shift = np.abs(author_normal - author_mod)
             all_shifts.append(shift)
 
+            # Calculate similarity
+            sim = np.corrcoef(author_normal, author_mod)[0, 1]
+            similarities.append(sim)
+
     all_shifts = np.array(all_shifts)
 
+    print(f"\nAnalysis Results:")
     print(f"Number of authors analyzed: {len(all_shifts)}")
     print(f"Average absolute shift: {np.mean(all_shifts):.3f}")
     print(f"Max shift per author (mean): {np.mean(np.max(all_shifts, axis=1)):.3f}")
@@ -130,23 +149,19 @@ def analyze_feature_shifts(corpus, normal_task='no_protection',
     for idx in reversed(top_indices):
         print(f"Feature {idx}: {mean_shifts[idx]:.3f}")
 
-    # Calculate feature similarity per author
-    similarities = []
-    for shift in all_shifts:
-        sim = np.corrcoef(features_normal.flatten(), features_mod.flatten())[0, 1]
-        similarities.append(sim)
-    print(f"\nMean feature similarity: {np.mean(similarities):.3f}")
-    print(f"Std feature similarity: {np.std(similarities):.3f}")
+    print(f"\nFeature Similarities:")
+    print(f"Mean similarity: {np.mean(similarities):.3f}")
+    print(f"Std similarity: {np.std(similarities):.3f}")
 
     return {
-        "mean_shift": np.mean(all_shifts),
-        "max_shift": np.mean(np.max(all_shifts, axis=1)),
-        "feature_similarity": np.mean(similarities),
+        "mean_shift": float(np.mean(all_shifts)),
+        "max_shift": float(np.mean(np.max(all_shifts, axis=1))),
+        "feature_similarity": float(np.mean(similarities)),
         "n_authors": len(all_shifts)
     }
 
 
-# Run analysis for each corpus
+print("Starting analysis...")
 results = {}
 for corpus in ['rj', 'ebg']:
     print(f"\n{'=' * 50}")
@@ -158,3 +173,9 @@ for corpus in ['rj', 'ebg']:
     results[f"{corpus}_imitation"] = analyze_feature_shifts(
         corpus, 'no_protection', 'imitation'
     )
+
+print("\nFinal Summary:")
+for task, result in results.items():
+    print(f"\n{task}:")
+    for metric, value in result.items():
+        print(f"  {metric}: {value}")
