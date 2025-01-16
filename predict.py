@@ -1,4 +1,3 @@
-# predict.py
 """
 Make predictions using saved authorship attribution models.
 
@@ -9,9 +8,17 @@ The script will automatically detect the model type from metadata.json and use t
 appropriate predictor class.
 
 Models can be:
-- LogisticRegression (uses Koppel512 features)
-- SVM (uses Writeprints-static features)
-- RoBERTa (uses raw text)
+- LogisticRegression
+- SVM
+- RoBERTa
+
+All models take raw texts as input and output probability distributions over authors.
+
+Output:
+    The script saves a .npz file containing:
+    - texts: List of input texts
+    - predictions: numpy array of shape (n_texts, n_authors) containing probability
+                  distributions over authors for each text
 """
 
 __author__ = 'hw56@indiana.edu'
@@ -24,8 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
-from utils import LogisticRegressionPredictor, SVMPredictor
 from roberta import RobertaPredictor
+from utils import LogisticRegressionPredictor, SVMPredictor
 
 # setup logging
 logging.basicConfig(
@@ -45,14 +52,14 @@ def get_predictor(model_dir: str):
     """Load appropriate predictor based on model type in metadata"""
     model_dir = Path(model_dir)
 
-    # Read metadata to determine model type
+    # read metadata to determine model type
     with open(model_dir / "metadata.json", "r") as f:
         metadata = json.load(f)
 
     model_type = metadata.get("model_type",
                               "roberta")  # default to roberta if not specified
 
-    # Initialize appropriate predictor
+    # initialize appropriate predictor
     if model_type == "logreg":
         return LogisticRegressionPredictor(model_dir)
     elif model_type == "svm":
