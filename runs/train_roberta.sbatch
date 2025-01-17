@@ -16,4 +16,4 @@ module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 . .venv/bin/activate
 
-python -m train_roberta
+CUDA_VISIBLE_DEVICES=0 python -m train_roberta
