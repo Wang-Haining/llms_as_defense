@@ -14,7 +14,7 @@ Usage:
 from collections import Counter
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from ..utils import load_corpus
+from utils import load_corpus
 from writeprints_static import WriteprintsStatic
 
 def debug_label_mapping(train_text, train_labels, test_text, test_labels, task):
