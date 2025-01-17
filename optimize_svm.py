@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_svm_pipeline() -> Pipeline:
-    """create SVM pipeline with writeprints-static features"""
+    """Create SVM pipeline with writeprints-static features"""
     return Pipeline(
         [
             ("normalizer", Normalizer(norm="l1")),
@@ -37,14 +37,14 @@ def grid_search_svm(
         n_jobs: int = -1
 ) -> Tuple[Dict, float]:
     """
-    perform grid search for SVM parameters.
+    Perform grid search for SVM parameters.
 
-    args:
+    Args:
         X_train: training features
         y_train: training labels
         n_jobs: number of parallel jobs
 
-    returns:
+    Returns:
         best_params: dictionary of best parameters
         best_score: best CV score
     """
@@ -101,15 +101,15 @@ def optimize_svm_for_corpus(
         n_jobs: int = -1
 ) -> Dict:
     """
-    optimize SVM parameters for a specific corpus.
+    Optimize SVM parameters for a specific corpus.
 
-    args:
+    Args:
         corpus_name: name of the corpus
         data_loader: function to load corpus data
         output_dir: directory to save results
         n_jobs: number of parallel jobs
 
-    returns:
+    Returns:
         dictionary with optimization results
     """
     logger.info(f"optimizing SVM for {corpus_name} corpus")
@@ -199,7 +199,7 @@ def main():
             )
             all_results[corpus_name] = results
         except Exception as e:
-            logger.error(f"error optimizing {corpus_name}: {str(e)}")
+            logger.error(f"Error optimizing {corpus_name}: {str(e)}")
             raise  # re-raise to see full traceback
 
     # save combined results
@@ -228,13 +228,13 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="optimize SVM parameters for each corpus"
+        description="Optimize SVM parameters for each corpus"
     )
     parser.add_argument(
         "--n-jobs",
         type=int,
         default=-1,
-        help="number of parallel jobs for grid search"
+        help="Number of parallel jobs for grid search"
     )
     args = parser.parse_args()
 
