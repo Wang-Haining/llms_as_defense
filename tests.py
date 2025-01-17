@@ -7,7 +7,7 @@ shifts, and stylistic modifications using machine learning techniques. It includ
 
 
 Usage:
-    python -m tests.debug
+    python -m tests
 
 """
 
