@@ -1,23 +1,14 @@
 {
     "description": "Testing basic paraphrasing instructions for defense against authorship attribution",
-    "prompts": {
-        "local": {
-            "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
-            "user": "Please paraphrase the following text while maintaining its core meaning:\n\n{{text}}\n\nProvide your paraphrase between [REWRITE] and [/REWRITE] tags.",
-            "use_examples": false,
-            "use_cot": false
-        },
-        "anthropic": {
-            "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
-            "user": "Please paraphrase the following text while maintaining its core meaning:\n\n{{text}}\n\nProvide your paraphrase between [REWRITE] and [/REWRITE] tags.",
-            "use_examples": false,
-            "use_cot": false
-        },
-        "openai": {
-            "system": "You are a helpful writing assistant that paraphrases text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
-            "user": "Please paraphrase the following text while maintaining its core meaning:\n\n{{text}}\n\nProvide your paraphrase between [REWRITE] and [/REWRITE] tags.",
-            "use_examples": false,
-            "use_cot": false
-        }
-    }
+    "instruction": {
+        "task": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning.",
+        "format": "Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags."
+    },
+    "input": {
+        "prefix": "Please paraphrase the following text while maintaining its core meaning:",
+        "content_placeholder": "{{text}}",
+        "suffix": "Provide your paraphrase between [REWRITE] and [/REWRITE] tags."
+    },
+    "use_examples": false,
+    "use_cot": false
 }

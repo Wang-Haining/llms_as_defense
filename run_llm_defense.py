@@ -99,6 +99,7 @@ class ExperimentConfig:
     temperature: float = 0.7
     max_tokens: int = 4096
     num_seeds: int = 5
+    debug: bool = False
 
     @classmethod
     def from_args(cls, args):
@@ -112,19 +113,19 @@ class ExperimentConfig:
             provider=args.provider,
             temperature=args.temperature,
             max_tokens=args.max_tokens,
-            num_seeds=args.num_seeds
+            num_seeds=args.num_seeds,
+            debug=args.debug
         )
 
 
 class PromptTemplate(BaseModel):
-    """Schema for prompt templates loaded from JSON."""
-    system: Optional[str]
-    user: str
+    """Schema for model-agnostic prompt templates."""
+    instruction: Dict[str, str]  # task and format instructions
+    input: Dict[str, str]  # prefix, content_placeholder, suffix
     examples: Optional[List[Dict[str, str]]] = None
     cot_template: Optional[str] = None
     use_examples: bool = False
     use_cot: bool = False
-    format: Optional[Dict[str, Any]] = None
 
 
 class ModelManager:
@@ -165,6 +166,20 @@ class ModelManager:
         self.model_family = self._detect_model_family()
         self.model = self._initialize_model()
         self.retry_seeds = list(range(1, MAX_RETRIES + 1))
+
+    def _assemble_prompt(self, prompt: PromptTemplate, text: str) -> PromptTemplate:
+        """Assemble model-specific prompt from template."""
+        system = f"{prompt.instruction['task']} {prompt.instruction['format']}"
+        user = (f"{prompt.input['prefix']}\n\n"
+                f"{text}\n\n"
+                f"{prompt.input['suffix']}")
+
+        return PromptTemplate(
+            system=system,
+            user=user,
+            use_examples=prompt.use_examples,
+            use_cot=prompt.use_cot
+        )
 
     def _get_api_key(self) -> Optional[str]:
         """Get appropriate API key from environment."""
@@ -269,53 +284,26 @@ class ModelManager:
             f"Must be one of: llama, mistral, olmo, or gemma family."
         )
 
-    def _format_local_model_prompt(self, prompt: PromptTemplate,
-                                   model_family: str) -> str:
-        """
-        Format prompt for locally hosted models (llama, mistral, olmo, gemma).
-
-        Args:
-            prompt: Prompt template to format
-            model_family: Model family name (must be in PROMPT_TEMPLATES)
-
-        Returns:
-            Formatted prompt string
-
-        Raises:
-            ModelInitError: If model family is not supported
-        """
-        if model_family not in self.PROMPT_TEMPLATES:
-            raise ModelInitError(f"Unsupported model family: {model_family}")
-
-        templates = self.PROMPT_TEMPLATES[model_family]
-
-        if prompt.system:
-            return templates["chat"].format(
-                system=prompt.system,
-                sep=templates["system_sep"],
-                user=prompt.user
-            )
-        return templates["no_system"].format(user=prompt.user)
 
     def _format_prompt(self, prompt: PromptTemplate) -> Union[
         str, List[Dict[str, str]]]:
-        """Format prompt based on provider requirements."""
+        """Format assembled prompt for specific provider."""
         if self.config.provider == "anthropic":
-            if prompt.system:
-                content = f"{prompt.system}\n\n{prompt.user}"
-            else:
-                content = prompt.user
-            return f"{anthropic.HUMAN_PROMPT} {content}{anthropic.AI_PROMPT}"
+            return f"{anthropic.HUMAN_PROMPT} {prompt.system}\n\n{prompt.user}{anthropic.AI_PROMPT}"
 
         elif self.config.provider == "openai":
-            messages = []
-            if prompt.system:
-                messages.append({"role": "system", "content": prompt.system})
-            messages.append({"role": "user", "content": prompt.user})
-            return messages
+            return [
+                {"role": "system", "content": prompt.system},
+                {"role": "user", "content": prompt.user}
+            ]
 
-        else:  # for local models
-            return self._format_local_model_prompt(prompt, self.model_family)
+        # use templates for local models
+        templates = self.PROMPT_TEMPLATES[self.model_family]
+        return templates["chat" if prompt.system else "no_system"].format(
+            system=prompt.system,
+            sep=templates["system_sep"],
+            user=prompt.user
+        )
 
     async def _generate_with_provider(
             self,
@@ -323,6 +311,9 @@ class ModelManager:
     ) -> Optional[str]:
         """Generate text using appropriate provider."""
         try:
+            if self.config.debug:
+                logger.info(f"Raw input to model:\n{formatted_prompt}")
+
             if self.config.provider == "anthropic":
                 client = anthropic.Client(api_key=self._api_key)
                 response = client.messages.create(
@@ -331,7 +322,7 @@ class ModelManager:
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature
                 )
-                return response.content[0].text
+                response = response.content[0].text
 
             elif self.config.provider == "openai":
                 client = openai.OpenAI(api_key=self._api_key)
@@ -341,7 +332,7 @@ class ModelManager:
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature
                 )
-                return response.choices[0].message.content
+                response = response.choices[0].message.content
 
             else:  # local models
                 sampling_params = SamplingParams(
@@ -349,7 +340,12 @@ class ModelManager:
                     max_tokens=self.config.max_tokens
                 )
                 response = self.model.generate(formatted_prompt, sampling_params)
-                return response[0].outputs[0].text
+                response = response[0].outputs[0].text
+
+            if response and self.config.debug:
+                logger.info(f"Raw model output:\n{response}")
+
+            return response
 
         except Exception as e:
             raise APIError(f"Generation failed: {str(e)}")
@@ -380,22 +376,23 @@ class ModelManager:
             logger.warning(f"Rewrite too short: {len(rewrite.split())} words")
             return None
 
+        if self.config.debug and rewrite:
+            logger.info(f"Extracted rewrite:\n{rewrite}")
+
         return rewrite
 
     async def generate_with_validation(
             self,
-            prompt: PromptTemplate
+            prompt: PromptTemplate,
+            text: str
     ) -> Tuple[Optional[str], Optional[str], int]:
         """
         Generate response with validation and exponential backoff retries.
-
-        Args:
-            prompt: Prompt template to use
-
-        Returns:
-            Tuple of (raw_response, validated_rewrite, used_seed)
         """
-        formatted_prompt = self._format_prompt(prompt)
+        # convert from instruction/input format to system/user format
+        assembled_prompt = self._assemble_prompt(prompt, text)
+        # format for specific model
+        formatted_prompt = self._format_prompt(assembled_prompt)
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -488,7 +485,7 @@ class ExperimentManager:
             Dict containing results from all generation runs
         """
 
-        # Use only the specified number of seeds
+        # use only the specified number of seeds
         selected_seeds = FIXED_SEEDS[:self.config.num_seeds]
 
         async def process_batch(batch_idx: int) -> Dict:
@@ -618,7 +615,11 @@ async def main():
         default=5,
         help='Number of predefined seeds to use (max 10)'
     )
-
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging for model inputs and outputs'
+    )
     args = parser.parse_args()
 
     try:
