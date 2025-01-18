@@ -13,6 +13,7 @@
 
 module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
+source ~/.bashrc
 . .venv/bin/activate
 
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
