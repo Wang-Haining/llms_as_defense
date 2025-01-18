@@ -2,6 +2,20 @@
 LLM-based defense against authorship attribution attacks. Implements a framework to
 evaluate different LLMs' effectiveness in defending against authorship attribution
 attacks. Supports multiple research questions (RQ1-RQ3) and various LLM backends.
+
+Directory structure for sample models:
+llm_outputs/
+├── rj/
+│   └── RQ1/
+│       └── RQ1.1/
+│           ├── gemma-2-9b-it/           # from google/gemma-2-9b-it
+│           │   ├── experiment_config.json
+│           │   ├── seed_93187.json
+│           │   └── seed_95617.json
+│           └── llama-3.1-8b-instruct/    # from meta-llama/Llama-3.1-8B-Instruct
+│               ├── experiment_config.json
+│               ├── seed_93187.json
+│               └── seed_95617.json
 """
 
 import argparse
@@ -422,8 +436,12 @@ class ExperimentManager:
 
     def _setup_output_dirs(self) -> Path:
         """Setup output directory structure."""
+        # use the base model name (after last /)
+        model_name = self.config.model_name.split('/')[-1].lower()
+
         base_dir = Path(self.config.output_dir) / self.config.corpus / \
-                   self.config.research_question / self.config.sub_question
+                   self.config.research_question / self.config.sub_question / \
+                   model_name
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
