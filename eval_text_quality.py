@@ -7,8 +7,6 @@ Key metrics:
 - METEOR: Metric incorporating synonyms and paraphrases
 - BERTScore: Contextual semantic similarity using BERT
 
-References:
-Chen & Dolan (2011) "Collecting Highly Parallel Data for Paraphrase Evaluation"
 """
 
 import logging
