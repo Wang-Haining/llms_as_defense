@@ -19,7 +19,6 @@ module load CUDA/12.2.0
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus ebg \
 --rq rq1.1_basic_paraphrase \
---batch_size 16 \
 --model "google/gemma-2-9b-it" \
 --provider local \
 --temperature 0.7 \
@@ -30,7 +29,6 @@ sleep 30
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus rj \
 --rq rq1.1_basic_paraphrase \
---batch_size 16 \
 --model "google/gemma-2-9b-it" \
 --provider local \
 --temperature 0.7 \
@@ -41,7 +39,6 @@ sleep 30
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
 --rq rq1.1_basic_paraphrase \
---batch_size 16 \
 --model "google/gemma-2-9b-it" \
 --provider local \
 --temperature 0.7 \
