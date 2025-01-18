@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --temperature 0.7 \
 --max_tokens 2048 \
 --num_seeds 2
-
+sleep 30
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus rj \
 --rq rq1.1_basic_paraphrase \
@@ -35,7 +35,7 @@ CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --temperature 0.7 \
 --max_tokens 2048 \
 --num_seeds 1
-
+sleep 30
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
 --rq rq1.1_basic_paraphrase \
