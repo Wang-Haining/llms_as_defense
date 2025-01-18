@@ -27,7 +27,7 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import anthropic
 import openai
@@ -118,68 +118,111 @@ class ExperimentConfig:
         )
 
 
-class PromptTemplate(BaseModel):
-    """Schema for model-agnostic prompt templates."""
-    instruction: Dict[str, str]  # task and format instructions
-    input: Dict[str, str]  # prefix, content_placeholder, suffix
-    examples: Optional[List[Dict[str, str]]] = None
-    cot_template: Optional[str] = None
+class ProviderConfig(BaseModel):
+    """Schema for provider-specific prompt configuration."""
+    system: str
+    user: str
     use_examples: bool = False
     use_cot: bool = False
 
 
+class PromptTemplate(BaseModel):
+    """Schema for model-agnostic prompt templates."""
+    description: str
+    instruction: Dict[str, str]  # system and user instructions
+    use_examples: bool = False
+    use_cot: bool = False
+
+    def get_instruction(self) -> Dict[str, str]:
+        """Get core instruction configuration."""
+        return self.instruction
+
+
+class PromptManager:
+    """Manages prompt formatting and validation for different providers."""
+
+    def __init__(self, config: ExperimentConfig):
+        """Initialize prompt manager with experiment configuration."""
+        self.config = config
+
+    def format_prompt(self, template: PromptTemplate, text: str) -> Union[
+        str, List[Dict[str, str]]]:
+        """Format provider-specific prompt from model-agnostic template."""
+        # get the core instructions
+        instruction = template.get_instruction()
+
+        # replace placeholder with actual text
+        user_prompt = instruction["user"].replace("{{text}}", text)
+
+        if self.config.provider == "anthropic":
+            return (f"{anthropic.HUMAN_PROMPT} {instruction['system']}\n\n"
+                    f"{user_prompt}{anthropic.AI_PROMPT}")
+
+        elif self.config.provider == "openai":
+            return [
+                {"role": "system", "content": instruction["system"]},
+                {"role": "user", "content": user_prompt}
+            ]
+
+        else:  # local models
+            if "llama" in self.config.model_name.lower():
+                return f"<s>[INST] {instruction['system']}\n\n{user_prompt} [/INST]"
+            elif "mistral" in self.config.model_name.lower():
+                return f"<s>[INST] {instruction['system']}\n\n{user_prompt} [/INST]"
+            elif "olmo" in self.config.model_name.lower():
+                return f"Human: {instruction['system']}\n\n{user_prompt}\n\nAssistant:"
+            elif "gemma" in self.config.model_name.lower():
+                return f"Human: {instruction['system']}\n\n{user_prompt}\n\nAssistant:"
+            else:
+                raise ValueError(f"Unsupported local model: {self.config.model_name}")
+
+
+
+
 class ModelManager:
-    """
-    Manages interactions with different LLM backends.
-
-    Handles model initialization, API communication, and generation with retries.
-    Includes proper prompt formatting for different model families.
-    """
-
-    # model family specific templates
-    PROMPT_TEMPLATES = {
-        "llama": {
-            "chat": "<s>[INST] {system}{sep}{user} [/INST]",
-            "system_sep": "\n\n",
-            "no_system": "<s>[INST] {user} [/INST]"
-        },
-        "mistral": {
-            "chat": "<s>[INST] {system}{sep}{user} [/INST]",
-            "system_sep": "\n\n",
-            "no_system": "<s>[INST] {user} [/INST]"
-        },
-        "olmo": {
-            "chat": "Human: {system}{sep}{user}\n\nAssistant:",
-            "system_sep": "\n\n",
-            "no_system": "Human: {user}\n\nAssistant:"
-        },
-        "gemma": {
-            "chat": "Human: {system}{sep}{user}\n\nAssistant:",
-            "system_sep": "\n\n",
-            "no_system": "Human: {user}\n\nAssistant:"
-        }
-    }
-
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self._api_key = self._get_api_key()
-        self.model_family = self._detect_model_family()
         self.model = self._initialize_model()
+        self.prompt_manager = PromptManager(config)
         self.retry_seeds = list(range(1, MAX_RETRIES + 1))
 
-    def _assemble_prompt(self, prompt: PromptTemplate, text: str) -> PromptTemplate:
-        """Assemble model-specific prompt from template."""
-        system = f"{prompt.instruction['task']} {prompt.instruction['format']}"
-        user = (f"{prompt.input['prefix']}\n\n"
-                f"{text}\n\n"
-                f"{prompt.input['suffix']}")
+    async def generate_with_validation(
+            self,
+            prompt: PromptTemplate,
+            text: str
+    ) -> Tuple[Optional[str], Optional[str], int]:
+        """Generate response with validation and retries."""
+        formatted_prompt = self.prompt_manager.format_prompt(prompt, text)
 
-        return PromptTemplate(
-            system=system,
-            user=user,
-            use_examples=prompt.use_examples,
-            use_cot=prompt.use_cot
-        )
+        for attempt in range(MAX_RETRIES):
+            try:
+                if attempt > 0:
+                    delay = BASE_RETRY_DELAY * (2 ** (attempt - 1))
+                    jitter = random.uniform(0, 1)
+                    await asyncio.sleep(delay + jitter)
+
+                used_seed = self.retry_seeds[attempt]
+                random.seed(used_seed)
+
+                if self.config.debug:
+                    logger.info(f"Raw input to model:\n{formatted_prompt}")
+
+                response = await self._generate_with_provider(formatted_prompt)
+
+                if response:
+                    rewrite = self._validate_and_extract(response)
+                    if rewrite:
+                        return response, rewrite, used_seed
+
+            except APIError as e:
+                logger.warning(f"API error on attempt {attempt + 1}: {str(e)}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+                break
+
+        raise GenerationError("Failed to generate valid response after max retries")
 
     def _get_api_key(self) -> Optional[str]:
         """Get appropriate API key from environment."""
@@ -284,71 +327,80 @@ class ModelManager:
             f"Must be one of: llama, mistral, olmo, or gemma family."
         )
 
+    async def _generate_with_openai(self, formatted_prompt: list) -> str:
+        """
+        Make a request to OpenAI's ChatCompletion endpoint using the official openai
+        library.
+        """
+        openai.api_key = self._api_key
+        try:
+            resp = openai.ChatCompletion.create(
+                model=self.config.model_name,
+                # e.g. "gpt4o", "o1", or a standard "gpt-4"
+                messages=formatted_prompt,
+                max_tokens=self.config.max_tokens,
+                temperature=self.config.temperature
+            )
+            # 3. The main text is in resp.choices[0].message.content
+            return resp.choices[0].message.content
+        except openai.error.OpenAIError as e:
+            raise APIError(f"OpenAI API error: {str(e)}")
 
-    def _format_prompt(self, prompt: PromptTemplate) -> Union[
-        str, List[Dict[str, str]]]:
-        """Format assembled prompt for specific provider."""
-        if self.config.provider == "anthropic":
-            return f"{anthropic.HUMAN_PROMPT} {prompt.system}\n\n{prompt.user}{anthropic.AI_PROMPT}"
+    async def _generate_with_anthropic(self, formatted_prompt: str) -> str:
+        """
+        Make a request to Anthropic's Claude models using the official anthropic library.
+        """
+        client = anthropic.Client(api_key=self._api_key)
 
-        elif self.config.provider == "openai":
-            return [
-                {"role": "system", "content": prompt.system},
-                {"role": "user", "content": prompt.user}
-            ]
+        prompt = f"{anthropic.HUMAN_PROMPT}{formatted_prompt}{anthropic.AI_PROMPT}"
 
-        # use templates for local models
-        templates = self.PROMPT_TEMPLATES[self.model_family]
-        return templates["chat" if prompt.system else "no_system"].format(
-            system=prompt.system,
-            sep=templates["system_sep"],
-            user=prompt.user
-        )
+        try:
+            resp = client.completions.create(
+                model=self.config.model_name,
+                # e.g. "claude-2", "claude-3-5-sonnet-20241022"
+                prompt=prompt,
+                max_tokens_to_sample=self.config.max_tokens,
+                temperature=self.config.temperature
+            )
+            # 4. The main text generation is under resp.completion
+            return resp.completion
+        except anthropic.APIStatusError as e:
+            raise APIError(f"Anthropic API error: {str(e)}")
 
     async def _generate_with_provider(
             self,
             formatted_prompt: Union[str, List[Dict[str, str]]]
     ) -> Optional[str]:
-        """Generate text using appropriate provider."""
-        try:
-            if self.config.debug:
-                logger.info(f"Raw input to model:\n{formatted_prompt}")
 
-            if self.config.provider == "anthropic":
-                client = anthropic.Client(api_key=self._api_key)
-                response = client.messages.create(
-                    model=self.config.model_name,
-                    messages=[{"role": "user", "content": formatted_prompt}],
-                    max_tokens=self.config.max_tokens,
-                    temperature=self.config.temperature
-                )
-                response = response.content[0].text
+        if self.config.debug:
+            logger.info(f"Raw input to model:\n{formatted_prompt}")
 
-            elif self.config.provider == "openai":
-                client = openai.OpenAI(api_key=self._api_key)
-                response = client.chat.completions.create(
-                    model=self.config.model_name,
-                    messages=formatted_prompt,
-                    max_tokens=self.config.max_tokens,
-                    temperature=self.config.temperature
-                )
-                response = response.choices[0].message.content
+        if self.config.provider == "anthropic":
+            # the prompt is expected to be a single string already containing
+            # user instructions. Just call Anthropic's completions.
+            response = await self._generate_with_anthropic(
+                formatted_prompt  # type: str
+            )
 
-            else:  # local models
-                sampling_params = SamplingParams(
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens
-                )
-                response = self.model.generate(formatted_prompt, sampling_params)
-                response = response[0].outputs[0].text
+        elif self.config.provider == "openai":
+            # the prompt is a list of role-content dicts for ChatCompletion
+            # type: List[Dict[str,str]]
+            response = await self._generate_with_openai(
+                formatted_prompt
+            )
 
-            if response and self.config.debug:
-                logger.info(f"Raw model output:\n{response}")
+        else:  # local
+            sampling_params = SamplingParams(
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens
+            )
+            response = self.model.generate(formatted_prompt, sampling_params)
+            response = response[0].outputs[0].text
 
-            return response
+        if response and self.config.debug:
+            logger.info(f"Raw model output:\n{response}")
 
-        except Exception as e:
-            raise APIError(f"Generation failed: {str(e)}")
+        return response
 
     def _validate_and_extract(self, response: str) -> Optional[str]:
         """
@@ -381,47 +433,6 @@ class ModelManager:
 
         return rewrite
 
-    async def generate_with_validation(
-            self,
-            prompt: PromptTemplate,
-            text: str
-    ) -> Tuple[Optional[str], Optional[str], int]:
-        """
-        Generate response with validation and exponential backoff retries.
-        """
-        # convert from instruction/input format to system/user format
-        assembled_prompt = self._assemble_prompt(prompt, text)
-        # format for specific model
-        formatted_prompt = self._format_prompt(assembled_prompt)
-
-        for attempt in range(MAX_RETRIES):
-            try:
-                # exponential backoff with jitter
-                if attempt > 0:
-                    delay = BASE_RETRY_DELAY * (2 ** (attempt - 1))
-                    jitter = random.uniform(0, 1)
-                    await asyncio.sleep(delay + jitter)
-
-                # set seed for reproducibility
-                used_seed = self.retry_seeds[attempt]
-                random.seed(used_seed)
-
-                response = await self._generate_with_provider(formatted_prompt)
-                if response:
-                    rewrite = self._validate_and_extract(response)
-                    if rewrite:
-                        return response, rewrite, used_seed
-
-            except APIError as e:
-                logger.warning(f"API error on attempt {attempt + 1}: {str(e)}")
-                continue
-
-            except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}")
-                break
-
-        raise GenerationError("Failed to generate valid response after max retries")
-
 
 class ExperimentManager:
     """Manages generation of adversarial examples using LLMs."""
@@ -451,13 +462,17 @@ class ExperimentManager:
         """Process a single text input."""
         try:
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
-                prompt_template
+                prompt_template,
+                text
             )
 
             if rewrite:
                 return {
                     "original": text,
-                    "raw_input": prompt_template.dict(),
+                    "raw_input": {
+                        "description": prompt_template.description,
+                        "provider": self.model_manager.config.provider
+                    },
                     "raw_output": raw_output,
                     "transformed": rewrite,
                     "initial_seed": seed,
@@ -634,9 +649,7 @@ async def main():
             raise FileNotFoundError(f"Prompt configuration not found: {prompt_path}")
 
         prompt_config = json.loads(prompt_path.read_text(encoding='utf-8'))
-        prompt_template = PromptTemplate(
-            **prompt_config['prompts'][args.provider.lower()]
-        )
+        prompt_template = PromptTemplate(**prompt_config)
 
         # init managers
         model_manager = ModelManager(config)
