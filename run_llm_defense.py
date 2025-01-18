@@ -180,40 +180,40 @@ class ModelManager:
         self._api_key = self._get_api_key()
         self.model = self._initialize_model()
         self.prompt_manager = PromptManager(config)
-        self.retry_seeds = list(range(1, MAX_RETRIES + 1))
 
     async def generate_with_validation(
-        self,
-        prompt: PromptTemplate,
-        text: str
+            self,
+            prompt: PromptTemplate,
+            text: str,
+            base_seed: int
     ) -> Tuple[Optional[str], Optional[str], int]:
         """
         Generate response with validation and retries.
+        If it fails the first time, increment the seed by 1 on each retry.
         """
         formatted_prompt = self.prompt_manager.format_prompt(prompt, text)
 
         for attempt in range(MAX_RETRIES):
             try:
-                if attempt > 0:
-                    delay = BASE_RETRY_DELAY * (2 ** (attempt - 1))
-                    jitter = random.uniform(0, 1)
-                    await asyncio.sleep(delay + jitter)
-
-                used_seed = self.retry_seeds[attempt]
+                # Shift the seed by attempt
+                used_seed = base_seed + attempt
                 random.seed(used_seed)
 
                 if self.config.debug:
                     logger.info(f"Raw input to model:\n{formatted_prompt}")
+                    logger.info(f"Using seed={used_seed} for attempt={attempt}")
 
                 response = await self._generate_with_provider(formatted_prompt)
 
                 if response:
                     rewrite = self._validate_and_extract(response)
                     if rewrite:
+                        # Return the actual seed used, i.e. base_seed + attempt
                         return response, rewrite, used_seed
 
             except APIError as e:
-                logger.warning(f"API error on attempt {attempt + 1}: {str(e)}")
+                logger.warning(
+                    f"API error on attempt {attempt + 1} with seed={used_seed}: {str(e)}")
                 continue
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}")
@@ -379,15 +379,18 @@ class ExperimentManager:
         return base_dir
 
     async def _process_single_text(
-        self,
-        text: str,
-        prompt_template: PromptTemplate,
-        seed: int
+            self,
+            text: str,
+            prompt_template: PromptTemplate,
+            seed: int
     ) -> Optional[Dict]:
+        """Process a single text input."""
         try:
+            # Just pass `seed` to generate_with_validation
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 prompt_template,
-                text
+                text,
+                base_seed=seed  # <-- new parameter
             )
             if rewrite:
                 return {
@@ -401,10 +404,11 @@ class ExperimentManager:
                     "initial_seed": seed,
                     "actual_seed": used_seed
                 }
+            return None
+
         except Exception as e:
             logger.error(f"Error processing text: {str(e)}")
-
-        return None
+            return None
 
     async def generate_rewrites(
         self,
