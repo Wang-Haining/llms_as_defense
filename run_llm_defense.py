@@ -73,6 +73,7 @@ class ExperimentConfig:
         provider: Model provider (local/anthropic/openai)
         temperature: Generation temperature
         max_tokens: Maximum tokens for generation
+        num_seeds: Number of predefined seeds to use
     """
     corpus: str
     research_question: str
@@ -83,6 +84,7 @@ class ExperimentConfig:
     output_dir: str = "llm_outputs"
     temperature: float = 0.7
     max_tokens: int = 4096
+    num_seeds: int = 5
 
     @classmethod
     def from_args(cls, args):
@@ -95,7 +97,8 @@ class ExperimentConfig:
             model_name=args.model,
             provider=args.provider,
             temperature=args.temperature,
-            max_tokens=args.max_tokens
+            max_tokens=args.max_tokens,
+            num_seeds=args.num_seeds
         )
 
 
@@ -467,8 +470,11 @@ class ExperimentManager:
             Dict containing results from all generation runs
         """
 
+        # Use only the specified number of seeds
+        selected_seeds = FIXED_SEEDS[:self.config.num_seeds]
+
         async def process_batch(batch_idx: int) -> Dict:
-            seed = FIXED_SEEDS[batch_idx % len(FIXED_SEEDS)]
+            seed = selected_seeds[batch_idx % len(selected_seeds)]
             random.seed(seed)
 
             tasks = [
@@ -510,6 +516,7 @@ class ExperimentManager:
             "research_question": self.config.research_question,
             "sub_question": self.config.sub_question,
             "batch_size": self.config.batch_size,
+            "num_seeds": self.config.num_seeds,
             "model": {
                 "name": self.config.model_name,
                 "provider": self.config.provider,
@@ -586,6 +593,12 @@ async def main():
         type=int,
         default=4096,
         help='Maximum tokens for generation'
+    )
+    parser.add_argument(
+        '--num_seeds',
+        type=int,
+        default=5,
+        help='Number of predefined seeds to use (max 10)'
     )
 
     args = parser.parse_args()
