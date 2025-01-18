@@ -27,7 +27,7 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import anthropic
 import openai
@@ -43,8 +43,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-FIXED_SEEDS = [93187, 95617, 98473, 101089, 103387,
-               105673, 108061, 110431, 112757, 115327]
+FIXED_SEEDS = [
+    93187, 95617, 98473, 101089, 103387,
+    105673, 108061, 110431, 112757, 115327
+]
 REWRITE_START_TAG = "[REWRITE]"
 REWRITE_END_TAG = "[/REWRITE]"
 MIN_WORDS = 50
@@ -81,20 +83,18 @@ class ExperimentConfig:
         corpus: Target corpus for evaluation
         research_question: Main research question category
         sub_question: Specific research question
-        batch_size: Number of parallel generations
         output_dir: Directory for saving results
         model_name: Name of the LLM to use
         provider: Model provider (local/anthropic/openai)
         temperature: Generation temperature
         max_tokens: Maximum tokens for generation
-        num_seeds: Number of predefined seeds to use
+        num_seeds: Number of seeds (also used for concurrency)
     """
     corpus: str
     research_question: str
     sub_question: str
     model_name: str
     provider: str
-    batch_size: int = 5
     output_dir: str = "llm_outputs"
     temperature: float = 0.7
     max_tokens: int = 4096
@@ -107,7 +107,6 @@ class ExperimentConfig:
             corpus=args.corpus,
             research_question=args.rq.split('.')[0],
             sub_question=args.rq,
-            batch_size=args.batch_size,
             output_dir=args.output_dir,
             model_name=args.model,
             provider=args.provider,
@@ -142,21 +141,22 @@ class PromptManager:
     """Manages prompt formatting and validation for different providers."""
 
     def __init__(self, config: ExperimentConfig):
-        """Initialize prompt manager with experiment configuration."""
         self.config = config
 
-    def format_prompt(self, template: PromptTemplate, text: str) -> Union[
-        str, List[Dict[str, str]]]:
+    def format_prompt(
+        self,
+        template: PromptTemplate,
+        text: str
+    ) -> Union[str, List[Dict[str, str]]]:
         """Format provider-specific prompt from model-agnostic template."""
-        # get the core instructions
         instruction = template.get_instruction()
-
-        # replace placeholder with actual text
         user_prompt = instruction["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
-            return (f"{anthropic.HUMAN_PROMPT} {instruction['system']}\n\n"
-                    f"{user_prompt}{anthropic.AI_PROMPT}")
+            return (
+                f"{anthropic.HUMAN_PROMPT} {instruction['system']}\n\n"
+                f"{user_prompt}{anthropic.AI_PROMPT}"
+            )
 
         elif self.config.provider == "openai":
             return [
@@ -165,18 +165,13 @@ class PromptManager:
             ]
 
         else:  # local models
-            if "llama" in self.config.model_name.lower():
+            lower_name = self.config.model_name.lower()
+            if "llama" in lower_name or "mistral" in lower_name:
                 return f"<s>[INST] {instruction['system']}\n\n{user_prompt} [/INST]"
-            elif "mistral" in self.config.model_name.lower():
-                return f"<s>[INST] {instruction['system']}\n\n{user_prompt} [/INST]"
-            elif "olmo" in self.config.model_name.lower():
-                return f"Human: {instruction['system']}\n\n{user_prompt}\n\nAssistant:"
-            elif "gemma" in self.config.model_name.lower():
+            elif "olmo" in lower_name or "gemma" in lower_name:
                 return f"Human: {instruction['system']}\n\n{user_prompt}\n\nAssistant:"
             else:
                 raise ValueError(f"Unsupported local model: {self.config.model_name}")
-
-
 
 
 class ModelManager:
@@ -188,11 +183,13 @@ class ModelManager:
         self.retry_seeds = list(range(1, MAX_RETRIES + 1))
 
     async def generate_with_validation(
-            self,
-            prompt: PromptTemplate,
-            text: str
+        self,
+        prompt: PromptTemplate,
+        text: str
     ) -> Tuple[Optional[str], Optional[str], int]:
-        """Generate response with validation and retries."""
+        """
+        Generate response with validation and retries.
+        """
         formatted_prompt = self.prompt_manager.format_prompt(prompt, text)
 
         for attempt in range(MAX_RETRIES):
@@ -225,7 +222,6 @@ class ModelManager:
         raise GenerationError("Failed to generate valid response after max retries")
 
     def _get_api_key(self) -> Optional[str]:
-        """Get appropriate API key from environment."""
         if self.config.provider == "local":
             return None
 
@@ -233,7 +229,6 @@ class ModelManager:
             "anthropic": "ANTHROPIC_API_KEY_MALENIA",
             "openai": "OPENAI_API_KEY_MALENIA"
         }
-
         if self.config.provider not in key_map:
             raise ModelInitError(f"Unsupported provider: {self.config.provider}")
 
@@ -247,24 +242,17 @@ class ModelManager:
 
     def _get_quantization_config(self) -> Dict[str, Any]:
         """
-        Get quantization configuration based on model size.
-
-        Models >= 30B use tensor parallelism and AWQ quantization.
-        Models between 13B-30B use AWQ quantization only.
-        Smaller models use no quantization.
+        Example: if model size >= 30B => use AWQ + tensor parallel, etc.
         """
         model_name = self.config.model_name.lower()
-
-        # extract model size if specified with 'b' suffix (e.g., '70b', '13b')
         size_match = re.search(r'(\d+)b', model_name)
         if size_match:
             model_size = int(size_match.group(1))
-
             if model_size >= 30:
                 return {
-                    "quantization": "awq",  # Advanced Weight Quantization
+                    "quantization": "awq",
                     "max_parallel_loading_workers": 2,
-                    "tensor_parallel_size": 2,  # Split across 2 GPUs
+                    "tensor_parallel_size": 2,
                     "gpu_memory_utilization": 0.85
                 }
             elif model_size >= 13:
@@ -273,27 +261,20 @@ class ModelManager:
                     "max_parallel_loading_workers": 1,
                     "gpu_memory_utilization": 0.85
                 }
-
-        # default config for smaller models
         return {
             "max_parallel_loading_workers": 1,
             "gpu_memory_utilization": 0.85
         }
 
-    def _initialize_model(self) -> Optional[Any]:
-        """Initialize model based on provider type."""
+    def _initialize_model(self) -> Optional[LLM]:
         if self.config.provider != "local":
             return None
-
         try:
-            # base configuration for local models
             model_kwargs = {
                 "model": self.config.model_name,
                 "trust_remote_code": True,
                 "dtype": "float16"
             }
-
-            # add quantization settings based on model size
             model_kwargs.update(self._get_quantization_config())
 
             logger.info(f"Initializing local model with config: {model_kwargs}")
@@ -304,92 +285,46 @@ class ModelManager:
                 f"Failed to initialize local model {self.config.model_name}: {str(e)}"
             )
 
-    def _detect_model_family(self) -> str:
-        """
-        Detect the model family from model name.
-
-        Raises:
-            ModelInitError: If model family is not supported
-        """
-        model_name = self.config.model_name.lower()
-
-        if "llama" in model_name:
-            return "llama"
-        elif "mistral" in model_name:
-            return "mistral"
-        elif "olmo" in model_name:
-            return "olmo"
-        elif "gemma" in model_name:
-            return "gemma"
-
-        raise ModelInitError(
-            f"Unsupported model: {self.config.model_name}. "
-            f"Must be one of: llama, mistral, olmo, or gemma family."
-        )
-
     async def _generate_with_openai(self, formatted_prompt: list) -> str:
-        """
-        Make a request to OpenAI's ChatCompletion endpoint using the official openai
-        library.
-        """
         openai.api_key = self._api_key
         try:
             resp = openai.ChatCompletion.create(
                 model=self.config.model_name,
-                # e.g. "gpt4o", "o1", or a standard "gpt-4"
                 messages=formatted_prompt,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature
             )
-            # 3. The main text is in resp.choices[0].message.content
             return resp.choices[0].message.content
         except openai.error.OpenAIError as e:
             raise APIError(f"OpenAI API error: {str(e)}")
 
     async def _generate_with_anthropic(self, formatted_prompt: str) -> str:
-        """
-        Make a request to Anthropic's Claude models using the official anthropic library.
-        """
         client = anthropic.Client(api_key=self._api_key)
-
         prompt = f"{anthropic.HUMAN_PROMPT}{formatted_prompt}{anthropic.AI_PROMPT}"
-
         try:
             resp = client.completions.create(
                 model=self.config.model_name,
-                # e.g. "claude-2", "claude-3-5-sonnet-20241022"
                 prompt=prompt,
                 max_tokens_to_sample=self.config.max_tokens,
                 temperature=self.config.temperature
             )
-            # 4. The main text generation is under resp.completion
             return resp.completion
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic API error: {str(e)}")
 
     async def _generate_with_provider(
-            self,
-            formatted_prompt: Union[str, List[Dict[str, str]]]
+        self,
+        formatted_prompt: Union[str, List[Dict[str, str]]]
     ) -> Optional[str]:
-
         if self.config.debug:
             logger.info(f"Raw input to model:\n{formatted_prompt}")
 
         if self.config.provider == "anthropic":
-            # the prompt is expected to be a single string already containing
-            # user instructions. Just call Anthropic's completions.
-            response = await self._generate_with_anthropic(
-                formatted_prompt  # type: str
-            )
-
+            response = await self._generate_with_anthropic(formatted_prompt)
         elif self.config.provider == "openai":
-            # the prompt is a list of role-content dicts for ChatCompletion
-            # type: List[Dict[str,str]]
-            response = await self._generate_with_openai(
-                formatted_prompt
-            )
-
-        else:  # local
+            response = await self._generate_with_openai(formatted_prompt)
+        else:
+            # local model inference
             sampling_params = SamplingParams(
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens
@@ -403,32 +338,21 @@ class ModelManager:
         return response
 
     def _validate_and_extract(self, response: str) -> Optional[str]:
-        """
-        Validate response and extract rewritten content.
-
-        Args:
-            response: Raw model response
-
-        Returns:
-            Extracted rewrite if valid, None otherwise
-        """
         if not response:
             return None
 
         start_idx = response.find(REWRITE_START_TAG)
         end_idx = response.find(REWRITE_END_TAG)
-
         if start_idx == -1 or end_idx == -1:
             logger.warning("Missing rewrite tags in response")
             return None
 
         rewrite = response[start_idx + len(REWRITE_START_TAG):end_idx].strip()
-
         if len(rewrite.split()) < MIN_WORDS:
             logger.warning(f"Rewrite too short: {len(rewrite.split())} words")
             return None
 
-        if self.config.debug and rewrite:
+        if self.config.debug:
             logger.info(f"Extracted rewrite:\n{rewrite}")
 
         return rewrite
@@ -443,29 +367,28 @@ class ExperimentManager:
         self.output_dir = self._setup_output_dirs()
 
     def _setup_output_dirs(self) -> Path:
-        """Setup output directory structure."""
-        # use the base model name (after last /)
         model_name = self.config.model_name.split('/')[-1].lower()
-
-        base_dir = Path(self.config.output_dir) / self.config.corpus / \
-                   self.config.research_question / self.config.sub_question / \
-                   model_name
+        base_dir = (
+            Path(self.config.output_dir)
+            / self.config.corpus
+            / self.config.research_question
+            / self.config.sub_question
+            / model_name
+        )
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
     async def _process_single_text(
-            self,
-            text: str,
-            prompt_template: PromptTemplate,
-            seed: int
+        self,
+        text: str,
+        prompt_template: PromptTemplate,
+        seed: int
     ) -> Optional[Dict]:
-        """Process a single text input."""
         try:
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 prompt_template,
                 text
             )
-
             if rewrite:
                 return {
                     "original": text,
@@ -478,33 +401,29 @@ class ExperimentManager:
                     "initial_seed": seed,
                     "actual_seed": used_seed
                 }
-            return None
-
         except Exception as e:
             logger.error(f"Error processing text: {str(e)}")
-            return None
+
+        return None
 
     async def generate_rewrites(
-            self,
-            texts: List[str],
-            prompt_template: PromptTemplate
+        self,
+        texts: List[str],
+        prompt_template: PromptTemplate
     ) -> Dict:
         """
         Generate rewritten versions of input texts using LLM transformations.
-
-        Args:
-            texts: List of original texts
-            prompt_template: Template for generation
-
-        Returns:
-            Dict containing results from all generation runs
+        We run concurrency = num_seeds, each concurrency job uses a unique seed.
         """
 
-        # use only the specified number of seeds
-        selected_seeds = FIXED_SEEDS[:self.config.num_seeds]
+        # pick the seeds
+        selected_seeds = FIXED_SEEDS[: self.config.num_seeds]
 
-        async def process_batch(batch_idx: int) -> Dict:
-            seed = selected_seeds[batch_idx % len(selected_seeds)]
+        async def process_seed(s_idx: int) -> Dict:
+            """
+            Each seed => one concurrency job
+            """
+            seed = selected_seeds[s_idx]
             random.seed(seed)
 
             tasks = [
@@ -512,27 +431,25 @@ class ExperimentManager:
                 for text in texts
             ]
             results = await asyncio.gather(*tasks)
-
             valid_results = [r for r in results if r]
+
             if valid_results:
-                self._save_batch_results(seed, valid_results)
+                self._save_seed_results(seed, valid_results)
 
             return {
                 "seed": seed,
                 "transformations": valid_results
             }
 
-        # process batches in parallel
-        batch_tasks = [
-            process_batch(i)
-            for i in range(self.config.batch_size)
-        ]
-        batch_results = await asyncio.gather(*batch_tasks)
+        # build concurrency tasks
+        tasks = [process_seed(i) for i in range(self.config.num_seeds)]
+        # run them all in parallel
+        all_results = await asyncio.gather(*tasks)
 
-        return {"all_runs": [r for r in batch_results if r["transformations"]]}
+        # filter out any that have no transformations
+        return {"all_runs": [r for r in all_results if r["transformations"]]}
 
-    def _save_batch_results(self, seed: int, results: List[Dict]) -> None:
-        """Save generation results for a specific seed."""
+    def _save_seed_results(self, seed: int, results: List[Dict]) -> None:
         output_file = self.output_dir / f"seed_{seed}.json"
         output_file.write_text(
             json.dumps(results, ensure_ascii=False, indent=2),
@@ -540,12 +457,10 @@ class ExperimentManager:
         )
 
     def save_experiment_config(self) -> None:
-        """Save experiment configuration."""
         config = {
             "corpus": self.config.corpus,
             "research_question": self.config.research_question,
             "sub_question": self.config.sub_question,
-            "batch_size": self.config.batch_size,
             "num_seeds": self.config.num_seeds,
             "model": {
                 "name": self.config.model_name,
@@ -559,7 +474,6 @@ class ExperimentManager:
                 "rewrite_tags": [REWRITE_START_TAG, REWRITE_END_TAG]
             }
         }
-
         config_file = self.output_dir / "experiment_config.json"
         config_file.write_text(
             json.dumps(config, indent=2),
@@ -568,12 +482,6 @@ class ExperimentManager:
 
 
 async def main():
-    """
-    Main entry point for the LLM defense experiment runner.
-
-    Sets up configuration, initializes components, and runs the rewrite generation
-    experiment. Handles command line arguments and manages the overall experiment flow.
-    """
     parser = argparse.ArgumentParser(
         description='LLM-based defense against authorship attribution attacks',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -589,12 +497,6 @@ async def main():
         '--rq',
         required=True,
         help='Research question identifier (e.g., RQ1.1)'
-    )
-    parser.add_argument(
-        '--batch_size',
-        type=int,
-        default=4,
-        help='Number of parallel generation runs'
     )
     parser.add_argument(
         '--output_dir',
@@ -628,22 +530,21 @@ async def main():
         '--num_seeds',
         type=int,
         default=5,
-        help='Number of predefined seeds to use (max 10)'
+        help='Number of seeds to use (also concurrency). Max 10.'
     )
     parser.add_argument(
         '--debug',
         action='store_true',
-        help='Enable debug logging for model inputs and outputs'
+        help='Enable debug logging for model inputs/outputs'
     )
     args = parser.parse_args()
 
     try:
-        # setup experiment configuration
+        # setup config
         config = ExperimentConfig.from_args(args)
-        logger.info(
-            f"Initialized experiment config for {config.corpus}-{config.sub_question}")
+        logger.info(f"Initialized experiment config for {config.corpus}-{config.sub_question}")
 
-        # load research question specific prompt config
+        # load prompt
         prompt_path = Path('prompts') / f"{args.rq}.json"
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt configuration not found: {prompt_path}")
@@ -655,27 +556,23 @@ async def main():
         model_manager = ModelManager(config)
         experiment_manager = ExperimentManager(config, model_manager)
 
-        # save experiment configuration
+        # save experiment config
         experiment_manager.save_experiment_config()
         logger.info(f"Saved experiment config to {experiment_manager.output_dir}")
 
         # load corpus data
-        _, _, test_texts, _ = load_corpus(
-            corpus=config.corpus,
-            task="no_protection"
-        )
+        _, _, test_texts, _ = load_corpus(corpus=config.corpus, task="no_protection")
         logger.info(f"Loaded {len(test_texts)} test samples from {config.corpus}")
 
-        # run rewrite generation
-        results = await experiment_manager.generate_rewrites(
-            texts=test_texts,
-            prompt_template=prompt_template
-        )
+        # if debug, truncate to first 3
+        if config.debug:
+            test_texts = test_texts[:3]
+            logger.info("Debug mode ON: using only first 3 samples.")
 
-        successful_runs = sum(
-            len(run["transformations"])
-            for run in results["all_runs"]
-        )
+        # run rewrite generation
+        results = await experiment_manager.generate_rewrites(test_texts, prompt_template)
+
+        successful_runs = sum(len(run["transformations"]) for run in results["all_runs"])
         logger.info(
             f"Completed experiment with {successful_runs} successful generations. "
             f"Results saved to: {experiment_manager.output_dir}"
@@ -684,7 +581,6 @@ async def main():
     except Exception as e:
         logger.error(f"Experiment failed: {str(e)}")
         raise
-
 
 if __name__ == "__main__":
     asyncio.run(main())
