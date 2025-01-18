@@ -24,4 +24,25 @@ CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --provider local \
 --temperature 0.7 \
 --max_tokens 2048 \
+--num_seeds 2
+
+CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
+--corpus rj \
+--rq rq1.1_basic_paraphrase \
+--batch_size 16 \
+--model "meta-llama/Llama-3.1-8B-Instruct" \
+--provider local \
+--temperature 0.7 \
+--max_tokens 2048 \
+--num_seeds 1
+
+CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
+--corpus lcmc \
+--rq rq1.1_basic_paraphrase \
+--batch_size 16 \
+--model "meta-llama/Llama-3.1-8B-Instruct" \
+--provider local \
+--temperature 0.7 \
+--max_tokens 2048 \
+--num_seeds 1
 
