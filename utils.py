@@ -541,7 +541,7 @@ def ndcg_score(y_true, y_pred_probs, k=None):
     return actual_dcg / ideal_dcg
 
 
-def evaluate_attribution_defense(y_true, y_pred_probs):
+def evaluate_attribution_defense(y_true, y_pred_probs, y_transformed_probs=None):
     """
     Evaluate effectiveness of authorship attribution defense with enhanced metrics.
 
@@ -549,65 +549,91 @@ def evaluate_attribution_defense(y_true, y_pred_probs):
         y_true: array-like of shape (n_samples,)
             True author labels
         y_pred_probs: array-like of shape (n_samples, n_authors)
-            Predicted probabilities for each author
+            Predicted probabilities for original texts
+        y_transformed_probs: array-like of shape (n_samples, n_authors), optional
+            Predicted probabilities for transformed texts
 
     Returns:
-        dict: Dictionary containing various metrics
+        dict: Dictionary containing metrics for both original and transformed texts
     """
+    # Get original text metrics
+    original_metrics = {
+        'original_' + k: v
+        for k, v in _calculate_metrics(y_true, y_pred_probs).items()
+    }
+
+    if y_transformed_probs is not None:
+        # Get transformed text metrics
+        transformed_metrics = {
+            'transformed_' + k: v
+            for k, v in _calculate_metrics(y_true, y_transformed_probs).items()
+        }
+
+        # Calculate effectiveness metrics
+        effectiveness = defense_effectiveness(
+            original_metrics,
+            {k.replace('transformed_', ''): v for k, v in transformed_metrics.items()}
+        )
+
+        return {**original_metrics, **transformed_metrics, **effectiveness}
+
+    return original_metrics
+
+
+def _calculate_metrics(y_true, y_pred_probs):
+    """Helper function to calculate core metrics."""
     metrics = {}
 
-    # 1. Mean Reciprocal Rank (MRR)
+    # Classification metrics
+    metrics['accuracy'] = np.mean(np.argmax(y_pred_probs, axis=1) == y_true)
+
+    # Mean Reciprocal Rank
     ranks = []
-    for i in range(len(y_true)):
-        true_author = y_true[i]
+    for i, true_label in enumerate(y_true):
         pred_probs = y_pred_probs[i]
-        rank = len(pred_probs) - np.where(np.argsort(pred_probs) == true_author)[0][0]
+        rank = len(pred_probs) - np.where(np.argsort(pred_probs) == true_label)[0][0]
         ranks.append(1 / rank)
     metrics['mrr'] = np.mean(ranks)
 
-    # 2. Mean Average Precision (MAP)
+    # Mean Average Precision
     metrics['map'] = average_precision_score(
         y_true.reshape(-1, 1) == np.arange(y_pred_probs.shape[1]),
         y_pred_probs
     )
 
-    # 3. Entropy of predictions
+    # Entropy and confidence metrics
     entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
     metrics['entropy'] = np.mean(entropies)
     metrics['entropy_std'] = np.std(entropies)
 
-    # 4. Confidence Drop/Gain
     confidence_gaps = []
     for probs in y_pred_probs:
         sorted_probs = np.sort(probs)
         confidence_gaps.append(sorted_probs[-1] - sorted_probs[-2])
     metrics['conf_gap'] = np.mean(confidence_gaps)
+    metrics['conf_gap_std'] = np.std(confidence_gaps)
 
-    # 5. Top-K Accuracy for k=1,3,5
+    # Top-K Accuracy
     for k in [1, 3, 5]:
-        top_k_acc = np.mean([
-            true_author in np.argsort(probs)[-k:]
-            for true_author, probs in zip(y_true, y_pred_probs)
+        metrics[f'top_{k}_acc'] = np.mean([
+            true_label in np.argsort(probs)[-k:]
+            for true_label, probs in zip(y_true, y_pred_probs)
         ])
-        metrics[f'top_{k}_acc'] = top_k_acc
 
-    # 6. NDCG at different k values
+    # NDCG at different k values
     for k in [1, 3, 5, None]:
-        ndcg_scores = []
-        for i in range(len(y_true)):
-            ndcg = ndcg_score(y_true[i], y_pred_probs[i], k)
-            ndcg_scores.append(ndcg)
+        ndcg_scores = [
+            ndcg_score(true_label, probs, k)
+            for true_label, probs in zip(y_true, y_pred_probs)
+        ]
         metrics[f'ndcg@{k if k else "all"}'] = np.mean(ndcg_scores)
 
-    # 7. Gini Coefficient
-    gini_scores = []
-    for probs in y_pred_probs:
-        gini_scores.append(gini_coefficient(probs))
+    # Distribution metrics
+    gini_scores = [gini_coefficient(probs) for probs in y_pred_probs]
     metrics['gini'] = np.mean(gini_scores)
     metrics['gini_std'] = np.std(gini_scores)
 
     return metrics
-
 
 def defense_effectiveness(pre_metrics, post_metrics):
     """
