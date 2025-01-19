@@ -1,5 +1,5 @@
 """
-validate.py - Validation tool for LLM defense experiment outputs.
+Validation tool for LLM defense experiment outputs.
 
 This script validates experiment outputs by:
 1. Checking if each experiment has the expected number of seed files
@@ -7,7 +7,9 @@ This script validates experiment outputs by:
 3. Generating a detailed report of any missing data
 
 Usage:
-    python validate_llm_outputs.py
+    python validate_llm_outputs.py  # checks default models (llama and gemma)
+    python validate_llm_outputs.py --models "meta-llama/Llama-3.1-8B" "google/gemma-2-9b-it"
+    python validate_llm_outputs.py --models claude-3-5-sonnet-20241022 gpt-4-0125-preview
 
 The tool will generate a validation_report.json with detailed findings.
 """
@@ -19,7 +21,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple, Set
 
-from utils import load_corpus  # assuming same utils as main script
+from utils import load_corpus
 
 # configure logging
 logging.basicConfig(
@@ -28,12 +30,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# default models to check
+DEFAULT_MODELS = [
+    "meta-llama/Llama-3.1-8B",
+    "google/gemma-2-9b-it"
+]
+
+def normalize_model_name(model: str) -> str:
+    """normalize model names for comparison with directory names"""
+    # extract last part after / if present
+    model_name = model.split('/')[-1].lower()
+    # remove version tags from api models
+    model_name = model_name.split('-2024')[0]  # handles 2024 dates
+    model_name = model_name.split('-20241')[0]  # handles 2024 dates with month
+    return model_name
 
 class ExperimentValidator:
-    def __init__(self, base_dir: str, expected_seeds: int = 5):
+    def __init__(
+        self,
+        base_dir: str,
+        expected_seeds: int = 5,
+        models: List[str] = None
+    ):
         self.base_dir = Path(base_dir)
         self.expected_seeds = expected_seeds
         self.expected_counts = self.load_expected_counts()
+
+        # normalize model names for matching
+        self.models_to_check = None
+        if models:
+            self.models_to_check = [normalize_model_name(m) for m in models]
+            logger.info(f"Will check models: {', '.join(models)}")
+        else:
+            # use defaults
+            self.models_to_check = [normalize_model_name(m) for m in DEFAULT_MODELS]
+            logger.info(
+                f"Using default models for validation: {', '.join(DEFAULT_MODELS)}"
+            )
+
+    def should_check_model(self, model_dir: str) -> bool:
+        """determine if a model directory should be validated"""
+        model_name = normalize_model_name(model_dir)
+        return any(target in model_name for target in self.models_to_check)
 
     @staticmethod
     def load_expected_counts() -> Dict[str, int]:
@@ -57,6 +95,10 @@ class ExperimentValidator:
             # load experiment config
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+
+            # check if we should validate this model
+            if not self.should_check_model(config['model']['name']):
+                return []
 
             corpus = config['corpus']
             expected_count = self.expected_counts[corpus]
@@ -163,7 +205,7 @@ def generate_report(issues: List[Dict]) -> Tuple[str, Dict]:
 
     # group by issue type
     for issue in sorted(issues,
-                        key=lambda x: (x['type'], x['corpus'], x['sub_question'])):
+                       key=lambda x: (x['type'], x['corpus'], x['sub_question'])):
         if issue['type'] == 'missing_seed_files':
             report_lines.append(
                 f"\n{issue['corpus']}/{issue['sub_question']}/{issue['model']}"
@@ -201,10 +243,19 @@ def main():
         default=5,
         help='Expected number of seed files per experiment'
     )
+    parser.add_argument(
+        '--models',
+        nargs='*',
+        help='Space-separated list of models to check. Defaults to llama and gemma models.'
+    )
     args = parser.parse_args()
 
     logger.info("Starting validation scan...")
-    validator = ExperimentValidator(args.base_dir, args.expected_seeds)
+    validator = ExperimentValidator(
+        args.base_dir,
+        args.expected_seeds,
+        args.models
+    )
     issues = validator.scan_all_experiments()
 
     report, stats = generate_report(issues)
