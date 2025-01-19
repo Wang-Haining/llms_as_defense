@@ -302,23 +302,27 @@ class ModelManager:
 
     async def _generate_with_anthropic(self, prompt_data: dict) -> str:
         """
-        Uses Anthropic's Messages API.
-        prompt_data = {
-          "system": "...",
-          "messages": [{"role":"user","content": "..."}]
-        }
+        Return a single string, not a list of TextBlock.
         """
         client = anthropic.Client(api_key=self._api_key)
         try:
             resp = client.messages.create(
                 model=self.config.model_name,
-                system=prompt_data["system"],  # top-level system prompt
-                messages=prompt_data["messages"],  # user/assistant roles
+                system=prompt_data["system"],
+                messages=prompt_data["messages"],
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
                 stream=False
             )
-            return resp.content
+            # 'resp.content' is a list of TextBlock or similar
+            # Combine them into a single string:
+            if isinstance(resp.content, list):
+                # e.g. [TextBlock(text='...'), TextBlock(text='...')]
+                joined = "".join(block.text for block in resp.content)
+                return joined
+            else:
+                # return a single string
+                return resp.content
 
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic API error: {str(e)}")
