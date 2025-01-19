@@ -315,7 +315,7 @@ class ModelManager:
                 stream=False
             )
             # 'resp.content' is a list of TextBlock or similar
-            # Combine them into a single string:
+            # combine them into a single string:
             if isinstance(resp.content, list):
                 # e.g. [TextBlock(text='...'), TextBlock(text='...')]
                 joined = "".join(block.text for block in resp.content)
@@ -406,7 +406,6 @@ class ExperimentManager:
     ) -> Optional[Dict]:
         """Process a single text input."""
         try:
-            # Just pass `seed` to generate_with_validation
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 prompt_template,
                 text,
