@@ -1,0 +1,9 @@
+{
+    "description": "Testing back-translation through Chinese for defense against authorship attribution",
+    "instruction": {
+        "system": "You are a helpful writing assistant. Your task is to translate English text to Chinese (中文) and then back to English, maintaining meaning while allowing natural variation in expression. Always enclose your final English translation between [REWRITE] and [/REWRITE] tags.",
+        "user": "Please follow these steps:\n1. Translate this English text to Chinese\n2. Then translate your Chinese version back to English\n3. Put your final English translation between [REWRITE] and [/REWRITE] tags\n\n{{text}}"
+    },
+    "use_examples": false,
+    "use_cot": false
+}
