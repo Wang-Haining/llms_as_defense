@@ -298,31 +298,40 @@ class ModelManager:
         except openai.error.OpenAIError as e:
             raise APIError(f"OpenAI API error: {str(e)}")
 
-    async def _generate_with_anthropic(self, formatted_prompt: str) -> str:
+    async def _generate_with_anthropic(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Use the Anthropic Messages API (new style) with a list of role-content messages.
+        """
         client = anthropic.Client(api_key=self._api_key)
-        prompt = f"{anthropic.HUMAN_PROMPT}{formatted_prompt}{anthropic.AI_PROMPT}"
         try:
-            resp = client.completions.create(
+            # calls the new messages endpoint
+            resp = client.messages.create(
                 model=self.config.model_name,
-                prompt=prompt,
+                messages=messages,
                 max_tokens_to_sample=self.config.max_tokens,
                 temperature=self.config.temperature
             )
-            return resp.completion
+            return resp.messages[-1]["content"]
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic API error: {str(e)}")
 
     async def _generate_with_provider(
-        self,
-        formatted_prompt: Union[str, List[Dict[str, str]]]
+            self,
+            formatted_prompt: Union[str, List[Dict[str, str]]]
     ) -> Optional[str]:
+
         if self.config.debug:
             logger.info(f"Raw input to model:\n{formatted_prompt}")
 
         if self.config.provider == "anthropic":
-            response = await self._generate_with_anthropic(formatted_prompt)
+            response = await self._generate_with_anthropic(
+                formatted_prompt  # type: List[Dict[str, str]]
+            )
+
         elif self.config.provider == "openai":
-            response = await self._generate_with_openai(formatted_prompt)
+            response = await self._generate_with_openai(
+                formatted_prompt  # type: List[Dict[str, str]]
+            )
         else:
             # local model inference
             sampling_params = SamplingParams(
