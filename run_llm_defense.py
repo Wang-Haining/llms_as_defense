@@ -149,13 +149,14 @@ class PromptManager:
         user_prompt = instruction["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
-            # Return a dict with 'system' and 'messages'
+            # "system" must be top-level
+            # "messages" contains just user/assistant roles
             system_prompt = instruction["system"]
-            user_prompt = instruction["user"].replace("{{text}}", text)
+            user_text = instruction["user"].replace("{{text}}", text)
             return {
                 "system": system_prompt,
                 "messages": [
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_text}
                 ]
             }
 
@@ -299,29 +300,26 @@ class ModelManager:
         except openai.error.OpenAIError as e:
             raise APIError(f"OpenAI API error: {str(e)}")
 
-    async def _generate_with_anthropic(
-            self, prompt_data: Dict[str, Union[str, List[Dict[str, str]]]]
-    ) -> str:
+    async def _generate_with_anthropic(self, prompt_data: dict) -> str:
         """
-        Use the Anthropic Messages API. Expecting:
-          prompt_data = {
-            "system": "system prompt str",
-            "messages": [
-              {"role": "user", "content": "..."}
-            ]
-          }
+        Uses Anthropic's Messages API.
+        prompt_data = {
+          "system": "...",
+          "messages": [{"role":"user","content": "..."}]
+        }
         """
         client = anthropic.Client(api_key=self._api_key)
         try:
             resp = client.messages.create(
                 model=self.config.model_name,
-                system=prompt_data["system"],  # top-level system
-                messages=prompt_data["messages"],  # list of user/assistant
+                system=prompt_data["system"],  # top-level system prompt
+                messages=prompt_data["messages"],  # user/assistant roles
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
                 stream=False
             )
-            return resp.messages[-1]["content"]
+            return resp.content
+
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic API error: {str(e)}")
 
@@ -334,13 +332,12 @@ class ModelManager:
             logger.info(f"Raw input to model:\n{formatted_prompt}")
 
         if self.config.provider == "anthropic":
-            response = await self._generate_with_anthropic(
-                formatted_prompt  # type: List[Dict[str, str]]
-            )
+            # `formatted_prompt` is a dict with 'system' and 'messages'
+            response = await self._generate_with_anthropic(formatted_prompt)
 
         elif self.config.provider == "openai":
             response = await self._generate_with_openai(
-                formatted_prompt  # type: List[Dict[str, str]]
+                formatted_prompt
             )
         else:
             # local model inference
