@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import anthropic
-import openai
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 from vllm import LLM, SamplingParams
 
@@ -288,7 +288,7 @@ class ModelManager:
             )
 
     async def _generate_with_openai(self, formatted_prompt: list) -> str:
-        client = openai.OpenAI(api_key=self._api_key)
+        client = AsyncOpenAI(api_key=self._api_key)
         try:
             resp = await client.chat.completions.create(
                 model=self.config.model_name,
