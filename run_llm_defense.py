@@ -149,10 +149,15 @@ class PromptManager:
         user_prompt = instruction["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
-            return [
-                {"role": "system", "content": instruction["system"]},
-                {"role": "user", "content": user_prompt}
-            ]
+            # Return a dict with 'system' and 'messages'
+            system_prompt = instruction["system"]
+            user_prompt = instruction["user"].replace("{{text}}", text)
+            return {
+                "system": system_prompt,
+                "messages": [
+                    {"role": "user", "content": user_prompt}
+                ]
+            }
 
         elif self.config.provider == "openai":
             return [
@@ -294,15 +299,24 @@ class ModelManager:
         except openai.error.OpenAIError as e:
             raise APIError(f"OpenAI API error: {str(e)}")
 
-    async def _generate_with_anthropic(self, messages: List[Dict[str, str]]) -> str:
+    async def _generate_with_anthropic(
+            self, prompt_data: Dict[str, Union[str, List[Dict[str, str]]]]
+    ) -> str:
         """
-        Use the Anthropic Messages API (new style) with a list of role-content messages.
+        Use the Anthropic Messages API. Expecting:
+          prompt_data = {
+            "system": "system prompt str",
+            "messages": [
+              {"role": "user", "content": "..."}
+            ]
+          }
         """
         client = anthropic.Client(api_key=self._api_key)
         try:
             resp = client.messages.create(
                 model=self.config.model_name,
-                messages=messages,
+                system=prompt_data["system"],  # top-level system
+                messages=prompt_data["messages"],  # list of user/assistant
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
                 stream=False
