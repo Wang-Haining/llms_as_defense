@@ -34,7 +34,6 @@ import openai
 from pydantic import BaseModel
 from vllm import LLM, SamplingParams
 
-from openai.error import OpenAIError
 from utils import load_corpus
 
 # configure logging
@@ -298,7 +297,7 @@ class ModelManager:
                 temperature=self.config.temperature
             )
             return resp.choices[0].message.content
-        except OpenAIError as e:
+        except Exception as e:  # Instead of openai.error.OpenAIError
             raise APIError(f"OpenAI API error: {str(e)}")
 
     async def _generate_with_anthropic(self, prompt_data: dict) -> str:
