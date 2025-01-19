@@ -288,9 +288,9 @@ class ModelManager:
             )
 
     async def _generate_with_openai(self, formatted_prompt: list) -> str:
-        openai.api_key = self._api_key
+        client = openai.OpenAI(api_key=self._api_key)
         try:
-            resp = openai.Chat.create(
+            resp = await client.chat.completions.create(
                 model=self.config.model_name,
                 messages=formatted_prompt,
                 max_tokens=self.config.max_tokens,
