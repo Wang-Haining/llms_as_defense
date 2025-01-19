@@ -22,27 +22,31 @@ CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --model "claude-3-5-sonnet-20241022" \
 --provider anthropic \
 --temperature 0.7 \
---max_tokens 2048 \
+--max_tokens 4096 \
 --num_seeds 2 \
 --debug
+
 sleep 30
+
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus rj \
 --rq rq1.1_basic_paraphrase \
 --model "claude-3-5-sonnet-20241022" \
 --provider anthropic \
 --temperature 0.7 \
---max_tokens 2048 \
+--max_tokens 4096 \
 --num_seeds 1 \
 --debug
+
 sleep 30
+
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
 --rq rq1.1_basic_paraphrase \
 --model "claude-3-5-sonnet-20241022" \
 --provider anthropic \
 --temperature 0.7 \
---max_tokens 2048 \
+--max_tokens 4096 \
 --num_seeds 1 \
 --debug
 
