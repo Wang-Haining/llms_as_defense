@@ -143,20 +143,16 @@ class PromptManager:
     def __init__(self, config: ExperimentConfig):
         self.config = config
 
-    def format_prompt(
-        self,
-        template: PromptTemplate,
-        text: str
-    ) -> Union[str, List[Dict[str, str]]]:
-        """Format provider-specific prompt from model-agnostic template."""
+    def format_prompt(self, template: PromptTemplate, text: str) -> Union[
+        str, List[Dict[str, str]]]:
         instruction = template.get_instruction()
         user_prompt = instruction["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
-            return (
-                f"{anthropic.HUMAN_PROMPT} {instruction['system']}\n\n"
-                f"{user_prompt}{anthropic.AI_PROMPT}"
-            )
+            return [
+                {"role": "system", "content": instruction["system"]},
+                {"role": "user", "content": user_prompt}
+            ]
 
         elif self.config.provider == "openai":
             return [
