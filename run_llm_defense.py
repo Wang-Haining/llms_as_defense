@@ -50,7 +50,7 @@ FIXED_SEEDS = [
 REWRITE_START_TAG = "[REWRITE]"
 REWRITE_END_TAG = "[/REWRITE]"
 MIN_WORDS = 50
-MAX_RETRIES = 10
+MAX_RETRIES = 20
 BASE_RETRY_DELAY = 1  # seconds
 
 
@@ -194,15 +194,17 @@ class ModelManager:
         If it fails the first time, increment the seed by 1 on each retry.
         """
         formatted_prompt = self.prompt_manager.format_prompt(prompt, text)
+        # store input text for logging
+        self.last_input_text = text
 
         for attempt in range(MAX_RETRIES):
             try:
-                # Shift the seed by attempt
+                # shift the seed by attempt
                 used_seed = base_seed + attempt
                 random.seed(used_seed)
 
                 if self.config.debug:
-                    logger.info(f"Raw input to model:\n{formatted_prompt}")
+                    logger.info(f"Raw input to model:\n*{formatted_prompt}*")
                     logger.info(f"Using seed={used_seed} for attempt={attempt}")
 
                 response = await self._generate_with_provider(formatted_prompt)
@@ -210,18 +212,23 @@ class ModelManager:
                 if response:
                     rewrite = self._validate_and_extract(response)
                     if rewrite:
-                        # Return the actual seed used, i.e. base_seed + attempt
+                        # return the actual seed used
                         return response, rewrite, used_seed
 
             except APIError as e:
                 logger.warning(
-                    f"API error on attempt {attempt + 1} with seed={used_seed}: {str(e)}")
+                    f"API error on attempt {attempt + 1} with seed={used_seed}: {str(e)}\n"
+                    f"Full input text:\n*{text}*"
+                )
                 continue
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}")
                 break
 
-        raise GenerationError("Failed to generate valid response after max retries")
+        raise GenerationError(
+            f"Failed to generate valid response after max retries.\n"
+            f"Last attempted input text:\n*{text}*"
+        )
 
     def _get_api_key(self) -> Optional[str]:
         if self.config.provider == "local":
@@ -358,19 +365,29 @@ class ModelManager:
 
         return response
 
+    # In run_llm_defense.py, in the ModelManager class
     def _validate_and_extract(self, response: str) -> Optional[str]:
         if not response:
+            logger.warning("Empty response from model")
             return None
 
         start_idx = response.find(REWRITE_START_TAG)
         end_idx = response.find(REWRITE_END_TAG)
         if start_idx == -1 or end_idx == -1:
-            logger.warning("Missing rewrite tags in response")
+            logger.warning(
+                f"Missing rewrite tags in response.\n"
+                f"Full model response:\n*{response}*"
+            )
             return None
 
         rewrite = response[start_idx + len(REWRITE_START_TAG):end_idx].strip()
-        if len(rewrite.split()) < MIN_WORDS:
-            logger.warning(f"Rewrite too short: {len(rewrite.split())} words")
+        word_count = len(rewrite.split())
+        if word_count < MIN_WORDS:
+            logger.warning(
+                f"Rewrite too short: {word_count} words (minimum: {MIN_WORDS})\n"
+                f"Full input text:\n*{self.last_input_text}*\n"
+                f"Full model response:\n*{response}*"
+            )
             return None
 
         if self.config.debug:
