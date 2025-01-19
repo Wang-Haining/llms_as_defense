@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq2.2_imitation_w_example_gemma2_9b
+#SBATCH --job-name=run_llm_defense_rq2.2_imitation_w_example_llama3.1_8b
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
