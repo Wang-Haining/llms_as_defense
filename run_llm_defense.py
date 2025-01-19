@@ -304,12 +304,12 @@ class ModelManager:
         """
         client = anthropic.Client(api_key=self._api_key)
         try:
-            # calls the new messages endpoint
             resp = client.messages.create(
                 model=self.config.model_name,
                 messages=messages,
-                max_tokens_to_sample=self.config.max_tokens,
-                temperature=self.config.temperature
+                max_tokens=self.config.max_tokens,
+                temperature=self.config.temperature,
+                stream=False
             )
             return resp.messages[-1]["content"]
         except anthropic.APIStatusError as e:
