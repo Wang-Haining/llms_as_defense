@@ -290,14 +290,15 @@ class ModelManager:
     async def _generate_with_openai(self, formatted_prompt: list) -> str:
         openai.api_key = self._api_key
         try:
-            resp = openai.ChatCompletion.create(
+            resp = openai.Chat.create(
                 model=self.config.model_name,
                 messages=formatted_prompt,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature
             )
             return resp.choices[0].message.content
-        except Exception as e:  # Instead of openai.error.OpenAIError
+
+        except Exception as e:
             raise APIError(f"OpenAI API error: {str(e)}")
 
     async def _generate_with_anthropic(self, prompt_data: dict) -> str:
