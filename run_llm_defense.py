@@ -235,7 +235,7 @@ class ModelManager:
         """Generate text using specified provider."""
 
         if self.config.debug:
-            logger.info("*"*90)
+            logger.info("*" * 90)
             logger.info(f"Raw input to model:\n{formatted_prompt}")
             logger.info("*" * 90)
 
@@ -251,10 +251,7 @@ class ModelManager:
                 max_tokens=self.config.max_tokens
             )
             outputs = self.model.generate(formatted_prompt, sampling_params)
-            response = self.tokenizer.decode(
-                outputs[0].outputs[0].tokens,
-                skip_special_tokens=True
-            )
+            response = outputs[0].outputs[0].text
 
         if response and self.config.debug:
             logger.info("*" * 90)
