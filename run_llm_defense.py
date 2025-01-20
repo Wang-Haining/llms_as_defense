@@ -359,9 +359,28 @@ class ModelManager:
             model_kwargs = {
                 "model": self.config.model_name,
                 "trust_remote_code": True,
-                "dtype": "float16"
+                "dtype": "float16",
+                "gpu_memory_utilization": 0.85,
+                "tensor_parallel_size": 1  # set default tensor parallelism
             }
-            model_kwargs.update(self._get_quantization_config())
+
+            # get quantization config
+            quant_config = self._get_quantization_config()
+
+            # update with quantization settings while preserving tensor_parallel_size
+            if "tensor_parallel_size" in quant_config:
+                model_kwargs["tensor_parallel_size"] = quant_config[
+                    "tensor_parallel_size"]
+
+            # add other quantization settings
+            if "quantization" in quant_config:
+                model_kwargs["quantization"] = quant_config["quantization"]
+            if "max_parallel_loading_workers" in quant_config:
+                model_kwargs["max_parallel_loading_workers"] = quant_config[
+                    "max_parallel_loading_workers"]
+
+            # remove gpu_memory_utilization from quant_config as it's already set
+            quant_config.pop("gpu_memory_utilization", None)
 
             logger.info(f"Initializing local model with config: {model_kwargs}")
             return LLM(**model_kwargs)
