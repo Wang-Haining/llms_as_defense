@@ -121,26 +121,6 @@ class ExperimentConfig:
         )
 
 
-class ProviderConfig(BaseModel):
-    """Schema for provider-specific prompt configuration."""
-    system: str
-    user: str
-    use_examples: bool = False
-    use_cot: bool = False
-
-
-class PromptTemplate(BaseModel):
-    """Schema for model-agnostic prompt templates."""
-    description: str
-    instruction: Dict[str, str]  # system and user instructions
-    use_examples: bool = False
-    use_cot: bool = False
-
-    def get_instruction(self) -> Dict[str, str]:
-        """Get core instruction configuration."""
-        return self.instruction
-
-
 class PromptManager:
     """Manages prompt formatting and validation for different providers."""
 
@@ -158,24 +138,23 @@ class PromptManager:
                     f"Failed to load tokenizer for {self.config.model_name}: {str(e)}"
                 )
 
-    def format_prompt(self, template: PromptTemplate, text: str) -> Union[
+    def format_prompt(self, instructions: Dict[str, str], text: str) -> Union[
         str, List[Dict[str, str]]]:
         """
-        Format prompt based on model provider and architecture.
+        format prompt based on model provider and architecture
 
-        Args:
-            template: prompt template containing system and user instructions
+        args:
+            instructions: dict containing system and user instructions
             text: input text to format
 
-        Returns:
+        returns:
             formatted prompt string or message list depending on provider
         """
-        instruction = template.get_instruction()
-        user_prompt = instruction["user"].replace("{{text}}", text)
+        user_prompt = instructions["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
             # anthropic requires system at top-level
-            system_prompt = instruction["system"]
+            system_prompt = instructions["system"]
             return {
                 "system": system_prompt,
                 "messages": [
@@ -185,29 +164,45 @@ class PromptManager:
 
         elif self.config.provider == "openai":
             return [
-                {"role": "system", "content": instruction["system"]},
+                {"role": "system", "content": instructions["system"]},
                 {"role": "user", "content": user_prompt}
             ]
 
         else:  # local models
             messages = [
-                {"role": "system", "content": instruction["system"]},
+                {"role": "system", "content": instructions["system"]},
                 {"role": "user", "content": user_prompt}
             ]
 
             try:
-                # use native HF chat template
-                formatted = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=False
-                )
+                # check if model's template supports system messages
+                template = self.tokenizer.chat_template
+                has_system_support = template and "system" in template.lower()
+
+                if has_system_support:
+                    formatted = self.tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=False
+                    )
+                else:
+                    # for models without system support, put system before user message
+                    system_msg = instructions["system"].strip()
+                    combined_user_msg = f"{system_msg}\n\n{user_prompt}"
+                    user_messages = [{"role": "user", "content": combined_user_msg}]
+
+                    formatted = self.tokenizer.apply_chat_template(
+                        user_messages,
+                        tokenize=False,
+                        add_generation_prompt=False
+                    )
+
                 return formatted
 
             except Exception as e:
                 raise ModelInitError(
-                    f"Failed to apply chat template for {self.config.model_name}: {str(e)}\n"
-                    f"Please check if the model name matches the HuggingFace model ID and "
+                    f"failed to apply chat template for {self.config.model_name}: {str(e)}\n"
+                    f"please check if the model name matches the HuggingFace model ID and "
                     f"that it has a valid chat template."
                 )
 
@@ -240,7 +235,9 @@ class ModelManager:
         """Generate text using specified provider."""
 
         if self.config.debug:
+            logger.info("*"*90)
             logger.info(f"Raw input to model:\n{formatted_prompt}")
+            logger.info("*" * 90)
 
         if self.config.provider == "anthropic":
             response = await self._generate_with_anthropic(formatted_prompt)
@@ -248,80 +245,66 @@ class ModelManager:
         elif self.config.provider == "openai":
             response = await self._generate_with_openai(formatted_prompt)
 
-        else:
-            # local model inference with proper tokenization
-            if isinstance(formatted_prompt, str):
-                inputs = self.tokenizer(
-                    formatted_prompt,
-                    return_tensors="pt",
-                    add_special_tokens=False  # already added by chat template
-                ).to(self.model.device)
-
-                sampling_params = SamplingParams(
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens
-                )
-
-                outputs = self.model.generate(inputs["input_ids"], sampling_params)
-                response = self.tokenizer.decode(
-                    outputs[0].outputs[0].tokens,
-                    skip_special_tokens=True
-                )
-            else:
-                raise ValueError(
-                    f"Expected string prompt for local model, got {type(formatted_prompt)}"
-                )
+        else:  # local model inference with vLLM
+            sampling_params = SamplingParams(
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens
+            )
+            outputs = self.model.generate(formatted_prompt, sampling_params)
+            response = self.tokenizer.decode(
+                outputs[0].outputs[0].tokens,
+                skip_special_tokens=True
+            )
 
         if response and self.config.debug:
+            logger.info("*" * 90)
             logger.info(f"Raw model output:\n{response}")
+            logger.info("*" * 90)
 
         return response
 
     async def generate_with_validation(
             self,
-            prompt: PromptTemplate,
+            instructions: Dict[str, str],
             text: str,
             base_seed: int
     ) -> Tuple[Optional[str], Optional[str], int]:
         """
-        Generate response with validation and retries.
-        If it fails the first time, increment the seed by 1 on each retry.
+        generate response with validation and retries
+        if it fails the first time, increment the seed by 1 on each retry
         """
-        formatted_prompt = self.prompt_manager.format_prompt(prompt, text)
-        # store input text for logging
+        formatted_prompt = self.prompt_manager.format_prompt(instructions, text)
         self.last_input_text = text
 
         for attempt in range(MAX_RETRIES):
             try:
-                # shift the seed by attempt
                 used_seed = base_seed + attempt
                 random.seed(used_seed)
 
                 if self.config.debug:
-                    logger.info(f"Raw input to model:\n*{formatted_prompt}*")
-                    logger.info(f"Using seed={used_seed} for attempt={attempt}")
+                    logger.info(f"raw input to model:\n*{formatted_prompt}*")
+                    logger.info(f"using seed={used_seed} for attempt={attempt}")
 
                 response = await self._generate_with_provider(formatted_prompt)
 
                 if response:
                     rewrite = self._validate_and_extract(response)
                     if rewrite:
-                        # return the actual seed used
                         return response, rewrite, used_seed
 
             except APIError as e:
                 logger.warning(
-                    f"API error on attempt {attempt + 1} with seed={used_seed}: {str(e)}\n"
-                    f"Full input text:\n*{text}*"
+                    f"api error on attempt {attempt + 1} with seed={used_seed}: {str(e)}\n"
+                    f"full input text:\n*{text}*"
                 )
                 continue
             except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}")
+                logger.error(f"unexpected error: {str(e)}")
                 break
 
         raise GenerationError(
-            f"Failed to generate valid response after max retries.\n"
-            f"Last attempted input text:\n*{text}*"
+            f"failed to generate valid response after max retries.\n"
+            f"last attempted input text:\n*{text}*"
         )
 
     def _get_api_key(self) -> Optional[str]:
@@ -482,21 +465,20 @@ class ExperimentManager:
     async def _process_single_text(
             self,
             text: str,
-            prompt_template: PromptTemplate,
+            instructions: Dict[str, str],
             seed: int
     ) -> Optional[Dict]:
-        """Process a single text input."""
+        """process a single text input"""
         try:
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
-                prompt_template,
+                instructions,
                 text,
-                base_seed=seed  # <-- new parameter
+                base_seed=seed
             )
             if rewrite:
                 return {
                     "original": text,
                     "raw_input": {
-                        "description": prompt_template.description,
                         "provider": self.model_manager.config.provider
                     },
                     "raw_output": raw_output,
@@ -507,31 +489,26 @@ class ExperimentManager:
             return None
 
         except Exception as e:
-            logger.error(f"Error processing text: {str(e)}")
+            logger.error(f"error processing text: {str(e)}")
             return None
 
     async def generate_rewrites(
         self,
         texts: List[str],
-        prompt_template: PromptTemplate
+        instructions: Dict[str, str]
     ) -> Dict:
         """
-        Generate rewritten versions of input texts using LLM transformations.
-        We run concurrency = num_seeds, each concurrency job uses a unique seed.
+        generate rewritten versions of input texts using LLM transformations
+        we run concurrency = num_seeds, each concurrency job uses a unique seed
         """
-
-        # pick the seeds
         selected_seeds = FIXED_SEEDS[: self.config.num_seeds]
 
         async def process_seed(s_idx: int) -> Dict:
-            """
-            Each seed => one concurrency job
-            """
             seed = selected_seeds[s_idx]
             random.seed(seed)
 
             tasks = [
-                self._process_single_text(text, prompt_template, seed)
+                self._process_single_text(text, instructions, seed)
                 for text in texts
             ]
             results = await asyncio.gather(*tasks)
@@ -545,12 +522,8 @@ class ExperimentManager:
                 "transformations": valid_results
             }
 
-        # build concurrency tasks
         tasks = [process_seed(i) for i in range(self.config.num_seeds)]
-        # run them all in parallel
         all_results = await asyncio.gather(*tasks)
-
-        # filter out any that have no transformations
         return {"all_runs": [r for r in all_results if r["transformations"]]}
 
     def _save_seed_results(self, seed: int, results: List[Dict]) -> None:
@@ -644,17 +617,16 @@ async def main():
     args = parser.parse_args()
 
     try:
-        # setup config
         config = ExperimentConfig.from_args(args)
-        logger.info(f"Initialized experiment config for {config.corpus}-{config.sub_question}")
+        logger.info(
+            f"initialized experiment config for {config.corpus}-{config.sub_question}")
 
-        # load prompt
+        # load prompt (now simplified json format)
         prompt_path = Path('prompts') / f"{args.rq}.json"
         if not prompt_path.exists():
-            raise FileNotFoundError(f"Prompt configuration not found: {prompt_path}")
+            raise FileNotFoundError(f"prompt configuration not found: {prompt_path}")
 
-        prompt_config = json.loads(prompt_path.read_text(encoding='utf-8'))
-        prompt_template = PromptTemplate(**prompt_config)
+        instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
 
         # init managers
         model_manager = ModelManager(config)
@@ -662,24 +634,23 @@ async def main():
 
         # save experiment config
         experiment_manager.save_experiment_config()
-        logger.info(f"Saved experiment config to {experiment_manager.output_dir}")
+        logger.info(f"saved experiment config to {experiment_manager.output_dir}")
 
-        # load corpus data
+        # load and process corpus data
         _, _, test_texts, _ = load_corpus(corpus=config.corpus, task="no_protection")
-        logger.info(f"Loaded {len(test_texts)} test samples from {config.corpus}")
+        logger.info(f"loaded {len(test_texts)} test samples from {config.corpus}")
 
-        # if debug, truncate to first 3
         if config.debug:
             test_texts = test_texts[:3]
-            logger.info("Debug mode ON: using only first 3 samples.")
+            logger.info("debug mode ON: using only first 3 samples")
 
-        # run rewrite generation
-        results = await experiment_manager.generate_rewrites(test_texts, prompt_template)
+        results = await experiment_manager.generate_rewrites(test_texts, instructions)
 
-        successful_runs = sum(len(run["transformations"]) for run in results["all_runs"])
+        successful_runs = sum(
+            len(run["transformations"]) for run in results["all_runs"])
         logger.info(
-            f"Completed experiment with {successful_runs} successful generations. "
-            f"Results saved to: {experiment_manager.output_dir}"
+            f"completed experiment with {successful_runs} successful generations. "
+            f"results saved to: {experiment_manager.output_dir}"
         )
 
     except Exception as e:
