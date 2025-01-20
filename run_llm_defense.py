@@ -33,6 +33,10 @@ import anthropic
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from vllm import LLM, SamplingParams
+from transformers import AutoTokenizer
+import logging
+from typing import Union, List, Dict, Optional
+
 
 from utils import load_corpus
 
@@ -142,21 +146,40 @@ class PromptManager:
 
     def __init__(self, config: ExperimentConfig):
         self.config = config
+        self.tokenizer = None
+        if self.config.provider == "local":
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.config.model_name,
+                    trust_remote_code=True
+                )
+            except Exception as e:
+                raise ModelInitError(
+                    f"Failed to load tokenizer for {self.config.model_name}: {str(e)}"
+                )
 
     def format_prompt(self, template: PromptTemplate, text: str) -> Union[
         str, List[Dict[str, str]]]:
+        """
+        Format prompt based on model provider and architecture.
+
+        Args:
+            template: prompt template containing system and user instructions
+            text: input text to format
+
+        Returns:
+            formatted prompt string or message list depending on provider
+        """
         instruction = template.get_instruction()
         user_prompt = instruction["user"].replace("{{text}}", text)
 
         if self.config.provider == "anthropic":
-            # "system" must be top-level
-            # "messages" contains just user/assistant roles
+            # anthropic requires system at top-level
             system_prompt = instruction["system"]
-            user_text = instruction["user"].replace("{{text}}", text)
             return {
                 "system": system_prompt,
                 "messages": [
-                    {"role": "user", "content": user_text}
+                    {"role": "user", "content": user_prompt}
                 ]
             }
 
@@ -167,21 +190,92 @@ class PromptManager:
             ]
 
         else:  # local models
-            lower_name = self.config.model_name.lower()
-            if "llama" in lower_name or "mistral" in lower_name:
-                return f"<s>[INST] {instruction['system']}\n\n{user_prompt} [/INST]"
-            elif "olmo" in lower_name or "gemma" in lower_name:
-                return f"Human: {instruction['system']}\n\n{user_prompt}\n\nAssistant:"
-            else:
-                raise ValueError(f"Unsupported local model: {self.config.model_name}")
+            messages = [
+                {"role": "system", "content": instruction["system"]},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            try:
+                # use native HF chat template
+                formatted = self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=False
+                )
+                return formatted
+
+            except Exception as e:
+                raise ModelInitError(
+                    f"Failed to apply chat template for {self.config.model_name}: {str(e)}\n"
+                    f"Please check if the model name matches the HuggingFace model ID and "
+                    f"that it has a valid chat template."
+                )
 
 
 class ModelManager:
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self._api_key = self._get_api_key()
-        self.model = self._initialize_model()
+        self.tokenizer = None
+        self.model = None
+
+        if self.config.provider == "local":
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.config.model_name,
+                    trust_remote_code=True
+                )
+                self.model = self._initialize_model()
+            except Exception as e:
+                raise ModelInitError(
+                    f"Failed to initialize local model/tokenizer {self.config.model_name}: {str(e)}"
+                )
+
         self.prompt_manager = PromptManager(config)
+
+    async def _generate_with_provider(
+            self,
+            formatted_prompt: Union[str, List[Dict[str, str]]]
+    ) -> Optional[str]:
+        """Generate text using specified provider."""
+
+        if self.config.debug:
+            logger.info(f"Raw input to model:\n{formatted_prompt}")
+
+        if self.config.provider == "anthropic":
+            response = await self._generate_with_anthropic(formatted_prompt)
+
+        elif self.config.provider == "openai":
+            response = await self._generate_with_openai(formatted_prompt)
+
+        else:
+            # local model inference with proper tokenization
+            if isinstance(formatted_prompt, str):
+                inputs = self.tokenizer(
+                    formatted_prompt,
+                    return_tensors="pt",
+                    add_special_tokens=False  # already added by chat template
+                ).to(self.model.device)
+
+                sampling_params = SamplingParams(
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens
+                )
+
+                outputs = self.model.generate(inputs["input_ids"], sampling_params)
+                response = self.tokenizer.decode(
+                    outputs[0].outputs[0].tokens,
+                    skip_special_tokens=True
+                )
+            else:
+                raise ValueError(
+                    f"Expected string prompt for local model, got {type(formatted_prompt)}"
+                )
+
+        if response and self.config.debug:
+            logger.info(f"Raw model output:\n{response}")
+
+        return response
 
     async def generate_with_validation(
             self,
@@ -335,37 +429,6 @@ class ModelManager:
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic API error: {str(e)}")
 
-    async def _generate_with_provider(
-            self,
-            formatted_prompt: Union[str, List[Dict[str, str]]]
-    ) -> Optional[str]:
-
-        if self.config.debug:
-            logger.info(f"Raw input to model:\n{formatted_prompt}")
-
-        if self.config.provider == "anthropic":
-            # `formatted_prompt` is a dict with 'system' and 'messages'
-            response = await self._generate_with_anthropic(formatted_prompt)
-
-        elif self.config.provider == "openai":
-            response = await self._generate_with_openai(
-                formatted_prompt
-            )
-        else:
-            # local model inference
-            sampling_params = SamplingParams(
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
-            )
-            response = self.model.generate(formatted_prompt, sampling_params)
-            response = response[0].outputs[0].text
-
-        if response and self.config.debug:
-            logger.info(f"Raw model output:\n{response}")
-
-        return response
-
-    # In run_llm_defense.py, in the ModelManager class
     def _validate_and_extract(self, response: str) -> Optional[str]:
         if not response:
             logger.warning("Empty response from model")
