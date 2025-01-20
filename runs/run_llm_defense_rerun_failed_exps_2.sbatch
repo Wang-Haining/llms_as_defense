@@ -19,7 +19,15 @@ module load CUDA/12.2.0
 
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
---rq rq2.2_imitation \
+--rq rq1.2_backtranslation_via_de \
+--model "google/gemma-2-9b-it" \
+--provider local
+
+sleep 30
+
+CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
+--corpus lcmc \
+--rq rq1.2_backtranslation_via_de \
 --model "meta-llama/Llama-3.1-8B-Instruct" \
 --provider local
 
@@ -27,14 +35,14 @@ sleep 30
 
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
---rq rq2.2_imitation_w_example \
+--rq rq1.2_backtranslation_via_zh \
 --model "meta-llama/Llama-3.1-8B-Instruct" \
 --provider local
 
 sleep 30
 
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus lcmc \
+--corpus ebg \
 --rq rq2.3_simplification_w_knowledge \
---model "meta-llama/Llama-3.1-8B-Instruct" \
+--model "google/gemma-2-9b-it" \
 --provider local
