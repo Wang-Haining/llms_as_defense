@@ -127,6 +127,8 @@ class PromptManager:
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self.tokenizer = None
+        self._supports_system_role = None
+
         if self.config.provider == "local":
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(
@@ -141,20 +143,20 @@ class PromptManager:
     def format_prompt(self, instructions: Dict[str, str], text: str) -> Union[
         str, List[Dict[str, str]]]:
         """
-        format prompt based on model provider and architecture
+        Format prompt based on model provider and architecture.
+        For local models that explicitly don't support system messages, prepends system to user message.
 
-        args:
-            instructions: dict containing system and user instructions
-            text: input text to format
+        Args:
+            instructions: Dict containing system and user instructions
+            text: Input text to format
 
-        returns:
-            formatted prompt string or message list depending on provider
+        Returns:
+            Formatted prompt string or message list depending on provider
         """
         user_prompt = instructions["user"].replace("{{text}}", text)
+        system_prompt = instructions["system"].strip()
 
         if self.config.provider == "anthropic":
-            # anthropic requires system at top-level
-            system_prompt = instructions["system"]
             return {
                 "system": system_prompt,
                 "messages": [
@@ -164,47 +166,40 @@ class PromptManager:
 
         elif self.config.provider == "openai":
             return [
-                {"role": "system", "content": instructions["system"]},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
 
         else:  # local models
             messages = [
-                {"role": "system", "content": instructions["system"]},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
 
             try:
-                # check if model's template supports system messages
-                template = self.tokenizer.chat_template
-                has_system_support = template and "system" in template.lower()
-
-                if has_system_support:
-                    formatted = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=False
-                    )
-                else:
-                    # for models without system support, put system before user message
-                    system_msg = instructions["system"].strip()
-                    combined_user_msg = f"{system_msg}\n\n{user_prompt}"
-                    user_messages = [{"role": "user", "content": combined_user_msg}]
-
-                    formatted = self.tokenizer.apply_chat_template(
+                return self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+            except Exception as e:
+                error_str = str(e)
+                # only handle the specific "System role not supported" error
+                if "System role not supported" in error_str:
+                    logger.info(
+                        f"Model {self.config.model_name} doesn't support system role, combining with user prompt")
+                    combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+                    user_messages = [{"role": "user", "content": combined_prompt}]
+                    return self.tokenizer.apply_chat_template(
                         user_messages,
                         tokenize=False,
-                        add_generation_prompt=False
+                        add_generation_prompt=True
                     )
-
-                return formatted
-
-            except Exception as e:
-                raise ModelInitError(
-                    f"failed to apply chat template for {self.config.model_name}: {str(e)}\n"
-                    f"please check if the model name matches the HuggingFace model ID and "
-                    f"that it has a valid chat template."
-                )
+                else:
+                    # let any other template errors propagate
+                    raise ModelInitError(
+                        f"Failed to apply chat template for {self.config.model_name}: {error_str}"
+                    )
 
 
 class ModelManager:
