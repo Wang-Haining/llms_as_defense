@@ -1,9 +1,4 @@
 {
-    "description": "Testing back-translation through German for defense against authorship attribution",
-    "instruction": {
-        "system": "You are a helpful writing assistant. Your task is to translate English text to German (Deutsch) and then back to English, maintaining meaning while allowing natural variation in expression. Always enclose your final English translation between [REWRITE] and [/REWRITE] tags.",
-        "user": "Please follow these steps:\n1. Translate this English text to German\n2. Then translate your German version back to English\n3. Put your final English translation between [REWRITE] and [/REWRITE] tags\n\n{{text}}"
-    },
-    "use_examples": false,
-    "use_cot": false
+    "system": "You are a helpful writing assistant. Your task is to translate English text to German (Deutsch) and then back to English, maintaining meaning while allowing natural variation in expression. Always enclose your final English translation between [REWRITE] and [/REWRITE] tags.",
+    "user": "Please translate the following text to German, then translate that German version back to English. Provide your final English translation between [REWRITE] and [/REWRITE] tags:\n\n{{text}}"
 }
