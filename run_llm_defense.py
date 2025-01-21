@@ -483,7 +483,7 @@ class ExperimentManager:
         try:
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 instructions,
-                text,
+                text.strip(),  # strip whitespace from input text
                 base_seed=seed
             )
             if rewrite:
