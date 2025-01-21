@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_local
+#SBATCH --job-name=run_llm_defense_local_gemma_only
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
@@ -19,7 +19,7 @@ module load CUDA/12.2.0
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus ebg \
 --rq rq1.1_basic_paraphrase \
---model "meta-llama/Llama-3.1-8B-Instruct" \
+--model "google/gemma-2-9b-it" \
 --provider local \
 --temperature 0.7 \
 --max_tokens 4096 \
@@ -43,22 +43,11 @@ sleep 30
 CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
 --corpus lcmc \
 --rq rq1.1_basic_paraphrase \
---model "mistralai/Ministral-8B-Instruct-2410" \
+--model "google/gemma-2-9b-it" \
 --provider local \
 --temperature 0.7 \
 --max_tokens 4096 \
 --num_seeds 1 \
 --debug
 
-sleep 30
-
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus lcmc \
---rq rq1.1_basic_paraphrase \
---model "allenai/OLMo-2-1124-7B-Instruct" \
---provider local \
---temperature 0.7 \
---max_tokens 4096 \
---num_seeds 1 \
---debug
 
