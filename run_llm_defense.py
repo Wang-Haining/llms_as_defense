@@ -54,7 +54,7 @@ from typing import Dict, List
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
 from utils import (LogisticRegressionPredictor, SVMPredictor,
-                   evaluate_attribution_defense, load_corpus)
+                   evaluate_attribution_defense, load_corpus, RQS, LLMS, CORPORA)
 
 # configure logging
 logging.basicConfig(
@@ -270,7 +270,7 @@ def main():
     parser.add_argument(
         '--corpus',
         type=str,
-        choices=['rj', 'ebg', 'lcmc'],
+        choices=CORPORA,
         help='Specific corpus to evaluate (default: all)'
     )
     parser.add_argument(
@@ -294,12 +294,9 @@ def main():
     )
 
     # determine what to evaluate
-    corpora = [args.corpus] if args.corpus else ['rj', 'ebg', 'lcmc']
-    rqs = [args.rq] if args.rq else ['rq1.1_basic_paraphrase', 'rq1.2_basic_backtranslation']
-    models = [args.model] if args.model else [
-        'meta-llama/llama-2-7b-chat',
-        'google/gemma-2b-it'
-    ]
+    corpora = [args.corpus] if args.corpus else CORPORA
+    rqs = [args.rq] if args.rq else RQS
+    models = [args.model] if args.model else LLMS
 
     # run evaluation
     for corpus in corpora:
