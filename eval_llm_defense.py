@@ -110,25 +110,20 @@ class DefenseEvaluator:
 
         Args:
             corpus: corpus name (rj/ebg/lcmc)
-            rq: research question identifier (e.g. rq1.1 or rq1.1_basic_paraphrase)
+            rq: research question identifier (e.g. rq1.1_basic_paraphrase)
             model_name: full model name (e.g. google/gemma-2b-it)
 
         Returns:
             Path to experiment directory
         """
-        # extract main RQ category (e.g. RQ1) and sub-question (e.g. RQ1.1)
-        # handle both short (rq1.1) and long (rq1.1_basic_paraphrase) formats
+        # extract main RQ category (e.g. rq1)
         rq_base = rq.split('_')[0]  # get rq1.1 part
-        rq_num = rq_base.lower().replace('rq', '')  # get 1.1
-        rq_parts = rq_num.split('.')
-
-        rq_main = f"RQ{rq_parts[0]}"  # RQ1
-        rq_sub = f"RQ{rq_parts[0]}.{rq_parts[1]}"  # RQ1.1
+        rq_main = rq_base.split('.')[0]  # get rq1
 
         # get model directory name (last part of model path)
         model_dir = model_name.split('/')[-1].lower()
 
-        expected_path = self.llm_outputs_dir / corpus / rq_main / rq_sub / model_dir
+        expected_path = self.llm_outputs_dir / corpus / rq_main / rq / model_dir
         logger.info(f"Constructed path: {expected_path}")
 
         return expected_path
