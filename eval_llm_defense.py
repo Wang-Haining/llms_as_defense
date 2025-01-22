@@ -45,14 +45,14 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List
+
 import numpy as np
+from sklearn.metrics import average_precision_score
 
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
-from utils import (
-    CORPORA, LLMS, RQS, LogisticRegressionPredictor,
-    SVMPredictor, _calculate_metrics, load_corpus, defense_effectiveness
-)
+from utils import (CORPORA, LLMS, RQS, LogisticRegressionPredictor,
+                   SVMPredictor, load_corpus)
 
 # configure logging
 logging.basicConfig(
@@ -60,6 +60,153 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def defense_effectiveness(pre_metrics, post_metrics):
+    """
+    Calculate effectiveness of the defense by comparing pre and post metrics.
+
+    Args:
+        pre_metrics: dict
+            Metrics before applying defense
+        post_metrics: dict
+            Metrics after applying defense
+
+    Returns:
+        dict: Effectiveness metrics with interpretation guidelines
+    """
+    effectiveness = {}
+
+    # relative changes in key metrics
+    for metric in ['mrr', 'map', 'conf_gap']:
+        rel_change = (post_metrics[metric] - pre_metrics[metric]) / pre_metrics[metric]
+        effectiveness[f'{metric}_change'] = rel_change
+
+    # entropy increase (desired for defense)
+    effectiveness['entropy_increase'] = post_metrics['entropy'] - pre_metrics['entropy']
+
+    # average rank improvement
+    effectiveness['avg_rank_improvement'] = (1 / post_metrics['mrr']) - (1 / pre_metrics['mrr'])
+
+    # NDCG degradation (desired for defense)
+    for k in [1, 3, 5, None]:
+        k_str = f'@{k if k else "all"}'
+        metric_key = f'ndcg{k_str}'
+        effectiveness[f'ndcg{k_str}_change'] = post_metrics[metric_key] - pre_metrics[metric_key]
+
+    # Gini coefficient change
+    effectiveness['gini_change'] = post_metrics['gini'] - pre_metrics['gini']
+
+    return effectiveness
+
+
+def gini_coefficient(array):
+    """
+    Calculate the Gini coefficient of an array.
+        - Value of 0 expresses perfect equality (all predictions equally likely)
+        - Value of 1 expresses maximal inequality (one prediction has all probability)
+    """
+    array = np.array(array)
+    if np.amin(array) < 0:
+        array -= np.amin(array)
+    array = array + 1e-10  # avoid division by zero
+    array = np.sort(array)
+    index = np.arange(1, array.shape[0] + 1)
+    n = array.shape[0]
+    return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
+
+
+def ndcg_score(y_true, y_pred_probs, k=None):
+    """
+    Calculate Normalized Discounted Cumulative Gain.
+        - Measures ranking quality considering position importance
+        - Normalized version allows comparison across different numbers of authors
+
+    Args:
+        y_true: true author index
+        y_pred_probs: predicted probabilities for each author
+        k: number of positions to consider (None for all)
+    """
+
+    def dcg(y_true, y_pred_probs, k):
+        # sort predictions in descending order and get indices
+        sorted_indices = np.argsort(y_pred_probs)[::-1]
+        if k:
+            sorted_indices = sorted_indices[:k]
+
+        # calculate DCG
+        gains = [1.0 if idx == y_true else 0.0 for idx in sorted_indices]
+        discounts = [1.0 / np.log2(i + 2) for i in range(len(gains))]
+        return np.sum(gains * np.array(discounts))
+
+    # calculate actual DCG
+    actual_dcg = dcg(y_true, y_pred_probs, k)
+
+    # calculate ideal DCG (true author ranked first)
+    ideal_probs = np.zeros_like(y_pred_probs)
+    ideal_probs[y_true] = 1.0
+    ideal_dcg = dcg(y_true, ideal_probs, k)
+
+    if ideal_dcg == 0:
+        return 0.0
+
+    return actual_dcg / ideal_dcg
+
+
+def calculate_metrics(y_true, y_pred_probs):
+    """Helper function to calculate core metrics."""
+    metrics = {}
+
+    # Classification metrics
+    metrics['accuracy'] = np.mean(np.argmax(y_pred_probs, axis=1) == y_true)
+
+    # Mean Reciprocal Rank
+    ranks = []
+    for i, true_label in enumerate(y_true):
+        pred_probs = y_pred_probs[i]
+        rank = len(pred_probs) - np.where(np.argsort(pred_probs) == true_label)[0][0]
+        ranks.append(1 / rank)
+    metrics['mrr'] = np.mean(ranks)
+
+    # Mean Average Precision
+    metrics['map'] = average_precision_score(
+        y_true.reshape(-1, 1) == np.arange(y_pred_probs.shape[1]),
+        y_pred_probs
+    )
+
+    # Entropy and confidence metrics
+    entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
+    metrics['entropy'] = np.mean(entropies)
+    metrics['entropy_std'] = np.std(entropies)
+
+    confidence_gaps = []
+    for probs in y_pred_probs:
+        sorted_probs = np.sort(probs)
+        confidence_gaps.append(sorted_probs[-1] - sorted_probs[-2])
+    metrics['conf_gap'] = np.mean(confidence_gaps)
+    metrics['conf_gap_std'] = np.std(confidence_gaps)
+
+    # Top-K Accuracy
+    for k in [1, 3, 5]:
+        metrics[f'top_{k}_acc'] = np.mean([
+            true_label in np.argsort(probs)[-k:]
+            for true_label, probs in zip(y_true, y_pred_probs)
+        ])
+
+    # NDCG at different k values
+    for k in [1, 3, 5, None]:
+        ndcg_scores = [
+            ndcg_score(true_label, probs, k)
+            for true_label, probs in zip(y_true, y_pred_probs)
+        ]
+        metrics[f'ndcg@{k if k else "all"}'] = np.mean(ndcg_scores)
+
+    # Distribution metrics
+    gini_scores = [gini_coefficient(probs) for probs in y_pred_probs]
+    metrics['gini'] = np.mean(gini_scores)
+    metrics['gini_std'] = np.std(gini_scores)
+
+    return metrics
 
 
 class DefenseEvaluator:
@@ -187,17 +334,17 @@ class DefenseEvaluator:
         """
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
-        # 1. Load original test data
+        # 1. load original test data
         _, _, test_texts, test_labels = load_corpus(
             corpus=corpus,
             task="no_protection"
         )
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
-        # 2. Load LLM transformations
+        # 2. load LLM transformations
         llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
 
-        # 3. Group transformations by seed
+        # 3. group transformations by seed
         transformations_by_seed = {}
         for output in llm_outputs:
             if isinstance(output, dict) and 'transformed' in output:
@@ -208,7 +355,7 @@ class DefenseEvaluator:
 
         logger.info(f"Loaded {len(transformations_by_seed)} seeds with transformations")
 
-        # 4. Prepare output directory (mirroring input structure)
+        # 4. prepare output directory (mirroring input structure)
         output_base = (
             self.output_dir
             / corpus
@@ -218,10 +365,10 @@ class DefenseEvaluator:
         )
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # Collect all seeds' results in a single dict
+        # collect all seeds' results in a single dict
         all_seed_results = {}
 
-        # 5. Evaluate each seed
+        # 5. evaluate each seed
         for seed, transformed_texts in transformations_by_seed.items():
             if len(transformed_texts) != len(test_texts):
                 logger.warning(
@@ -235,28 +382,19 @@ class DefenseEvaluator:
             for model_type in ['logreg', 'svm', 'roberta']:
                 logger.info(f"Evaluating seed {seed} against {model_type}")
 
-                # 5a. Load the trained predictor
                 predictor = self._load_predictor(corpus, model_type)
 
-                # 5b. Get predictions
                 orig_preds = predictor.predict_proba(test_texts)
                 trans_preds = predictor.predict_proba(transformed_texts)
 
-                # 5c. Calculate attribution metrics
-                original_metrics = _calculate_metrics(test_labels, orig_preds)
-                transformed_metrics = _calculate_metrics(test_labels, trans_preds)
-
-                # 5d. Measure effectiveness
+                original_metrics = calculate_metrics(test_labels, orig_preds)
+                transformed_metrics = calculate_metrics(test_labels, trans_preds)
                 effectiveness = defense_effectiveness(original_metrics, transformed_metrics)
-
-                # 5e. Evaluate text quality
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
                     metrics=['pinc', 'bleu', 'meteor', 'bertscore']
                 )
-
-                # 5f. Store results
                 seed_results[model_type] = {
                     'attribution': {
                         'original_metrics': original_metrics,
@@ -266,15 +404,15 @@ class DefenseEvaluator:
                     'quality': quality_metrics
                 }
 
-            # 6. Save *this seed's* results in .npz
+            # 6. save as .npz
             output_file = output_base / f"seed_{seed}.npz"
             np.savez_compressed(output_file, results=seed_results)
             logger.info(f"Saved evaluation results to {output_file}")
 
-            # 7. Add to our big dictionary
+            # 7. add to our big dictionary
             all_seed_results[seed] = seed_results
 
-        # 8. Return all seeds’ results so that save_results can use them
+        # 8. return all seeds' results so that save_results can use them
         return all_seed_results
 
     def save_results(
@@ -288,20 +426,19 @@ class DefenseEvaluator:
         Save evaluation results following consistent structure. Also logs
         a quick summary of the first-level metrics (e.g., accuracy, MRR).
         """
-        # Get experiment directory structure
+        # get experiment directory structure
         exp_dir = self._get_experiment_paths(corpus, rq, model_name)
         save_dir = self.output_dir / exp_dir.relative_to(self.llm_outputs_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save the entire results dict to a single .npz file
+        # save the entire results dict to a single .npz file
         output_file = save_dir / "evaluation.npz"
         np.savez_compressed(output_file, results=results)
         logger.info(f"Saved final consolidated results to {output_file}")
 
-        # Log summary metrics
+        # log summary metrics
         logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")
         # 'results' is typically {seed: {model_type: {...}, model_type: {...}}}
-        # If you want to see *all seeds*, you can iterate over them:
         for seed, seed_dict in results.items():
             logger.info(f"--- Seed: {seed} ---")
             for model_type, metrics in seed_dict.items():
