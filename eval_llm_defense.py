@@ -31,10 +31,8 @@ defense_evaluation/                          # or specified output_dir
 └── {another_corpus}/
 
 Usage:
-    python evaluate_defense.py \
-        --llm_outputs path/to/llm/outputs \
-        --results_dir path/to/model/results \
-        --output_dir path/to/evaluation/results
+    python evaluate_llm_defense.py # run all the experiments
+    python evaluate_llm_defense.py --corpus rj  --rq rq1.1 --model "google/gemma-2-9b-it"
 
 The evaluation.json files contain:
 1. Attribution Metrics:
