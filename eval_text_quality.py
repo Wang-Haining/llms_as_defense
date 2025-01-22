@@ -13,11 +13,12 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-import numpy as np
-from bert_score import score as bert_score
-from nltk.translate.meteor_score import meteor_score
-from nltk.tokenize import word_tokenize
 import nltk
+import numpy as np
+import torch
+from bert_score import score as bert_score
+from nltk.tokenize import word_tokenize
+from nltk.translate.meteor_score import meteor_score
 from sacrebleu.metrics import BLEU
 
 # configure logging
@@ -175,35 +176,48 @@ def compute_meteor(
 def compute_bertscore(
         candidate_texts: List[str],
         reference_texts: List[str],
-        model_type: Optional[str] = None,
+        model_type: str = "bert-large-uncased",
+        num_layers: int = 18,
         batch_size: int = 32,
-        device: str = 'cuda'
+        device: Optional[str] = None
 ) -> Dict[str, Union[float, List[float]]]:
     """
     Compute BERTScore measuring semantic similarity using contextual embeddings.
+    Uses BERT-large-uncased layer 18 by default as in the original paper.
+    Automatically selects first available GPU or falls back to CPU.
 
     Args:
         candidate_texts: Generated/paraphrased texts
         reference_texts: Original reference texts
-        model_type: BERT model variant (default: microsoft/deberta-xlarge-mnli)
+        model_type: BERT model variant (default: bert-large-uncased)
+        num_layers: Which layer to use for embeddings (default: 18)
         batch_size: Inference batch size
-        device: Computation device
+        device: Computation device (default: auto-detect first GPU or fall back to CPU)
 
     Returns:
         Dictionary with precision, recall and F1 statistics
     """
+    # auto-detect device if not specified
+    if device is None:
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        if device == 'cpu':
+            logger.warning("No GPU detected, falling back to CPU for BERTScore computation")
+        else:
+            logger.info(f"Using {device} for BERTScore computation")
+
     precision_scores, recall_scores, f1_scores = bert_score(
         candidate_texts,
         reference_texts,
         model_type=model_type,
+        num_layers=num_layers,
         batch_size=batch_size,
         device=device
     )
 
     # convert tensors to numpy
-    precision_scores = precision_scores.numpy()
-    recall_scores = recall_scores.numpy()
-    f1_scores = f1_scores.numpy()
+    precision_scores = precision_scores.cpu().numpy()
+    recall_scores = recall_scores.cpu().numpy()
+    f1_scores = f1_scores.cpu().numpy()
 
     return {
         'bertscore_precision_avg': float(np.mean(precision_scores)),
@@ -214,9 +228,9 @@ def compute_bertscore(
         'bertscore_f1_std': float(np.std(f1_scores)),
         'bertscore_individual': [
             {
-                'precision': prec,
-                'recall': rec,
-                'f1': f1
+                'precision': float(prec),
+                'recall': float(rec),
+                'f1': float(f1)
             }
             for prec, rec, f1 in zip(precision_scores, recall_scores, f1_scores)
         ]
