@@ -1,100 +1,69 @@
 """
-Evaluate LLM-generated adversarial examples using saved authorship attribution models.
+Evaluate effectiveness of LLM-based defense against authorship attribution models.
 
 This script:
-1. Loads LLM-generated adversarial examples from llm.py output directories
-2. Uses saved attribution models to evaluate their effectiveness
-3. Computes comprehensive metrics including attribution performance deltas and text quality
+1. Loads original test samples and LLM-transformed texts
+2. Evaluates both using trained attribution models
+3. Computes comprehensive metrics including:
+   - Attribution performance (accuracy, MRR, MAP, etc.)
+   - Defense effectiveness (ranking changes, entropy increases)
+   - Text quality (BLEU, METEOR, BERTScore)
+4. Saves detailed results for analysis
 
 Directory Structure:
-
-INPUT:
-llm_outputs/{corpus}/{research_question}/{sub_question}/
-├── experiment_config.json
-└── seed_{seed}.json  # contains original and transformed texts
-
-MODEL:
-results/{corpus}/no_protection/
-├── logreg/
-│   ├── predictions.npz
-│   └── model/
-│       ├── model.pkl
-│       └── metadata.json
-├── svm/
-└── roberta/
-
-OUTPUT:
-defense_results/{corpus}/{research_question}/{sub_question}/
-└── seed_{seed}.json   # individual seed results containing:
-    ├── metrics/
-    │   ├── attribution/           # attribution metrics
-    │   │   ├── original_*/        # metrics on original texts:
-    │   │   │   ├── accuracy      # basic classification
-    │   │   │   ├── mrr          # mean reciprocal rank
-    │   │   │   ├── map          # mean average precision
-    │   │   │   ├── entropy      # prediction uncertainty
-    │   │   │   ├── entropy_std
-    │   │   │   ├── conf_gap     # confidence gap between top predictions
-    │   │   │   ├── conf_gap_std
-    │   │   │   ├── top_k_acc    # top-k accuracy (k=1,3,5)
-    │   │   │   ├── ndcg         # NDCG scores (k=1,3,5,all)
-    │   │   │   ├── gini         # distribution inequality
-    │   │   │   └── gini_std
-    │   │   ├── transformed_*/    # same metrics for transformed texts
-    │   │   └── effectiveness/    # defense effectiveness metrics:
-    │   │       ├── mrr_change
-    │   │       ├── map_change
-    │   │       ├── conf_gap_change
-    │   │       ├── entropy_increase
-    │   │       ├── avg_rank_improvement
-    │   │       ├── ndcg_change
-    │   │       └── gini_change
-    │   └── quality/              # text quality metrics
-    │       ├── pinc/             # n-gram novelty
-    │       │   ├── pinc_overall_avg
-    │       │   ├── pinc_overall_std
-    │       │   ├── pinc_1_avg    # metrics for unigrams
-    │       │   ├── pinc_1_std
-    │       │   ├── pinc_1_scores
-    │       │   └── ... # similar for n=2,3,4
-    │       ├── bleu/             # semantic retention
-    │       │   ├── bleu         # overall score
-    │       │   └── precisions   # n-gram precisions
-    │       ├── meteor/           # semantic similarity with synonyms
-    │       │   ├── meteor_avg
-    │       │   ├── meteor_std
-    │       │   └── meteor_scores
-    │       └── bertscore/        # contextual semantic similarity
-    │           ├── bertscore_precision_avg
-    │           ├── bertscore_precision_std
-    │           ├── bertscore_recall_avg
-    │           ├── bertscore_recall_std
-    │           ├── bertscore_f1_avg
-    │           ├── bertscore_f1_std
-    │           └── bertscore_individual  # per-example scores
-    └── texts/                    # evaluated texts
-        ├── original
-        └── transformed
+defense_evaluation/                          # or specified output_dir
+├── {corpus}/                               # rj, ebg, or lcmc
+│   ├── RQ{N}/                             # main research question (e.g., RQ1)
+│   │   ├── RQ{N}.{M}/                     # sub-question (e.g., RQ1.1)
+│   │   │   ├── {model_name}/              # e.g., gemma-2b-it
+│   │   │   │   └── evaluation.json        # evaluation results containing:
+│   │   │   │       ├── logreg/           # results for LogReg model
+│   │   │   │       │   ├── attribution/  # attribution metrics
+│   │   │   │       │   │   ├── original/ # metrics on original texts
+│   │   │   │       │   │   ├── transformed/ # metrics on transformed texts
+│   │   │   │       │   │   └── effectiveness/ # defense effectiveness
+│   │   │   │       │   └── quality/      # text quality metrics
+│   │   │   │       ├── svm/             # similar structure for SVM
+│   │   │   │       └── roberta/         # similar structure for RoBERTa
+│   │   │   └── {another_model}/
+│   │   └── RQ{N}.{M+1}/
+│   └── RQ{N+1}/
+└── {another_corpus}/
 
 Usage:
-    python eval_llm_defense.py --llm_outputs path/to/llm/outputs --model_type [logreg|svm|roberta]
+    python evaluate_defense.py \
+        --llm_outputs path/to/llm/outputs \
+        --results_dir path/to/model/results \
+        --output_dir path/to/evaluation/results
+
+The evaluation.json files contain:
+1. Attribution Metrics:
+   - Accuracy, MRR, MAP for both original and transformed texts
+   - Entropy, confidence gaps, and ranking metrics
+   - Defense effectiveness measures (e.g., MRR change, entropy increase)
+2. Text Quality Metrics:
+   - PINC: n-gram novelty scores
+   - BLEU: overlap with original texts
+   - METEOR: semantic similarity with synonyms
+   - BERTScore: contextual semantic similarity
 """
 
-
 import argparse
-import glob
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from tqdm import tqdm
 
 from utils import (
-    LogisticRegressionPredictor, 
+    load_corpus,
+    evaluate_attribution_defense,
+    LogisticRegressionPredictor,
     SVMPredictor,
-    evaluate_attribution_defense
+    RQS,
+    LLMS
 )
 from roberta import RobertaPredictor
 from eval_text_quality import evaluate_quality
@@ -107,303 +76,261 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ModelLoader:
-    """Handles loading of different types of attribution models."""
+class DefenseEvaluator:
+    """evaluates LLM defense effectiveness against attribution models."""
 
-    PREDICTOR_MAP = {
-        'logreg': LogisticRegressionPredictor,
-        'svm': SVMPredictor,
-        'roberta': RobertaPredictor
-    }
-
-    @classmethod
-    def load_predictor(cls, corpus: str, model_type: str) -> Any:
-        """
-        Load appropriate predictor based on model type.
+    def __init__(
+        self,
+        results_dir: Path,
+        llm_outputs_dir: Path,
+        output_dir: Path
+    ):
+        """initialize evaluator with paths to required data.
 
         Args:
-            corpus: Corpus name (rj, ebg, or lcmc)
-            model_type: Type of model (logreg, svm, or roberta)
+            results_dir: directory containing trained models
+            llm_outputs_dir: directory containing LLM transformations
+            output_dir: directory to save evaluation results
+        """
+        self.results_dir = Path(results_dir)
+        self.llm_outputs_dir = Path(llm_outputs_dir)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # map of model types to predictor classes
+        self.predictor_classes = {
+            'logreg': LogisticRegressionPredictor,
+            'svm': SVMPredictor,
+            'roberta': RobertaPredictor
+        }
+
+    def _load_predictor(
+        self,
+        corpus: str,
+        model_type: str
+    ) -> object:
+        """load trained model predictor for given corpus and type."""
+        model_dir = (
+            self.results_dir / corpus / "no_protection" /
+            model_type / "model"
+        )
+        return self.predictor_classes[model_type](model_dir)
+
+    def _get_experiment_paths(self, corpus: str, rq: str, model_name: str) -> Path:
+        """get experiment directory based on RQ identifier and model name.
+
+        Args:
+            corpus: corpus name (rj/ebg/lcmc)
+            rq: research question identifier (e.g. rq1.1_basic_paraphrase)
+            model_name: full model name (e.g. google/gemma-2b-it)
 
         Returns:
-            Initialized predictor instance
+            Path to experiment directory
         """
-        if model_type not in cls.PREDICTOR_MAP:
-            raise ValueError(f"Unsupported model type: {model_type}")
+        # extract main RQ category (e.g. RQ1) and sub-question (e.g. RQ1.1)
+        rq_parts = rq.split('_')[0].split('.')
+        rq_main = f"RQ{rq_parts[0]}"
+        rq_sub = f"RQ{rq_parts[0]}.{rq_parts[1]}"
 
-        model_dir = Path("results") / corpus / "no_protection" / model_type / "model"
+        # get model directory name (last part of model path)
+        model_dir = model_name.split('/')[-1].lower()
 
-        if not model_dir.exists():
-            raise ValueError(f"Model directory not found: {model_dir}")
+        return self.llm_outputs_dir / corpus / rq_main / rq_sub / model_dir
 
-        metadata_path = model_dir / "metadata.json"
-        if not metadata_path.exists():
-            raise ValueError(f"Metadata file not found: {metadata_path}")
+    def _load_llm_outputs(
+        self,
+        corpus: str,
+        rq: str,
+        model_name: str
+    ) -> List[Dict]:
+        """load LLM-generated transformations for an experiment."""
+        exp_dir = self._get_experiment_paths(corpus, rq, model_name)
 
-        predictor_cls = cls.PREDICTOR_MAP[model_type]
-        return predictor_cls(model_dir)
+        transformations = []
+        for seed_file in exp_dir.glob('seed_*.json'):
+            with open(seed_file) as f:
+                results = json.load(f)
+                transformations.extend(results)
 
+        return transformations
 
-def load_llm_outputs(output_dir: Path) -> Dict[str, Dict[str, List[Dict]]]:
-    """
-    Load LLM-generated outputs from directory structure.
+    def evaluate_experiment(
+        self,
+        corpus: str,
+        rq: str,
+        model_name: str
+    ) -> Dict:
+        """evaluate defense effectiveness for a specific experiment.
 
-    Args:
-        output_dir: Base directory containing LLM outputs
+        Args:
+            corpus: target corpus (rj/ebg/lcmc)
+            rq: research question (e.g. rq1.1_basic_paraphrase)
+            model_name: full model name (e.g. google/gemma-2b-it)
 
-    Returns:
-        Dictionary mapping research questions to lists of transformations per seed
-    """
-    results = {}
+        Returns:
+            Dict containing evaluation metrics
+        """
+        logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
-    # find all seed_*.json files recursively
-    json_files = glob.glob(str(output_dir / "**" / "seed_*.json"), recursive=True)
+        # load original test data
+        _, _, test_texts, test_labels = load_corpus(
+            corpus=corpus,
+            task="no_protection"
+        )
 
-    for json_file in json_files:
-        with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # load LLM transformations
+        transformed_texts = []
+        llm_outputs = self._load_llm_outputs(
+            corpus, rq, model_name
+        )
+        for output in llm_outputs:
+            transformed_texts.append(output['transformed'])
 
-        # extract path components
-        path = Path(json_file)
-        corpus = next(p for p in path.parts if p in ['rj', 'ebg', 'lcmc'])
-        rq = next(p for p in path.parts if p.startswith('RQ'))
-        sub_q = path.parts[path.parts.index(rq) + 1]
-        seed = path.stem.split('_')[1]
+        results = {}
+        # evaluate against each attribution model
+        for model_type in ['logreg', 'svm', 'roberta']:
+            logger.info(f"Evaluating against {model_type}")
 
-        # organize by research question and sub-question
-        key = f"{corpus}/{rq}/{sub_q}"
-        if key not in results:
-            results[key] = {}
+            predictor = self._load_predictor(corpus, model_type)
 
-        # store transformations by seed
-        results[key][seed] = [
-            {
-                'original': item['original'],
-                'transformed': item['transformed'],
-                'metadata': {
-                    'seed': item['initial_seed'],
-                    'actual_seed': item['actual_seed']
-                }
+            # get predictions
+            orig_preds = predictor.predict_proba(test_texts)
+            trans_preds = predictor.predict_proba(transformed_texts)
+
+            # compute comprehensive metrics
+            metrics = evaluate_attribution_defense(
+                test_labels,
+                orig_preds,
+                trans_preds
+            )
+
+            # evaluate text quality
+            quality_metrics = evaluate_quality(
+                candidate_texts=transformed_texts,
+                reference_texts=test_texts,
+                metrics=['pinc', 'bleu', 'meteor', 'bertscore']
+            )
+
+            results[model_type] = {
+                'attribution': metrics,
+                'quality': quality_metrics
             }
-            for item in data if 'original' in item and 'transformed' in item
-        ]
 
-    return results
+        return results
 
+    def save_results(
+        self,
+        results: Dict,
+        corpus: str,
+        rq: str,
+        model_name: str
+    ) -> None:
+        """save evaluation results following consistent structure."""
+        # get experiment directory structure
+        exp_dir = self._get_experiment_paths(corpus, rq, model_name)
+        save_dir = self.output_dir / exp_dir.relative_to(self.llm_outputs_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
 
-def evaluate_transformations(
-    predictor: Any,
-    original_texts: List[str],
-    transformed_texts: List[str],
-    true_labels: np.ndarray
-) -> Dict:
-    """
-    Evaluate original and transformed texts using both attribution and quality metrics.
+        with open(save_dir / "evaluation.json", 'w') as f:
+            json.dump(results, f, indent=2)
 
-    Args:
-        predictor: Model predictor instance
-        original_texts: Original texts
-        transformed_texts: Transformed texts
-        true_labels: True author labels
+        # log summary metrics
+        logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")        for model_type, metrics in results.items():
+            logger.info(f"\n{model_type.upper()} Attribution Results:")
 
-    Returns:
-        Dictionary with combined metrics following the documented structure
-    """
-    # get attribution predictions
-    logger.info("Getting predictions for original texts...")
-    original_preds = predictor.predict_proba(original_texts)
+            # original performance
+            orig = metrics['attribution']['original_metrics']
+            logger.info(f"Original Accuracy: {orig['accuracy']:.4f}")
+            logger.info(f"Original MRR: {orig['mrr']:.4f}")
 
-    logger.info("Getting predictions for transformed texts...")
-    transformed_preds = predictor.predict_proba(transformed_texts)
+            # defense effectiveness
+            eff = metrics['attribution']['effectiveness']
+            logger.info(f"MRR Change: {eff['mrr_change']:.4f}")
+            logger.info(f"Entropy Increase: {eff['entropy_increase']:.4f}")
 
-    # get comprehensive attribution metrics
-    attribution_metrics = evaluate_attribution_defense(
-        true_labels,
-        original_preds,
-        transformed_preds
-    )
-
-    # calculate text quality metrics
-    logger.info("Computing text quality metrics...")
-    quality_metrics = evaluate_quality(
-        candidate_texts=transformed_texts,
-        reference_texts=original_texts,
-        metrics=['pinc', 'bleu', 'meteor', 'bertscore']
-    )
-
-    # organize results according to documented structure
-    results = {
-        'metrics': {
-            'attribution': {
-                'original': attribution_metrics['original_metrics'],
-                'transformed': attribution_metrics['transformed_metrics'],
-                'effectiveness': attribution_metrics['effectiveness']
-            },
-            'quality': quality_metrics
-        }
-    }
-
-    return results
-
-
-def format_metrics_for_logging(metrics: Dict) -> str:
-    """Format metrics dictionary into a readable string."""
-    lines = []
-
-    # attribution metrics
-    attribution = metrics['metrics']['attribution']
-    lines.append("\nAttribution Performance:")
-    
-    # original metrics
-    orig = attribution['original']
-    lines.append("Original:")
-    lines.append(f"  Accuracy: {orig['accuracy']:.4f}")
-    lines.append(f"  MRR: {orig['mrr']:.4f}")
-    lines.append(f"  MAP: {orig['map']:.4f}")
-    
-    # transformed metrics
-    trans = attribution['transformed']
-    lines.append("\nTransformed:")
-    lines.append(f"  Accuracy: {trans['accuracy']:.4f}")
-    lines.append(f"  MRR: {trans['mrr']:.4f}")
-    lines.append(f"  MAP: {trans['map']:.4f}")
-    
-    # effectiveness metrics
-    eff = attribution['effectiveness']
-    lines.append("\nEffectiveness:")
-    lines.append(f"  MRR Change: {eff['mrr_change']:.4f}")
-    lines.append(f"  MAP Change: {eff['map_change']:.4f}")
-    lines.append(f"  Entropy Increase: {eff['entropy_increase']:.4f}")
-
-    # quality metrics
-    quality = metrics['metrics']['quality']
-    lines.append("\nText Quality:")
-    lines.append(f"  BLEU: {quality['bleu']['bleu']:.4f}")
-    lines.append(f"  METEOR: {quality['meteor']['meteor_avg']:.4f}")
-    lines.append(f"  BERTScore F1: {quality['bertscore']['bertscore_f1_avg']:.4f}")
-    lines.append(f"  PINC: {quality['pinc']['pinc_overall_avg']:.4f}")
-
-    return "\n".join(lines)
-
-
-def save_results(
-    metrics: Dict,
-    original_texts: List[str],
-    transformed_texts: List[str],
-    output_dir: Path,
-    experiment_path: str,
-    seed: str
-):
-    """
-    Save evaluation results following documented structure.
-
-    Args:
-        metrics: Evaluation metrics
-        original_texts: Original texts
-        transformed_texts: Transformed texts
-        output_dir: Base output directory
-        experiment_path: Path components (corpus/RQ/sub_q)
-        seed: Seed used for generation
-    """
-    save_dir = output_dir / experiment_path
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    # structure the output data
-    output_data = {
-        'metrics': {
-            'attribution': metrics['metrics']['attribution'],
-            'quality': {
-                'pinc': metrics['metrics']['quality']['pinc'],
-                'bleu': metrics['metrics']['quality']['bleu'],
-                'meteor': metrics['metrics']['quality']['meteor'],
-                'bertscore': metrics['metrics']['quality']['bertscore']
-            }
-        },
-        'texts': {
-            'original': original_texts,
-            'transformed': transformed_texts
-        }
-    }
-
-    # save results
-    with open(save_dir / f"seed_{seed}.json", 'w', encoding='utf-8') as f:
-        json.dump(output_data, f, indent=2)
-
-    logger.info(f"\nResults for {experiment_path} (seed {seed}):")
-    logger.info(format_metrics_for_logging(metrics))
+            # text quality
+            qual = metrics['quality']
+            logger.info(f"BLEU Score: {qual['bleu']['bleu']:.4f}")
+            logger.info(f"METEOR Score: {qual['meteor']['meteor_avg']:.4f}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate LLM-generated adversarial examples",
+        description="Evaluate LLM defense effectiveness",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
-        "--llm_outputs",
+        '--results_dir',
         type=Path,
-        required=True,
-        help="Directory containing LLM-generated outputs"
+        default=Path('results'),
+        help='Directory containing trained models'
     )
     parser.add_argument(
-        "--model_type",
+        '--llm_outputs',
+        type=Path,
+        required=True,
+        help='Directory containing LLM outputs'
+    )
+    parser.add_argument(
+        '--output_dir',
+        type=Path,
+        default=Path('defense_evaluation'),
+        help='Directory to save evaluation results'
+    )
+    parser.add_argument(
+        '--corpus',
         type=str,
-        required=True,
-        choices=['logreg', 'svm', 'roberta'],
-        help="Type of attribution model to use"
+        choices=['rj', 'ebg', 'lcmc'],
+        help='Specific corpus to evaluate (default: all)'
     )
     parser.add_argument(
-        "--output_dir",
-        type=Path,
-        default=Path("defense_results"),
-        help="Directory to save evaluation results"
+        '--rq',
+        type=str,
+        help='Research question identifier (e.g. rq1.1_basic_paraphrase)'
+    )
+    parser.add_argument(
+        '--model',
+        type=str,
+        help='Full model name (e.g. google/gemma-2b-it)'
     )
 
     args = parser.parse_args()
 
-    # load LLM outputs
-    logger.info(f"Loading LLM outputs from {args.llm_outputs}")
-    outputs_by_experiment = load_llm_outputs(args.llm_outputs)
+    # initialize evaluator
+    evaluator = DefenseEvaluator(
+        results_dir=args.results_dir,
+        llm_outputs_dir=args.llm_outputs,
+        output_dir=args.output_dir
+    )
 
-    # create output directory
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # determine what to evaluate
+    corpora = [args.corpus] if args.corpus else ['rj', 'ebg', 'lcmc']
+    rqs = [args.rq] if args.rq else RQS
+    models = [args.model] if args.model else LLMS
 
-    # evaluate each experiment
-    for exp_path, seed_outputs in outputs_by_experiment.items():
-        logger.info(f"\nEvaluating experiment: {exp_path}")
-        
-        # get corpus from path
-        corpus = exp_path.split('/')[0]
-        
-        # load model once per corpus
-        predictor = ModelLoader.load_predictor(corpus, args.model_type)
-
-        # evaluate each seed's outputs
-        for seed, transformations in seed_outputs.items():
-            logger.info(f"Processing seed {seed}")
-            
-            # prepare texts and labels
-            originals = [t['original'] for t in transformations]
-            transformed = [t['transformed'] for t in transformations]
-            true_labels = np.arange(len(originals))  # indices as labels
-            
-            # run evaluation
-            metrics = evaluate_transformations(
-                predictor,
-                originals,
-                transformed,
-                true_labels
-            )
-            
-            # save results
-            save_results(
-                metrics,
-                originals,
-                transformed,
-                args.output_dir,
-                exp_path,
-                seed
-            )
+    # run evaluation
+    for corpus in corpora:
+        for rq in rqs:
+            for model in models:
+                try:
+                    results = evaluator.evaluate_experiment(
+                        corpus=corpus,
+                        rq=rq,
+                        model_name=model
+                    )
+                    evaluator.save_results(
+                        results=results,
+                        corpus=corpus,
+                        rq=rq,
+                        model_name=model
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error evaluating {corpus}-{rq} "
+                        f"with {model}: {str(e)}"
+                    )
+                    continue
 
 
 if __name__ == "__main__":
