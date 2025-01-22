@@ -34,8 +34,7 @@ File Formats:
    following the same structure as individual per-seed files.
 
 Usage:
-    python eval_llm_defense.py # run all experiments
-    python eval_llm_defense.py --corpus rj --rq rq1.1 --model "google/gemma-2b-it"
+    python eval_llm_defense.py --rq rq1.1_basic_paraphrase --model "google/gemma-2-9b-it"
 
 """
 
