@@ -233,7 +233,8 @@ class DefenseEvaluator:
             json.dump(results, f, indent=2)
 
         # log summary metrics
-        logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")        for model_type, metrics in results.items():
+        logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")
+        for model_type, metrics in results.items():
             logger.info(f"\n{model_type.upper()} Attribution Results:")
 
             # original performance
