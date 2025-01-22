@@ -219,11 +219,11 @@ class DefenseEvaluator:
                 orig_preds = predictor.predict_proba(test_texts)
                 trans_preds = predictor.predict_proba(transformed_texts)
 
-                # compute comprehensive metrics
-                metrics = evaluate_attribution_defense(
-                    test_labels,
-                    orig_preds,
-                    trans_preds
+                # compute attribution metrics
+                attribution_metrics = evaluate_attribution_defense(
+                    y_true=test_labels,
+                    y_pred_probs=orig_preds,
+                    y_transformed_probs=trans_preds
                 )
 
                 # evaluate text quality
@@ -234,7 +234,17 @@ class DefenseEvaluator:
                 )
 
                 results[model_type] = {
-                    'attribution': metrics,
+                    'attribution': {
+                        'original_metrics': {k.replace('original_', ''): v
+                                             for k, v in attribution_metrics.items()
+                                             if k.startswith('original_')},
+                        'transformed_metrics': {k.replace('transformed_', ''): v
+                                                for k, v in attribution_metrics.items()
+                                                if k.startswith('transformed_')},
+                        'effectiveness': {k: v for k, v in attribution_metrics.items()
+                                          if not k.startswith(
+                                ('original_', 'transformed_'))}
+                    },
                     'quality': quality_metrics
                 }
 
