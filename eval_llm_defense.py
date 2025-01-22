@@ -50,21 +50,12 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
-import numpy as np
-from tqdm import tqdm
-
-from utils import (
-    load_corpus,
-    evaluate_attribution_defense,
-    LogisticRegressionPredictor,
-    SVMPredictor,
-    RQS,
-    LLMS
-)
-from roberta import RobertaPredictor
 from eval_text_quality import evaluate_quality
+from roberta import RobertaPredictor
+from utils import (CORPORA, LLMS, RQS, LogisticRegressionPredictor,
+                   SVMPredictor, evaluate_attribution_defense, load_corpus)
 
 # configure logging
 logging.basicConfig(
@@ -268,7 +259,7 @@ def main():
     parser.add_argument(
         '--llm_outputs',
         type=Path,
-        required=True,
+        default=Path('llm_outputs'),
         help='Directory containing LLM outputs'
     )
     parser.add_argument(
@@ -304,7 +295,7 @@ def main():
     )
 
     # determine what to evaluate
-    corpora = [args.corpus] if args.corpus else ['rj', 'ebg', 'lcmc']
+    corpora = [args.corpus] if args.corpus else CORPORA
     rqs = [args.rq] if args.rq else RQS
     models = [args.model] if args.model else LLMS
 
