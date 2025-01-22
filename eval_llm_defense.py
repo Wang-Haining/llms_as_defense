@@ -127,38 +127,49 @@ class DefenseEvaluator:
         return self.llm_outputs_dir / corpus / rq_main / rq_sub / model_dir
 
     def _load_llm_outputs(
-        self,
-        corpus: str,
-        rq: str,
-        model_name: str
+            self,
+            corpus: str,
+            rq: str,
+            model_name: str
     ) -> List[Dict]:
         """load LLM-generated transformations for an experiment."""
         exp_dir = self._get_experiment_paths(corpus, rq, model_name)
+        logger.info(f"Looking for transformations in: {exp_dir}")
 
         transformations = []
-        for seed_file in exp_dir.glob('seed_*.json'):
+        seed_files = list(exp_dir.glob('seed_*.json'))
+        logger.info(f"Found {len(seed_files)} seed files")
+
+        for seed_file in seed_files:
+            logger.info(f"Loading transformations from: {seed_file}")
             with open(seed_file) as f:
                 results = json.load(f)
-                transformations.extend(results)
+                logger.info(f"Loaded {len(results)} results from seed file")
+                if isinstance(results, list):
+                    transformations.extend(results)
+                else:
+                    # handle case where results might be nested differently
+                    if 'all_runs' in results:
+                        for run in results['all_runs']:
+                            if 'transformations' in run:
+                                transformations.extend(run['transformations'])
+                                logger.info(
+                                    f"Added {len(run['transformations'])} transformations from run")
+
+        logger.info(f"Total transformations loaded: {len(transformations)}")
+
+        if not transformations:
+            logger.warning(f"No transformations found in {exp_dir}")
 
         return transformations
 
     def evaluate_experiment(
-        self,
-        corpus: str,
-        rq: str,
-        model_name: str
+            self,
+            corpus: str,
+            rq: str,
+            model_name: str
     ) -> Dict:
-        """evaluate defense effectiveness for a specific experiment.
-
-        Args:
-            corpus: target corpus (rj/ebg/lcmc)
-            rq: research question (e.g. rq1.1_basic_paraphrase)
-            model_name: full model name (e.g. google/gemma-2b-it)
-
-        Returns:
-            Dict containing evaluation metrics
-        """
+        """evaluate defense effectiveness for a specific experiment."""
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
         # load original test data
@@ -166,16 +177,25 @@ class DefenseEvaluator:
             corpus=corpus,
             task="no_protection"
         )
+        logger.info(f"Loaded {len(test_texts)} original test texts")
 
         # load LLM transformations
         transformed_texts = []
-        llm_outputs = self._load_llm_outputs(
-            corpus, rq, model_name
-        )
+        llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
         for output in llm_outputs:
-            transformed_texts.append(output['transformed'])
+            if isinstance(output, dict) and 'transformed' in output:
+                transformed_texts.append(output['transformed'])
+
+        logger.info(f"Processed {len(transformed_texts)} transformed texts")
+
+        if not transformed_texts:
+            raise ValueError(
+                "No transformed texts found! Check the LLM outputs directory structure and file contents")
 
         results = {}
+        # evaluate against each attribution model
+        for model_type in ['logreg', 'svm', 'roberta']:
+            logger.info(f"Evaluating against {model_type}")
         # evaluate against each attribution model
         for model_type in ['logreg', 'svm', 'roberta']:
             logger.info(f"Evaluating against {model_type}")
