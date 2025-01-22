@@ -34,7 +34,7 @@ LLMS = ['meta-llama/Llama-3.1-8B',
         'mistralai/Ministral-8B-Instruct-2410',
         'claude-3-5-sonnet-20241022',
         'gpt-4o-2024-08-06']
-
+CORPORA = ['ebg', 'rj', 'lcmc']
 
 def get_corpus_stats() -> None:
     """
