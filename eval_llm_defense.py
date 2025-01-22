@@ -51,6 +51,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List
+import numpy as np
+import pickle
 
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
@@ -170,21 +172,38 @@ class DefenseEvaluator:
             corpus: str,
             rq: str,
             model_name: str
-    ) -> Dict:
-        """evaluate defense effectiveness for a specific experiment."""
+    ) -> Dict[str, Dict]:
+        """
+        Evaluate LLM-based defense against attribution models for a specific experiment.
+
+        Returns:
+            A dictionary of the form:
+                {
+                    seed_1: {
+                        "logreg": { ... },
+                        "svm": { ... },
+                        "roberta": { ... }
+                    },
+                    seed_2: {
+                        ...
+                    },
+                    ...
+                }
+            where each attribution model includes attribution + quality metrics.
+        """
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
-        # load original test data
+        # 1. load original test data
         _, _, test_texts, test_labels = load_corpus(
             corpus=corpus,
             task="no_protection"
         )
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
-        # load LLM transformations
+        # 2. load LLM transformations
         llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
 
-        # group transformations by seed
+        # 3. group transformations by seed
         transformations_by_seed = {}
         for output in llm_outputs:
             if isinstance(output, dict) and 'transformed' in output:
@@ -195,12 +214,20 @@ class DefenseEvaluator:
 
         logger.info(f"Loaded {len(transformations_by_seed)} seeds with transformations")
 
-        # set up output directory mirroring input structure
-        output_base = self.output_dir / corpus / rq.split('_')[0] / rq / \
-                      model_name.split('/')[-1].lower()
+        # 4. prepare output directory (mirroring input structure)
+        output_base = (
+                self.output_dir
+                / corpus
+                / rq.split('_')[0]
+                / rq
+                / model_name.split('/')[-1].lower()
+        )
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # evaluate each seed's transformations separately
+        # collect all seeds' results in a single dict
+        all_seed_results = {}
+
+        # 5. evaluate each seed
         for seed, transformed_texts in transformations_by_seed.items():
             if len(transformed_texts) != len(test_texts):
                 logger.warning(
@@ -209,34 +236,37 @@ class DefenseEvaluator:
                 )
                 continue
 
-            results = {}
-            # evaluate against each attribution model
+            seed_results = {}  # per-model results for this seed
+
             for model_type in ['logreg', 'svm', 'roberta']:
                 logger.info(f"Evaluating seed {seed} against {model_type}")
+
+                # 5a. load the trained predictor (LogReg, SVM, or RoBERTa)
                 predictor = self._load_predictor(corpus, model_type)
 
-                # get predictions
+                # 5b. get predictions
                 orig_preds = predictor.predict_proba(test_texts)
                 trans_preds = predictor.predict_proba(transformed_texts)
 
-                # First get baseline metrics on original texts
+                # 5c. calculate attribution metrics
                 original_metrics = _calculate_metrics(test_labels, orig_preds)
-
-                # Then get metrics on transformed texts
                 transformed_metrics = _calculate_metrics(test_labels, trans_preds)
 
-                # Calculate effectiveness
-                effectiveness = defense_effectiveness(original_metrics,
-                                                      transformed_metrics)
+                # 5d. measure effectiveness
+                effectiveness = defense_effectiveness(
+                    original_metrics,
+                    transformed_metrics
+                )
 
-                # evaluate text quality
+                # 5e. evaluate text quality
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
                     metrics=['pinc', 'bleu', 'meteor', 'bertscore']
                 )
 
-                results[model_type] = {
+                # 5f. store results
+                seed_results[model_type] = {
                     'attribution': {
                         'original_metrics': original_metrics,
                         'transformed_metrics': transformed_metrics,
@@ -245,13 +275,18 @@ class DefenseEvaluator:
                     'quality': quality_metrics
                 }
 
-            # save results for this seed
-            output_file = output_base / f"evaluation_seed_{seed}.json"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(results, f, indent=2, ensure_ascii=False)
-                logger.info(f"Saved evaluation results to {output_file}")
+            # 6. save *this seed's* results to a pickle file
+            output_file = output_base / f"evaluation_seed_{seed}.pkl"
+            with open(output_file, 'wb') as f:
+                pickle.dump(seed_results, f)
 
-        return {"status": "completed"}
+            logger.info(f"Saved evaluation results to {output_file}")
+
+            # 7. add to our big dictionary
+            all_seed_results[seed] = seed_results
+
+        # 8. return all seeds’ results so that save_results (or other code) can use them
+        return all_seed_results
 
     def save_results(
         self,
@@ -266,8 +301,9 @@ class DefenseEvaluator:
         save_dir = self.output_dir / exp_dir.relative_to(self.llm_outputs_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(save_dir / "evaluation.json", 'w') as f:
-            json.dump(results, f, indent=2)
+        output_file = save_dir / "evaluation.npz"
+        # storing one dictionary in npz requires allow_pickle=True on load
+        np.savez_compressed(output_file, results=results)
 
         # log summary metrics
         logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")
