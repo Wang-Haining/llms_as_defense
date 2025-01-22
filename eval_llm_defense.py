@@ -182,52 +182,69 @@ class DefenseEvaluator:
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
         # load LLM transformations
-        transformed_texts = []
         llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
+
+        # group transformations by seed
+        transformations_by_seed = {}
         for output in llm_outputs:
             if isinstance(output, dict) and 'transformed' in output:
-                transformed_texts.append(output['transformed'])
+                seed = output.get('actual_seed', output.get('initial_seed'))
+                if seed not in transformations_by_seed:
+                    transformations_by_seed[seed] = []
+                transformations_by_seed[seed].append(output['transformed'])
 
-        logger.info(f"Processed {len(transformed_texts)} transformed texts")
+        logger.info(f"Loaded {len(transformations_by_seed)} seeds with transformations")
 
-        if not transformed_texts:
-            raise ValueError(
-                "No transformed texts found! Check the LLM outputs directory structure and file contents")
+        # set up output directory mirroring input structure
+        output_base = self.output_dir / corpus / rq.split('_')[0] / rq / \
+                      model_name.split('/')[-1].lower()
+        output_base.mkdir(parents=True, exist_ok=True)
 
-        results = {}
-        # evaluate against each attribution model
-        for model_type in ['logreg', 'svm', 'roberta']:
-            logger.info(f"Evaluating against {model_type}")
-        # evaluate against each attribution model
-        for model_type in ['logreg', 'svm', 'roberta']:
-            logger.info(f"Evaluating against {model_type}")
+        # evaluate each seed's transformations separately
+        for seed, transformed_texts in transformations_by_seed.items():
+            if len(transformed_texts) != len(test_texts):
+                logger.warning(
+                    f"Seed {seed} has {len(transformed_texts)} transformations "
+                    f"but expected {len(test_texts)}. Skipping."
+                )
+                continue
 
-            predictor = self._load_predictor(corpus, model_type)
+            results = {}
+            # evaluate against each attribution model
+            for model_type in ['logreg', 'svm', 'roberta']:
+                logger.info(f"Evaluating seed {seed} against {model_type}")
+                predictor = self._load_predictor(corpus, model_type)
 
-            # get predictions
-            orig_preds = predictor.predict_proba(test_texts)
-            trans_preds = predictor.predict_proba(transformed_texts)
+                # get predictions
+                orig_preds = predictor.predict_proba(test_texts)
+                trans_preds = predictor.predict_proba(transformed_texts)
 
-            # compute comprehensive metrics
-            metrics = evaluate_attribution_defense(
-                test_labels,
-                orig_preds,
-                trans_preds
-            )
+                # compute comprehensive metrics
+                metrics = evaluate_attribution_defense(
+                    test_labels,
+                    orig_preds,
+                    trans_preds
+                )
 
-            # evaluate text quality
-            quality_metrics = evaluate_quality(
-                candidate_texts=transformed_texts,
-                reference_texts=test_texts,
-                metrics=['pinc', 'bleu', 'meteor', 'bertscore']
-            )
+                # evaluate text quality
+                quality_metrics = evaluate_quality(
+                    candidate_texts=transformed_texts,
+                    reference_texts=test_texts,
+                    metrics=['pinc', 'bleu', 'meteor', 'bertscore']
+                )
 
-            results[model_type] = {
-                'attribution': metrics,
-                'quality': quality_metrics
-            }
+                results[model_type] = {
+                    'attribution': metrics,
+                    'quality': quality_metrics
+                }
 
-        return results
+            # save results for this seed
+            output_file = output_base / f"evaluation_seed_{seed}.json"
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
+                logger.info(f"Saved evaluation results to {output_file}")
+
+        return {"status": "completed"}
 
     def save_results(
         self,
