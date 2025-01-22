@@ -55,7 +55,7 @@ from typing import Dict, List
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
 from utils import (CORPORA, LLMS, RQS, LogisticRegressionPredictor,
-                   SVMPredictor, evaluate_attribution_defense, load_corpus)
+                   SVMPredictor, _calculate_metrics, load_corpus, defense_effectiveness)
 
 # configure logging
 logging.basicConfig(
