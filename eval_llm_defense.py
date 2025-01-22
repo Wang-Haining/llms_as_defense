@@ -219,12 +219,15 @@ class DefenseEvaluator:
                 orig_preds = predictor.predict_proba(test_texts)
                 trans_preds = predictor.predict_proba(transformed_texts)
 
-                # compute attribution metrics
-                attribution_metrics = evaluate_attribution_defense(
-                    y_true=test_labels,
-                    y_pred_probs=orig_preds,
-                    y_transformed_probs=trans_preds
-                )
+                # First get baseline metrics on original texts
+                original_metrics = _calculate_metrics(test_labels, orig_preds)
+
+                # Then get metrics on transformed texts
+                transformed_metrics = _calculate_metrics(test_labels, trans_preds)
+
+                # Calculate effectiveness
+                effectiveness = defense_effectiveness(original_metrics,
+                                                      transformed_metrics)
 
                 # evaluate text quality
                 quality_metrics = evaluate_quality(
@@ -235,15 +238,9 @@ class DefenseEvaluator:
 
                 results[model_type] = {
                     'attribution': {
-                        'original_metrics': {k.replace('original_', ''): v
-                                             for k, v in attribution_metrics.items()
-                                             if k.startswith('original_')},
-                        'transformed_metrics': {k.replace('transformed_', ''): v
-                                                for k, v in attribution_metrics.items()
-                                                if k.startswith('transformed_')},
-                        'effectiveness': {k: v for k, v in attribution_metrics.items()
-                                          if not k.startswith(
-                                ('original_', 'transformed_'))}
+                        'original_metrics': original_metrics,
+                        'transformed_metrics': transformed_metrics,
+                        'effectiveness': effectiveness
                     },
                     'quality': quality_metrics
                 }

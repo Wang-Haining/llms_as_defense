@@ -649,15 +649,16 @@ def _calculate_metrics(y_true, y_pred_probs):
 
     return metrics
 
+
 def defense_effectiveness(pre_metrics, post_metrics):
     """
     Calculate effectiveness of the defense by comparing pre and post metrics.
 
     Args:
         pre_metrics: dict
-            Metrics before applying defense (the ones with 'original_' prefix)
+            Metrics before applying defense
         post_metrics: dict
-            Metrics after applying defense (the ones with 'transformed_' prefix)
+            Metrics after applying defense
 
     Returns:
         dict: Effectiveness metrics with interpretation guidelines
@@ -665,38 +666,24 @@ def defense_effectiveness(pre_metrics, post_metrics):
     effectiveness = {}
 
     # relative changes in key metrics
-    # We need to strip the prefixes when accessing metrics
     for metric in ['mrr', 'map', 'conf_gap']:
-        pre_val = float(pre_metrics[f'original_{metric}'])  # use exact key as in pre_metrics
-        post_val = float(post_metrics[f'transformed_{metric}'])  # use exact key as in post_metrics
-        rel_change = (post_val - pre_val) / pre_val
+        rel_change = (post_metrics[metric] - pre_metrics[metric]) / pre_metrics[metric]
         effectiveness[f'{metric}_change'] = rel_change
 
     # entropy increase (desired for defense)
-    effectiveness['entropy_increase'] = (
-        float(post_metrics['transformed_entropy']) -
-        float(pre_metrics['original_entropy'])
-    )
+    effectiveness['entropy_increase'] = post_metrics['entropy'] - pre_metrics['entropy']
 
     # average rank improvement
-    pre_mrr = float(pre_metrics['original_mrr'])
-    post_mrr = float(post_metrics['transformed_mrr'])
-    effectiveness['avg_rank_improvement'] = (1 / post_mrr) - (1 / pre_mrr)
+    effectiveness['avg_rank_improvement'] = (1 / post_metrics['mrr']) - (1 / pre_metrics['mrr'])
 
     # NDCG degradation (desired for defense)
     for k in [1, 3, 5, None]:
         k_str = f'@{k if k else "all"}'
         metric_key = f'ndcg{k_str}'
-        effectiveness[f'{metric_key}_change'] = (
-            float(post_metrics[f'transformed_{metric_key}']) -
-            float(pre_metrics[f'original_{metric_key}'])
-        )
+        effectiveness[f'ndcg{k_str}_change'] = post_metrics[metric_key] - pre_metrics[metric_key]
 
     # Gini coefficient change
-    effectiveness['gini_change'] = (
-        float(post_metrics['transformed_gini']) -
-        float(pre_metrics['original_gini'])
-    )
+    effectiveness['gini_change'] = post_metrics['gini'] - pre_metrics['gini']
 
     return effectiveness
 
