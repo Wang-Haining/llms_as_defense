@@ -21,6 +21,20 @@ from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import LabelEncoder
 from writeprints_static import WriteprintsStatic
 
+RQS = ['rq1.1_basic_paraphrase',
+       'rq1.2_backtranslation_via_de', 'rq1.2_backtranslation_via_zh',
+       'rq2.1_obfuscation',
+       'rq2.2_imitation',
+       # 'rq2.2_imitation_w_example',
+       'rq2.3_simplification',
+       # 'rq2.3_simplification_w_knowledge',
+       ]
+LLMS = ['meta-llama/Llama-3.1-8B',
+        'google/gemma-2-9b-it',
+        'mistralai/Ministral-8B-Instruct-2410',
+        'claude-3-5-sonnet-20241022',
+        'gpt-4o-2024-08-06']
+
 
 def get_corpus_stats() -> None:
     """
