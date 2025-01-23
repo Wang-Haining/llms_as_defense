@@ -149,6 +149,7 @@ def create_prompt_json(
         output_dir: directory to save the prompt
         index: prompt index (0-49)
     """
+    # ensure all values are native Python types, not numpy types
     prompt_data = {
         "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
         "user": (
@@ -159,11 +160,15 @@ def create_prompt_json(
             f"Remember to enclose your rewrite between [REWRITE] and [/REWRITE] tags."
         ),
         "metadata": {
-            "author_id": author_id,
-            "word_count": word_count,
-            "prompt_index": index
+            "author_id": str(author_id),  # ensure string
+            "word_count": int(word_count),  # ensure int
+            "prompt_index": int(index)  # ensure int
         }
     }
+
+    output_path = output_dir / f"prompt{index:02d}.json"
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(prompt_data, f, indent=2, ensure_ascii=False)
 
     output_path = output_dir / f"prompt{index:02d}.json"
     with open(output_path, 'w', encoding='utf-8') as f:
