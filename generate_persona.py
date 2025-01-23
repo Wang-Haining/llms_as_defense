@@ -74,7 +74,7 @@ class PersonaGenerator:
 
     def __init__(
         self,
-        onet_path: str = "/resources/db_29_1_excel/Occupation_Data.xlsx",
+        onet_path: str = "resources/db_29_1_excel/Occupation Data.xlsx",
         seed: int = 42
     ):
         """initialize with data sources"""
