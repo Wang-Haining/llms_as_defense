@@ -38,42 +38,51 @@ def load_npz(file_path: Path) -> Dict:
     return data["results"].item()
 
 
-def analyze_results(results: Dict, num_seeds: int) -> Dict:
-    """analyze performance changes and calculate 95% confidence intervals."""
+def analyze_results(consolidated_results: Dict, seed_dir: Path, num_seeds: int) -> Dict:
+    """
+    Analyze performance changes and calculate 95% confidence intervals.
+
+    Args:
+        consolidated_results: dict containing aggregated metrics from `evaluation.npz`.
+        seed_dir: Path to directory containing individual `seed_{seed}.npz` files.
+        num_seeds: Number of seeds expected for evaluation.
+
+    Returns:
+        Dict containing mean and 95% confidence intervals for attribution changes and quality scores.
+    """
     attribution_changes = []
     quality_scores = []
 
-    for seed, metrics in results.items():
-        if len(metrics) != num_seeds:
-            logger.warning(
-                f"seed {seed} does not have enough results. found {len(metrics)}, expected {num_seeds}."
-            )
-            continue
+    # process seed-level `.npz` files if they exist
+    for seed_file in seed_dir.glob("seed_*.npz"):
+        seed_data = np.load(seed_file, allow_pickle=True)["results"].item()
+        for model_type, metrics in seed_data.items():
+            effectiveness = metrics["attribution"]["effectiveness"]
+            quality = metrics["quality"]
 
-        for model_type, data in metrics.items():
-            # get attribution and quality metrics
-            effectiveness = data["attribution"]["effectiveness"]
-            quality = data["quality"]
-
+            # append metrics for this seed
             attribution_changes.append(effectiveness["mrr_change"])
             quality_scores.append(quality["bleu"]["bleu"])  # example for BLEU
 
+    if len(attribution_changes) < num_seeds:
+        logger.warning(f"Found results for only {len(attribution_changes)} seeds (expected {num_seeds}).")
+
     if not attribution_changes:
-        raise ValueError("no valid seeds found for analysis.")
+        raise ValueError("No valid seeds found for analysis.")
 
     # calculate mean and 95% CI for attribution changes and quality scores
     attribution_mean = np.mean(attribution_changes)
     attribution_std = np.std(attribution_changes, ddof=1)
     attribution_ci = t.interval(
         0.95, len(attribution_changes) - 1, loc=attribution_mean,
-        scale=attribution_std / np.sqrt(len(attribution_changes))
+        scale=attribution_std / np.sqrt(len(attribution_changes)),
     )
 
     quality_mean = np.mean(quality_scores)
     quality_std = np.std(quality_scores, ddof=1)
     quality_ci = t.interval(
         0.95, len(quality_scores) - 1, loc=quality_mean,
-        scale=quality_std / np.sqrt(len(quality_scores))
+        scale=quality_std / np.sqrt(len(quality_scores)),
     )
 
     return {
@@ -105,7 +114,7 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
             raise FileNotFoundError(f"No evaluation results found for model: {model}")
 
         logger.info(f"Analyzing {model} for corpus {corpus} and RQ {rq}.")
-        consolidated_results = np.load(evaluation_file, allow_pickle=True)["results"].item()
+        consolidated_results = load_npz(evaluation_file)
         analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
 
         logger.info(f"Results for {model}:")
@@ -126,7 +135,7 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
                 continue
 
             logger.info(f"Analyzing results for model in {model_dir.stem}.")
-            consolidated_results = np.load(evaluation_file, allow_pickle=True)["results"].item()
+            consolidated_results = load_npz(evaluation_file)
             seed_dir = model_dir
             analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
             all_results.append(analysis)
@@ -143,14 +152,14 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
         overall_attribution_std = np.std(combined_attribution_changes, ddof=1)
         overall_attribution_ci = t.interval(
             0.95, len(combined_attribution_changes) - 1, loc=overall_attribution_mean,
-            scale=overall_attribution_std / np.sqrt(len(combined_attribution_changes))
+            scale=overall_attribution_std / np.sqrt(len(combined_attribution_changes)),
         )
 
         overall_quality_mean = np.mean(combined_quality_scores)
         overall_quality_std = np.std(combined_quality_scores, ddof=1)
         overall_quality_ci = t.interval(
             0.95, len(combined_quality_scores) - 1, loc=overall_quality_mean,
-            scale=overall_quality_std / np.sqrt(len(combined_quality_scores))
+            scale=overall_quality_std / np.sqrt(len(combined_quality_scores)),
         )
 
         logger.info(f"Overall results for corpus {corpus} and RQ {rq}:")
@@ -158,7 +167,6 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
             f"Attribution change: mean={overall_attribution_mean:.4f}, CI={overall_attribution_ci}")
         logger.info(
             f"Quality score: mean={overall_quality_mean:.4f}, CI={overall_quality_ci}")
-
 
 
 def main():
