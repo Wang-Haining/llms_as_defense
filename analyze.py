@@ -1,10 +1,103 @@
 """
-Analyze evaluation results for LLM-based defenses against authorship attribution models.
-Includes:
-1. Per-model analysis for specified model/RQ combinations
-2. Cumulative analysis across LLMs for each RQ
-3. Statistical significance testing with Bonferroni correction
-4. Meta-analysis of defense effectiveness
+Analyze evaluation results for LLM-based defenses against authorship attribution threat
+models. This module performs statistical analysis including per-model tests and
+meta-analysis across models, with proper handling of different metric types.
+
+Key Features:
+1. Reads `.npz` evaluation results from specified directory structure
+2. Performs appropriate statistical tests based on metric types:
+   - Wilcoxon signed-rank test for ranking metrics
+   - Paired t-tests for normalized and quality metrics
+3. Applies Bonferroni correction for multiple comparisons
+4. Conducts meta-analysis across models using inverse variance weighting
+5. Saves analysis results in JSON format
+
+Directory Structure:
+defense_evaluation/                      # Input directory
+├── {corpus}/                           # rj, ebg, or lcmc
+│   └── RQ{N}/                         # e.g., RQ1
+│       └── RQ{N}.{M}/                 # e.g., RQ1.1
+│           └── {model_name}/          # e.g., llama-7b
+│               ├── evaluation.npz     # consolidated results
+│               └── seed_{seed}.npz    # per-seed results
+
+analysis_results/                       # Output directory
+├── {corpus}_RQ{N}.{M}_analysis.json   # cumulative analysis
+└── {corpus}_RQ{N}.{M}_{model}_analysis.json  # per-model analysis
+
+Usage Examples:
+
+1. Analyze specific model for a research question:
+   >>> python analyze.py --corpus rj --rq rq1.1_basic_paraphrase \\
+   ...                   --model meta-llama/Llama-3.1-8B-Instruct
+
+   This will:
+   - Load results from defense_evaluation/rj/rq1/rq1.1_basic_paraphrase/llama-3.1-8b-instruct/
+   - Perform statistical tests on all metrics
+   - Save results to analysis_results/rj_rq1.1_basic_paraphrase_llama-3.1-8b-instruct_analysis.json
+   Output includes:
+   - Statistical test results per metric
+   - Effect sizes with confidence intervals
+   - Bonferroni-corrected significance
+
+2. Analyze all models for a research question:
+   python analyze.py --corpus ebg --rq rq1.1_basic_paraphrase
+
+   This will:
+   - Analyze all models listed in LLMS constant
+   - Perform meta-analysis across models
+   - Save results to analysis_results/ebg_rq1.1_basic_paraphrase_analysis.json
+   Output includes:
+   - Per-model statistical results
+   - Weighted effect sizes across models
+   - Heterogeneity analysis
+
+3. Custom analysis directory:
+   python analyze.py --corpus lcmc --rq rq1.1_basic_paraphrase \\
+   ...                   --analysis_dir path/to/results
+
+Sample Output Format:
+{
+    "per_model": {
+        "llama-3.1-8b-instruct": {
+            "statistical_tests": {
+                "ranking": {
+                    "mrr": {
+                        "test": "wilcoxon",
+                        "statistic": 42.0,
+                        "p_value": 0.001,
+                        "effect_size": 0.85,
+                        "significant": true,
+                        "alpha_corrected": 0.005
+                    },
+                    ...
+                },
+                ...
+            },
+            "n_seeds": 5,
+            "bonferroni_factor": 10
+        },
+        ...
+    },
+    "meta_analysis": {
+        "ranking_mrr": {
+            "weighted_effect_size": 0.75,
+            "heterogeneity_q": 3.2,
+            "heterogeneity_p": 0.36,
+            "n_models": 5
+        },
+        ...
+    }
+}
+
+Notes:
+- All p-values are Bonferroni-corrected for multiple comparisons
+- Effect sizes use Cohen's d for normalized metrics and r for ranking metrics
+- Meta-analysis uses inverse variance weighting
+- Heterogeneity assessed using Cochran's Q test
+
+See Also:
+    eval_llm_defense.py: Generates the evaluation results analyzed by this script
 """
 
 import argparse
