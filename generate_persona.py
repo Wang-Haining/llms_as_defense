@@ -217,7 +217,7 @@ class PersonaGenerator:
 
         writing_style = (
             f"Their writing style reflects their role as a {occupation['title']} and their "
-            f"personality traits. {self._format_personality_text(personality)}"
+            f"personality traits. {self._format_personality_narrative(personality)}"
         )
 
         return {
