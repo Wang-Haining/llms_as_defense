@@ -343,16 +343,15 @@ class DefenseEvaluator:
         # 2. load LLM transformations
         llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
 
-        # 3. group transformations by seed
+        # 3. group transformations by seed using filenames
         transformations_by_seed = {}
-        for output in llm_outputs:
-            if isinstance(output, dict) and 'transformed' in output:
-                seed = output.get('actual_seed', output.get('initial_seed'))
-                if seed not in transformations_by_seed:
-                    transformations_by_seed[seed] = []
-                transformations_by_seed[seed].append(output['transformed'])
+        for seed_file in Path(self._get_experiment_paths(corpus, rq, model_name)).glob("seed_*.json"):
+            seed_id = int(seed_file.stem.split("_")[1])  # Extract seed from filename
+            logger.info(f"Loading transformations from: {seed_file}")
+            with open(seed_file, "r") as f:
+                transformations_by_seed[seed_id] = json.load(f)
 
-        logger.info(f"Loaded {len(transformations_by_seed)} seeds with transformations")
+        logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds.")
 
         # 4. prepare output directory (mirroring input structure)
         output_base = (
@@ -368,10 +367,10 @@ class DefenseEvaluator:
         all_seed_results = {}
 
         # 5. evaluate each seed
-        for seed, transformed_texts in transformations_by_seed.items():
+        for seed_id, transformed_texts in transformations_by_seed.items():
             if len(transformed_texts) != len(test_texts):
                 logger.warning(
-                    f"Seed {seed} has {len(transformed_texts)} transformations "
+                    f"Seed {seed_id} has {len(transformed_texts)} transformations "
                     f"but expected {len(test_texts)}. Skipping."
                 )
                 continue
@@ -380,7 +379,7 @@ class DefenseEvaluator:
             example_metrics = []  # raw metrics for each example
 
             for model_type in ['logreg', 'svm', 'roberta']:
-                logger.info(f"Evaluating seed {seed} against {model_type}")
+                logger.info(f"Evaluating seed {seed_id} against {model_type}")
 
                 predictor = self._load_predictor(corpus, model_type)
 
@@ -405,10 +404,10 @@ class DefenseEvaluator:
                             true_label),
                         "transformed_rank": list(np.argsort(trans_prob)[::-1]).index(
                             true_label),
-                        "mrr_change": 1 / list(np.argsort(trans_prob)[::-1]).index(
-                            true_label + 1) -
-                                      1 / list(np.argsort(orig_prob)[::-1]).index(
-                            true_label + 1),
+                        "mrr_change": 1 / (list(np.argsort(trans_prob)[::-1]).index(
+                            true_label) + 1) -
+                                      1 / (list(np.argsort(orig_prob)[::-1]).index(
+                                          true_label) + 1),
                     })
 
                 quality_metrics = evaluate_quality(
@@ -426,7 +425,7 @@ class DefenseEvaluator:
                 }
 
             # 6. save as .npz with raw example-level metrics
-            output_file = output_base / f"seed_{seed}.npz"
+            output_file = output_base / f"seed_{seed_id}.npz"
             np.savez_compressed(
                 output_file,
                 results=seed_results,
@@ -435,7 +434,7 @@ class DefenseEvaluator:
             logger.info(f"Saved evaluation results with raw metrics to {output_file}")
 
             # 7. add to our big dictionary
-            all_seed_results[seed] = seed_results
+            all_seed_results[seed_id] = seed_results
 
         # 8. return all seeds' results so that save_results can use them
         return all_seed_results
