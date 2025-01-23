@@ -85,74 +85,80 @@ def analyze_results(results: Dict, num_seeds: int) -> Dict:
 
 
 def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
-    """analyze evaluation results for a specific corpus, research question, and model."""
+    """
+    Analyze evaluation results for a specific corpus, research question, and model.
+
+    Args:
+        corpus: Corpus to analyze (e.g., 'rj').
+        rq: Research question identifier (e.g., 'rq1.1_basic_paraphrase').
+        model: Specific model to analyze (use full name). If not provided, analyze all models.
+        num_seeds: Number of seeds expected for evaluation.
+    """
     base_dir = Path("defense_evaluation") / corpus / "rq1" / rq
     if model:
         # analyze a specific model
-        model_dir = base_dir / model.split('/')[-1].lower() / "evaluation.npz"
-        if not model_dir.exists():
-            raise FileNotFoundError(f"no evaluation results found for model: {model}")
+        model_dir = base_dir / model.split('/')[-1].lower()
+        evaluation_file = model_dir / "evaluation.npz"
+        seed_dir = model_dir
 
-        logger.info(f"analyzing {model} for corpus {corpus} and RQ {rq}.")
-        results = load_npz(model_dir)  # load evaluation results
-        analysis = analyze_results(results, num_seeds)
+        if not evaluation_file.exists():
+            raise FileNotFoundError(f"No evaluation results found for model: {model}")
 
-        logger.info(f"results for {model}:")
-        logger.info(
-            f"attribution change: mean={analysis['attribution_mean']:.4f}, CI={analysis['attribution_ci']}")
-        logger.info(
-            f"quality score: mean={analysis['quality_mean']:.4f}, CI={analysis['quality_ci']}")
+        logger.info(f"Analyzing {model} for corpus {corpus} and RQ {rq}.")
+        consolidated_results = np.load(evaluation_file, allow_pickle=True)["results"].item()
+        analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
+
+        logger.info(f"Results for {model}:")
+        logger.info(f"Attribution change: mean={analysis['attribution_mean']:.4f}, CI={analysis['attribution_ci']}")
+        logger.info(f"Quality score: mean={analysis['quality_mean']:.4f}, CI={analysis['quality_ci']}")
 
     else:
         # analyze all models for the corpus and RQ
-        model_dirs = list(base_dir.glob(f"*/evaluation.npz"))
+        model_dirs = list(base_dir.glob("*/"))
         if not model_dirs:
-            raise FileNotFoundError(f"no evaluation results found for corpus: {corpus} and RQ: {rq}")
-
-        models_used = set([p.parent.stem for p in model_dirs])
-        logger.info(
-            f"found evaluation results for {len(models_used)} models in corpus {corpus} and RQ {rq}.")
-
-        missing_models = set(LLMS) - models_used
-        if missing_models:
-            logger.warning(
-                f"not all llms are evaluated for corpus {corpus} and RQ {rq}. missing: {len(missing_models)} models."
-            )
+            raise FileNotFoundError(f"No evaluation results found for corpus: {corpus} and RQ: {rq}")
 
         all_results = []
-        for model_file in model_dirs:
-            results = load_npz(model_file)
-            all_results.append(analyze_results(results, num_seeds))
+        for model_dir in model_dirs:
+            evaluation_file = model_dir / "evaluation.npz"
+            if not evaluation_file.exists():
+                logger.warning(f"Missing consolidated file in {model_dir}. Skipping.")
+                continue
+
+            logger.info(f"Analyzing results for model in {model_dir.stem}.")
+            consolidated_results = np.load(evaluation_file, allow_pickle=True)["results"].item()
+            seed_dir = model_dir
+            analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
+            all_results.append(analysis)
 
         # aggregate results across all models
         combined_attribution_changes = [
             res["attribution_mean"] for res in all_results
         ]
-        combined_quality_scores = [res["quality_mean"] for res in all_results]
+        combined_quality_scores = [
+            res["quality_mean"] for res in all_results
+        ]
 
         overall_attribution_mean = np.mean(combined_attribution_changes)
         overall_attribution_std = np.std(combined_attribution_changes, ddof=1)
         overall_attribution_ci = t.interval(
-            0.95,
-            len(combined_attribution_changes) - 1,
-            loc=overall_attribution_mean,
-            scale=overall_attribution_std / np.sqrt(len(combined_attribution_changes)),
+            0.95, len(combined_attribution_changes) - 1, loc=overall_attribution_mean,
+            scale=overall_attribution_std / np.sqrt(len(combined_attribution_changes))
         )
 
         overall_quality_mean = np.mean(combined_quality_scores)
         overall_quality_std = np.std(combined_quality_scores, ddof=1)
         overall_quality_ci = t.interval(
-            0.95,
-            len(combined_quality_scores) - 1,
-            loc=overall_quality_mean,
-            scale=overall_quality_std / np.sqrt(len(combined_quality_scores)),
+            0.95, len(combined_quality_scores) - 1, loc=overall_quality_mean,
+            scale=overall_quality_std / np.sqrt(len(combined_quality_scores))
         )
 
-        logger.info(f"overall results for corpus {corpus} and RQ {rq}:")
+        logger.info(f"Overall results for corpus {corpus} and RQ {rq}:")
         logger.info(
-            f"attribution change: mean={overall_attribution_mean:.4f}, CI={overall_attribution_ci}")
+            f"Attribution change: mean={overall_attribution_mean:.4f}, CI={overall_attribution_ci}")
         logger.info(
-            f"quality score: mean={overall_quality_mean:.4f}, CI={overall_quality_ci}")
+            f"Quality score: mean={overall_quality_mean:.4f}, CI={overall_quality_ci}")
+
 
 
 def main():
