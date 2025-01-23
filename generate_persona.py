@@ -256,9 +256,9 @@ class PersonaGenerator:
         )
 
         user_prompt = (
-            "Please rewrite the following text through your unique voice and perspective, "
+            "Please rewrite the following text through your unique voice, "
             f"while maintaining its core meaning:\n\n{{{{text}}}}\n\n"
-            "Provide your rewritten version between [REWRITE] and [/REWRITE] tags."
+            "Provide your rewrite between [REWRITE] and [/REWRITE] tags."
         )
 
         return {

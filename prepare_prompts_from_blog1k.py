@@ -160,7 +160,7 @@ def create_prompt_json(
             f"({word_count} words):\n\n'''\n{exemplar_text}\n'''\n\n"
             f"Please rewrite the following text to match this writing style while "
             f"maintaining its core meaning:\n\n{{text}}\n\n"
-            f"Remember to enclose your rewrite between [REWRITE] and [/REWRITE] tags."
+            f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
         ),
         "metadata": {
             "author_id": str(author_id),  # ensure string
