@@ -308,10 +308,10 @@ class DefenseEvaluator:
         return transformations
 
     def evaluate_experiment(
-        self,
-        corpus: str,
-        rq: str,
-        model_name: str
+            self,
+            corpus: str,
+            rq: str,
+            model_name: str
     ) -> Dict[str, Dict]:
         """
         Evaluate LLM-based defense against attribution models for a specific experiment.
@@ -356,11 +356,11 @@ class DefenseEvaluator:
 
         # 4. prepare output directory (mirroring input structure)
         output_base = (
-            self.output_dir
-            / corpus
-            / rq.split('_')[0]
-            / rq
-            / model_name.split('/')[-1].lower()
+                self.output_dir
+                / corpus
+                / rq.split('_')[0]
+                / rq
+                / model_name.split('/')[-1].lower()
         )
         output_base.mkdir(parents=True, exist_ok=True)
 
@@ -377,6 +377,7 @@ class DefenseEvaluator:
                 continue
 
             seed_results = {}  # per-model results for this seed
+            example_metrics = []  # raw metrics for each example
 
             for model_type in ['logreg', 'svm', 'roberta']:
                 logger.info(f"Evaluating seed {seed} against {model_type}")
@@ -388,7 +389,28 @@ class DefenseEvaluator:
 
                 original_metrics = calculate_metrics(test_labels, orig_preds)
                 transformed_metrics = calculate_metrics(test_labels, trans_preds)
-                effectiveness = defense_effectiveness(original_metrics, transformed_metrics)
+                effectiveness = defense_effectiveness(original_metrics,
+                                                      transformed_metrics)
+
+                # gather raw example-level metrics
+                for idx, (true_label, orig_prob, trans_prob) in enumerate(
+                        zip(test_labels, orig_preds, trans_preds)
+                ):
+                    example_metrics.append({
+                        "example_id": idx,
+                        "true_label": true_label,
+                        "orig_probs": orig_prob.tolist(),
+                        "trans_probs": trans_prob.tolist(),
+                        "original_rank": list(np.argsort(orig_prob)[::-1]).index(
+                            true_label),
+                        "transformed_rank": list(np.argsort(trans_prob)[::-1]).index(
+                            true_label),
+                        "mrr_change": 1 / list(np.argsort(trans_prob)[::-1]).index(
+                            true_label + 1) -
+                                      1 / list(np.argsort(orig_prob)[::-1]).index(
+                            true_label + 1),
+                    })
+
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
@@ -403,10 +425,14 @@ class DefenseEvaluator:
                     'quality': quality_metrics
                 }
 
-            # 6. save as .npz
+            # 6. save as .npz with raw example-level metrics
             output_file = output_base / f"seed_{seed}.npz"
-            np.savez_compressed(output_file, results=seed_results)
-            logger.info(f"Saved evaluation results to {output_file}")
+            np.savez_compressed(
+                output_file,
+                results=seed_results,
+                example_metrics=example_metrics  # save raw metrics alongside results
+            )
+            logger.info(f"Saved evaluation results with raw metrics to {output_file}")
 
             # 7. add to our big dictionary
             all_seed_results[seed] = seed_results
