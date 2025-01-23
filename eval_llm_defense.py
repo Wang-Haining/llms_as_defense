@@ -333,17 +333,28 @@ class DefenseEvaluator:
         """
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
-        # 1. load original test data
+        # ensure `model_name` is a string
+        if not isinstance(model_name, str):
+            raise TypeError(f"Expected `model_name` to be a string, got {type(model_name)}: {model_name}")
+
+        # convert model_name to lowercase safely
+        model_name_lower = model_name.split('/')[-1].lower()
+
+        # load original test data
         _, _, test_texts, test_labels = load_corpus(
             corpus=corpus,
             task="no_protection"
         )
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
-        # 2. load LLM transformations
-        llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
+        # load LLM transformations
+        try:
+            llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
+        except Exception as e:
+            logger.error(f"Error loading LLM outputs for {model_name}: {e}")
+            raise
 
-        # 3. group transformations by seed using filenames
+        # Group transformations by seed
         transformations_by_seed = {}
         for seed_file in Path(self._get_experiment_paths(corpus, rq, model_name)).glob("seed_*.json"):
             seed_id = int(seed_file.stem.split("_")[1])  # Extract seed from filename
@@ -353,20 +364,20 @@ class DefenseEvaluator:
 
         logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds.")
 
-        # 4. prepare output directory (mirroring input structure)
+        # prepare output directory
         output_base = (
                 self.output_dir
                 / corpus
                 / rq.split('_')[0]
                 / rq
-                / model_name.split('/')[-1].lower()
+                / model_name_lower
         )
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # collect all seeds' results in a single dict
+        # collect all seeds' results
         all_seed_results = {}
 
-        # 5. evaluate each seed
+        # evaluate each seed
         for seed_id, transformed_texts in transformations_by_seed.items():
             if len(transformed_texts) != len(test_texts):
                 logger.warning(
@@ -375,8 +386,8 @@ class DefenseEvaluator:
                 )
                 continue
 
-            seed_results = {}  # per-model results for this seed
-            example_metrics = []  # raw metrics for each example
+            seed_results = {}
+            example_metrics = []  # store raw example-level metrics
 
             for model_type in ['logreg', 'svm', 'roberta']:
                 logger.info(f"Evaluating seed {seed_id} against {model_type}")
@@ -391,7 +402,7 @@ class DefenseEvaluator:
                 effectiveness = defense_effectiveness(original_metrics,
                                                       transformed_metrics)
 
-                # gather raw example-level metrics
+                # collect example-level metrics
                 for idx, (true_label, orig_prob, trans_prob) in enumerate(
                         zip(test_labels, orig_preds, trans_preds)
                 ):
@@ -424,19 +435,19 @@ class DefenseEvaluator:
                     'quality': quality_metrics
                 }
 
-            # 6. save as .npz with raw example-level metrics
+            # save as .npz with raw example-level metrics
             output_file = output_base / f"seed_{seed_id}.npz"
             np.savez_compressed(
                 output_file,
                 results=seed_results,
-                example_metrics=example_metrics  # save raw metrics alongside results
+                example_metrics=example_metrics  # Save raw metrics alongside results
             )
             logger.info(f"Saved evaluation results with raw metrics to {output_file}")
 
-            # 7. add to our big dictionary
+            # Add to our big dictionary
             all_seed_results[seed_id] = seed_results
 
-        # 8. return all seeds' results so that save_results can use them
+        # Return all seeds' results
         return all_seed_results
 
     def save_results(
