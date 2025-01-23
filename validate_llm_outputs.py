@@ -16,15 +16,14 @@ Usage:
 The tool will print a detailed validation report to console.
 """
 
+import argparse
 import json
 import logging
-import argparse
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Set, Tuple
 
-from utils import load_corpus
-from utils import LLMS
+from utils import CORPORA, LLMS, load_corpus
 
 # configure logging
 logging.basicConfig(
@@ -86,7 +85,7 @@ class ExperimentValidator:
     def load_expected_counts() -> Dict[str, int]:
         """get expected sample counts for each corpus"""
         corpus_counts = {}
-        for corpus in ['rj', 'ebg', 'lcmc']:
+        for corpus in CORPORA:
             _, _, test_texts, _ = load_corpus(corpus=corpus, task="no_protection")
             corpus_counts[corpus] = len(test_texts)
         return corpus_counts
