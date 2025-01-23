@@ -307,93 +307,67 @@ class DefenseEvaluator:
 
         return transformations
 
-    def evaluate_experiment(
-            self,
-            corpus: str,
-            rq: str,
-            model_name: str
-    ) -> Dict[str, Dict]:
+    def evaluate_experiment(self, corpus: str, rq: str, model_name: str) -> Dict[
+        str, Dict]:
         """
         Evaluate LLM-based defense against attribution models for a specific experiment.
 
         Returns:
-            A dictionary of the form:
-                {
-                    seed_1: {
-                        "logreg": { ... },
-                        "svm": { ... },
-                        "roberta": { ... }
-                    },
-                    seed_2: {
-                        ...
-                    },
-                    ...
-                }
-            where each attribution model includes attribution + quality metrics.
+            Dict mapping seeds to their evaluation results including attribution and quality metrics.
         """
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
-        # ensure `model_name` is a string
-        if not isinstance(model_name, str):
-            raise TypeError(f"Expected `model_name` to be a string, got {type(model_name)}: {model_name}")
-
-        # convert model_name to lowercase safely
-        model_name_lower = model_name.split('/')[-1].lower()
-
         # load original test data
-        _, _, test_texts, test_labels = load_corpus(
-            corpus=corpus,
-            task="no_protection"
-        )
+        _, _, test_texts, test_labels = load_corpus(corpus=corpus, task="no_protection")
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
-        # load LLM transformations
-        try:
-            llm_outputs = self._load_llm_outputs(corpus, rq, model_name)
-        except Exception as e:
-            logger.error(f"Error loading LLM outputs for {model_name}: {e}")
-            raise
-
-        # Group transformations by seed
+        # load and process transformations by seed
         transformations_by_seed = {}
-        for seed_file in Path(self._get_experiment_paths(corpus, rq, model_name)).glob("seed_*.json"):
-            seed_id = int(seed_file.stem.split("_")[1])  # Extract seed from filename
-            logger.info(f"Loading transformations from: {seed_file}")
-            with open(seed_file, "r") as f:
-                transformations_by_seed[seed_id] = json.load(f)
+        exp_dir = self._get_experiment_paths(corpus, rq, model_name)
 
-        logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds.")
+        # process each seed file
+        for seed_file in exp_dir.glob("seed_*.json"):
+            seed_id = int(seed_file.stem.split("_")[1])
+            logger.info(f"Loading transformations from: {seed_file}")
+
+            with open(seed_file) as f:
+                seed_data = json.load(f)
+                # extract transformed texts from the JSON structure
+                transformed_texts = []
+                # handle nested structure in JSON
+                if "transformations" in seed_data:
+                    transformed_texts = [t["transformed"] for t in
+                                         seed_data["transformations"]]
+                else:
+                    for entry in seed_data:
+                        if "transformed" in entry:
+                            transformed_texts.append(entry["transformed"])
+
+                if len(transformed_texts) == len(test_texts):
+                    transformations_by_seed[seed_id] = transformed_texts
+                else:
+                    logger.warning(
+                        f"Skipping seed {seed_id}: expected {len(test_texts)} transformations, got {len(transformed_texts)}")
+
+        logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds")
 
         # prepare output directory
         output_base = (
-                self.output_dir
-                / corpus
-                / rq.split('_')[0]
-                / rq
-                / model_name_lower
+                self.output_dir / corpus / rq.split('_')[0] / rq /
+                model_name.split('/')[-1].lower()
         )
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # collect all seeds' results
-        all_seed_results = {}
-
         # evaluate each seed
+        all_seed_results = {}
         for seed_id, transformed_texts in transformations_by_seed.items():
-            if len(transformed_texts) != len(test_texts):
-                logger.warning(
-                    f"Seed {seed_id} has {len(transformed_texts)} transformations "
-                    f"but expected {len(test_texts)}. Skipping."
-                )
-                continue
-
             seed_results = {}
-            example_metrics = []  # store raw example-level metrics
+            example_metrics = []
 
             for model_type in ['logreg', 'svm', 'roberta']:
                 logger.info(f"Evaluating seed {seed_id} against {model_type}")
 
                 predictor = self._load_predictor(corpus, model_type)
-
                 orig_preds = predictor.predict_proba(test_texts)
                 trans_preds = predictor.predict_proba(transformed_texts)
 
@@ -406,26 +380,29 @@ class DefenseEvaluator:
                 for idx, (true_label, orig_prob, trans_prob) in enumerate(
                         zip(test_labels, orig_preds, trans_preds)
                 ):
+                    orig_ranks = np.argsort(orig_prob)[::-1]
+                    trans_ranks = np.argsort(trans_prob)[::-1]
+
                     example_metrics.append({
                         "example_id": idx,
                         "true_label": true_label,
                         "orig_probs": orig_prob.tolist(),
                         "trans_probs": trans_prob.tolist(),
-                        "original_rank": list(np.argsort(orig_prob)[::-1]).index(
-                            true_label),
-                        "transformed_rank": list(np.argsort(trans_prob)[::-1]).index(
-                            true_label),
-                        "mrr_change": 1 / (list(np.argsort(trans_prob)[::-1]).index(
-                            true_label) + 1) -
-                                      1 / (list(np.argsort(orig_prob)[::-1]).index(
-                                          true_label) + 1),
+                        "original_rank": np.where(orig_ranks == true_label)[0][0],
+                        "transformed_rank": np.where(trans_ranks == true_label)[0][0],
+                        "mrr_change": (1 / (
+                                    np.where(trans_ranks == true_label)[0][0] + 1) -
+                                       1 / (np.where(orig_ranks == true_label)[0][
+                                                0] + 1))
                     })
 
+                # calculate text quality metrics
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
                     metrics=['pinc', 'bleu', 'meteor', 'bertscore']
                 )
+
                 seed_results[model_type] = {
                     'attribution': {
                         'original_metrics': original_metrics,
@@ -435,19 +412,17 @@ class DefenseEvaluator:
                     'quality': quality_metrics
                 }
 
-            # save as .npz with raw example-level metrics
+            # save per-seed results with example-level metrics
             output_file = output_base / f"seed_{seed_id}.npz"
             np.savez_compressed(
                 output_file,
                 results=seed_results,
-                example_metrics=example_metrics  # Save raw metrics alongside results
+                example_metrics=example_metrics
             )
             logger.info(f"Saved evaluation results with raw metrics to {output_file}")
 
-            # Add to our big dictionary
             all_seed_results[seed_id] = seed_results
 
-        # Return all seeds' results
         return all_seed_results
 
     def save_results(
