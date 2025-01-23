@@ -156,8 +156,8 @@ def create_prompt_json(
     prompt_data = {
         "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
         "user": (
-            f"Here is an example of the writing style you are expected to mimic "
-            f"({word_count} words):\n\n'''\n{exemplar_text}\n'''\n\n"
+            f"Here is an example of the writing style you are expected to mimic:"
+            f"\n\n'''\n{exemplar_text}\n'''\n\n"
             f"Please rewrite the following text to match this writing style while "
             f"maintaining its core meaning:\n\n{{text}}\n\n"
             f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
