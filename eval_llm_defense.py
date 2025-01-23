@@ -63,38 +63,60 @@ logger = logging.getLogger(__name__)
 
 def defense_effectiveness(pre_metrics, post_metrics):
     """
-    Calculate effectiveness of the defense by comparing pre and post metrics.
+    calculate effectiveness of the defense by comparing pre and post metrics.
+    focuses on ranking-based and distribution metrics that handle different
+    candidate pool sizes appropriately.
 
     Args:
-        pre_metrics: dict
-            Metrics before applying defense
-        post_metrics: dict
-            Metrics after applying defense
+        pre_metrics: dict with metrics before defense
+        post_metrics: dict with metrics after defense
 
     Returns:
-        dict: Effectiveness metrics with interpretation guidelines
+        dict: effectiveness metrics with interpretation guidelines
     """
     effectiveness = {}
 
-    # relative changes in key metrics
-    for metric in ['mrr', 'map', 'conf_gap']:
-        rel_change = (post_metrics[metric] - pre_metrics[metric]) / pre_metrics[metric]
-        effectiveness[f'{metric}_change'] = rel_change
+    # ranking metric changes
+    for k in [1, 3, 5]:
+        metric = f'top_{k}_acc'
+        if metric in pre_metrics and metric in post_metrics:
+            effectiveness[f'top_{k}_change'] = (
+                post_metrics[metric] - pre_metrics[metric]
+            )
 
-    # entropy increase (desired for defense)
-    effectiveness['entropy_increase'] = post_metrics['entropy'] - pre_metrics['entropy']
+    # mrr change
+    if 'mrr' in pre_metrics and 'mrr' in post_metrics:
+        rel_change = (post_metrics['mrr'] - pre_metrics['mrr']) / pre_metrics['mrr']
+        effectiveness['mrr_change'] = rel_change
+        # average rank improvement
+        effectiveness['avg_rank_improvement'] = (
+            1 / post_metrics['mrr'] - 1 / pre_metrics['mrr']
+        )
 
-    # average rank improvement
-    effectiveness['avg_rank_improvement'] = (1 / post_metrics['mrr']) - (1 / pre_metrics['mrr'])
+    # distribution changes
+    if 'entropy_normalized' in pre_metrics and 'entropy_normalized' in post_metrics:
+        effectiveness['entropy_change'] = (
+            post_metrics['entropy_normalized'] - pre_metrics['entropy_normalized']
+        )
 
-    # NDCG degradation (desired for defense)
+    if 'conf_gap_normalized' in pre_metrics and 'conf_gap_normalized' in post_metrics:
+        effectiveness['conf_gap_change'] = (
+            post_metrics['conf_gap_normalized'] - pre_metrics['conf_gap_normalized']
+        )
+
+    # ndcg changes for each k
     for k in [1, 3, 5, None]:
-        k_str = f'@{k if k else "all"}'
-        metric_key = f'ndcg{k_str}'
-        effectiveness[f'ndcg{k_str}_change'] = post_metrics[metric_key] - pre_metrics[metric_key]
+        key = f'ndcg@{k if k else "all"}'
+        if key in pre_metrics and key in post_metrics:
+            effectiveness[f'{key}_change'] = (
+                post_metrics[key] - pre_metrics[key]
+            )
 
-    # Gini coefficient change
-    effectiveness['gini_change'] = post_metrics['gini'] - pre_metrics['gini']
+    # weighted rank score change
+    if 'weighted_rank_score' in pre_metrics and 'weighted_rank_score' in post_metrics:
+        effectiveness['weighted_rank_change'] = (
+            post_metrics['weighted_rank_score'] - pre_metrics['weighted_rank_score']
+        )
 
     return effectiveness
 
@@ -153,14 +175,7 @@ def ndcg_score(y_true, y_pred_probs, k=None):
 
 
 def calculate_metrics(y_true, y_pred_probs):
-    """
-    calculate attribution metrics with proper normalization for candidate pool size.
-    follows established metrics from security/privacy venues.
-
-    Args:
-        y_true: array-like of shape (n_samples,)
-        y_pred_probs: array-like of shape (n_samples, n_authors)
-    """
+    """calculate attribution metrics focusing on ranking performance."""
     metrics = {}
     n_candidates = y_pred_probs.shape[1]
 
@@ -200,16 +215,24 @@ def calculate_metrics(y_true, y_pred_probs):
     metrics['conf_gap_normalized'] = np.mean(confidence_gaps)
     metrics['conf_gap_normalized_std'] = np.std(confidence_gaps)
 
-    # 5. combined ranking metric (weight different k values by candidate pool size)
+    # 5. NDCG at different k values (measures ranking quality with position importance)
+    for k in [1, 3, 5, None]:
+        ndcg_scores = [
+            ndcg_score(true_label, probs, k)
+            for true_label, probs in zip(y_true, y_pred_probs)
+        ]
+        metrics[f'ndcg@{k if k else "all"}'] = np.mean(ndcg_scores)
+        metrics[f'ndcg@{k if k else "all"}_std'] = np.std(ndcg_scores)
+
+    # 6. combined ranking metric (weight different k values by candidate pool size)
     rank_weights = np.array(
         [1 / k for k in [1, min(3, n_candidates), min(5, n_candidates)]])
     rank_weights = rank_weights / rank_weights.sum()  # normalize weights
 
-    weighted_rank_score = (
-            rank_weights[0] * metrics.get('top_1_acc', 0) +
-            rank_weights[1] * metrics.get('top_3_acc', 0) +
-            rank_weights[2] * metrics.get('top_5_acc', 0)
-    )
+    weighted_rank_score = 0
+    for i, k in enumerate([1, 3, 5]):
+        if f'top_{k}_acc' in metrics:
+            weighted_rank_score += rank_weights[i] * metrics[f'top_{k}_acc']
     metrics['weighted_rank_score'] = weighted_rank_score
 
     return metrics
