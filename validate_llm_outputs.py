@@ -10,8 +10,8 @@ Usage:
     python validate_llm_outputs.py  # checks default models (llama and gemma)
     python validate_llm_outputs.py --models "meta-llama/Llama-3.1-8B"
     python validate_llm_outputs.py --models claude-3-5-sonnet-20241022 gpt-4-0125-preview
-    python validate_llm_outputs.py --rq RQ1.1  # check specific research question
-    python validate_llm_outputs.py --rq RQ1.1 --models "meta-llama/Llama-3.1-8B"
+    python validate_llm_outputs.py --rq rq1.1_basic_paraphrase  # check specific research question
+    python validate_llm_outputs.py --rq rq1.1_basic_paraphrase --models "meta-llama/Llama-3.1-8B" "google/gemma-2-9b-it"
 
 The tool will print a detailed validation report to console.
 """
