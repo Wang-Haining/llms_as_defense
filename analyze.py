@@ -38,13 +38,12 @@ def load_npz(file_path: Path) -> Dict:
     return data["results"].item()
 
 
-def analyze_results(consolidated_results: Dict, seed_dir: Path, num_seeds: int) -> Dict:
+def analyze_results(seed_dir: Path, num_seeds: int) -> Dict:
     """
-    Analyze performance changes and calculate 95% confidence intervals.
+    Analyze performance changes and calculate 95% confidence intervals from seed-level results.
 
     Args:
-        consolidated_results: dict containing aggregated metrics from `evaluation.npz`.
-        seed_dir: Path to directory containing individual `seed_{seed}.npz` files.
+        seed_dir: Path to directory containing `seed_*.npz` files.
         num_seeds: Number of seeds expected for evaluation.
 
     Returns:
@@ -53,8 +52,14 @@ def analyze_results(consolidated_results: Dict, seed_dir: Path, num_seeds: int) 
     attribution_changes = []
     quality_scores = []
 
-    # process seed-level `.npz` files if they exist
-    for seed_file in seed_dir.glob("seed_*.npz"):
+    # load all `seed_*.npz` files
+    seed_files = list(seed_dir.glob("seed_*.npz"))
+    if not seed_files:
+        raise FileNotFoundError(f"No seed files found in directory: {seed_dir}")
+
+    logger.info(f"Found {len(seed_files)} seed files in {seed_dir}. Expected: {num_seeds}")
+
+    for seed_file in seed_files:
         seed_data = np.load(seed_file, allow_pickle=True)["results"].item()
         for model_type, metrics in seed_data.items():
             effectiveness = metrics["attribution"]["effectiveness"]
@@ -65,7 +70,9 @@ def analyze_results(consolidated_results: Dict, seed_dir: Path, num_seeds: int) 
             quality_scores.append(quality["bleu"]["bleu"])  # example for BLEU
 
     if len(attribution_changes) < num_seeds:
-        logger.warning(f"Found results for only {len(attribution_changes)} seeds (expected {num_seeds}).")
+        logger.warning(
+            f"Found results for only {len(attribution_changes)} seeds (expected {num_seeds})."
+        )
 
     if not attribution_changes:
         raise ValueError("No valid seeds found for analysis.")
@@ -110,12 +117,13 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
         evaluation_file = model_dir / "evaluation.npz"
         seed_dir = model_dir
 
-        if not evaluation_file.exists():
-            raise FileNotFoundError(f"No evaluation results found for model: {model}")
-
-        logger.info(f"Analyzing {model} for corpus {corpus} and RQ {rq}.")
-        consolidated_results = load_npz(evaluation_file)
-        analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
+        if evaluation_file.exists():
+            logger.info(f"Loading consolidated results from {evaluation_file}.")
+            consolidated_results = load_npz(evaluation_file)
+            analysis = analyze_results(consolidated_results, num_seeds)
+        else:
+            logger.info(f"Loading seed-level results from {seed_dir}.")
+            analysis = analyze_results(seed_dir, num_seeds)
 
         logger.info(f"Results for {model}:")
         logger.info(f"Attribution change: mean={analysis['attribution_mean']:.4f}, CI={analysis['attribution_ci']}")
@@ -130,14 +138,14 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
         all_results = []
         for model_dir in model_dirs:
             evaluation_file = model_dir / "evaluation.npz"
-            if not evaluation_file.exists():
-                logger.warning(f"Missing consolidated file in {model_dir}. Skipping.")
-                continue
+            if evaluation_file.exists():
+                logger.info(f"Loading consolidated results from {evaluation_file}.")
+                consolidated_results = load_npz(evaluation_file)
+                analysis = analyze_results(consolidated_results, num_seeds)
+            else:
+                logger.info(f"Loading seed-level results from {model_dir}.")
+                analysis = analyze_results(model_dir, num_seeds)
 
-            logger.info(f"Analyzing results for model in {model_dir.stem}.")
-            consolidated_results = load_npz(evaluation_file)
-            seed_dir = model_dir
-            analysis = analyze_results(consolidated_results, seed_dir, num_seeds)
             all_results.append(analysis)
 
         # aggregate results across all models
