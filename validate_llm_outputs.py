@@ -8,10 +8,12 @@ This script validates experiment outputs by:
 
 Usage:
     python validate_llm_outputs.py  # checks default models (llama and gemma)
-    python validate_llm_outputs.py --models "meta-llama/Llama-3.1-8B" "google/gemma-2-9b-it"
+    python validate_llm_outputs.py --models "meta-llama/Llama-3.1-8B"
     python validate_llm_outputs.py --models claude-3-5-sonnet-20241022 gpt-4-0125-preview
+    python validate_llm_outputs.py --rq RQ1.1  # check specific research question
+    python validate_llm_outputs.py --rq RQ1.1 --models "meta-llama/Llama-3.1-8B"
 
-The tool will generate a validation_report.json with detailed findings.
+The tool will print a detailed validation report to console.
 """
 
 import json
@@ -22,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Set
 
 from utils import load_corpus
+from utils import LLMS
 
 # configure logging
 logging.basicConfig(
@@ -30,11 +33,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# default models to check
-DEFAULT_MODELS = [
-    "meta-llama/Llama-3.1-8B",
-    "google/gemma-2-9b-it"
-]
 
 def normalize_model_name(model: str) -> str:
     """normalize model names for comparison with directory names"""
@@ -50,11 +48,13 @@ class ExperimentValidator:
         self,
         base_dir: str,
         expected_seeds: int = 5,
-        models: List[str] = None
+        models: List[str] = None,
+        research_question: str = None
     ):
         self.base_dir = Path(base_dir)
         self.expected_seeds = expected_seeds
         self.expected_counts = self.load_expected_counts()
+        self.research_question = research_question
 
         # normalize model names for matching
         self.models_to_check = None
@@ -63,15 +63,24 @@ class ExperimentValidator:
             logger.info(f"Will check models: {', '.join(models)}")
         else:
             # use defaults
-            self.models_to_check = [normalize_model_name(m) for m in DEFAULT_MODELS]
+            self.models_to_check = [normalize_model_name(m) for m in LLMS]
             logger.info(
-                f"Using default models for validation: {', '.join(DEFAULT_MODELS)}"
+                f"Using default models for validation: {', '.join(LLMS)}"
             )
+
+        if research_question:
+            logger.info(f"Will only validate experiments for {research_question}")
 
     def should_check_model(self, model_dir: str) -> bool:
         """determine if a model directory should be validated"""
         model_name = normalize_model_name(model_dir)
         return any(target in model_name for target in self.models_to_check)
+
+    def should_check_experiment(self, config: Dict) -> bool:
+        """determine if an experiment should be validated based on RQ filter"""
+        if not self.research_question:
+            return True
+        return config.get('sub_question', '').lower() == self.research_question.lower()
 
     @staticmethod
     def load_expected_counts() -> Dict[str, int]:
@@ -96,8 +105,11 @@ class ExperimentValidator:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
 
-            # check if we should validate this model
+            # check if we should validate this experiment
             if not self.should_check_model(config['model']['name']):
+                return []
+
+            if not self.should_check_experiment(config):
                 return []
 
             corpus = config['corpus']
@@ -153,7 +165,14 @@ class ExperimentValidator:
         all_issues = []
 
         # find all experiment_config.json files
-        for config_file in self.base_dir.glob('**/experiment_config.json'):
+        glob_pattern = '**/'
+        if self.research_question:
+            rq_base = self.research_question.split('.')[0]
+            glob_pattern = f'**/{rq_base}/{self.research_question}/**/experiment_config.json'
+        else:
+            glob_pattern = '**/experiment_config.json'
+
+        for config_file in self.base_dir.glob(glob_pattern):
             issues = self.validate_experiment(config_file)
             all_issues.extend(issues)
 
@@ -248,37 +267,27 @@ def main():
         nargs='*',
         help='Space-separated list of models to check. Defaults to llama and gemma models.'
     )
+    parser.add_argument(
+        '--rq',
+        type=str,
+        help='Research question to validate (e.g., RQ1.1). If not provided, validates all RQs.'
+    )
     args = parser.parse_args()
 
     logger.info("Starting validation scan...")
     validator = ExperimentValidator(
         args.base_dir,
         args.expected_seeds,
-        args.models
+        args.models,
+        args.rq
     )
     issues = validator.scan_all_experiments()
 
     report, stats = generate_report(issues)
     print(report)
 
-    # save detailed report
-    output_file = "validation_report.json"
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(
-            {
-                'issues': issues,
-                'statistics': stats
-            },
-            f,
-            indent=2,
-            ensure_ascii=False
-        )
-
     if issues:
-        logger.warning(
-            f"Validation complete. Found {len(issues)} issues. "
-            f"See {output_file} for details."
-        )
+        logger.warning(f"Validation complete. Found {len(issues)} issues.")
     else:
         logger.info("Validation complete. No issues found.")
 
