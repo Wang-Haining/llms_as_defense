@@ -120,6 +120,27 @@ class ExperimentConfig:
             debug=args.debug
         )
 
+    def get_prompt_path(self) -> Path:
+        """Get the path to prompt file, handling special case for persona-based RQ3.1"""
+        base_prompt_dir = Path('prompts')
+
+        # handle persona-based RQ3.1
+        if self.sub_question == "rq3.1_persona_playing":
+            persona_dir = base_prompt_dir / self.sub_question
+            if not persona_dir.exists():
+                raise FileNotFoundError(f"Persona directory not found: {persona_dir}")
+
+            # list all persona files (excluding non-json files)
+            persona_files = [f for f in persona_dir.glob("persona_*.json")]
+            if not persona_files:
+                raise FileNotFoundError(f"No persona files found in {persona_dir}")
+
+            # randomly select one persona file
+            return random.choice(persona_files)
+
+        # dfault case: direct json file
+        return base_prompt_dir / f"{self.sub_question}.json"
+
 
 class PromptManager:
     """Manages prompt formatting and validation for different providers."""
@@ -631,11 +652,14 @@ async def main():
         config = ExperimentConfig.from_args(args)
         logger.info(
             f"initialized experiment config for {config.corpus}-{config.sub_question}")
-
-        # load prompt (now simplified json format)
-        prompt_path = Path('prompts') / f"{args.rq}.json"
+        # get prompt path (now handles both regular and persona cases)
+        prompt_path = config.get_prompt_path()
         if not prompt_path.exists():
             raise FileNotFoundError(f"prompt configuration not found: {prompt_path}")
+
+        # log the selected persona file for RQ3.1
+        if config.sub_question == "rq3.1_persona_playing":
+            logger.info(f"Selected persona file: {prompt_path.name}")
 
         instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
 
