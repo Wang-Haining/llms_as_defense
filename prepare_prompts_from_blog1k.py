@@ -31,6 +31,10 @@ Each prompt JSON file contains:
 
 The exemplars are extracted only from the training split of Blog-1K corpus
 to avoid any data leakage.
+
+Source:
+BLOG1K: https://zenodo.org/records/7455623#.Y5-v9uxAphG
+
 """
 
 import json
@@ -55,9 +59,8 @@ WORD_THRESHOLDS = [500, 1000, 2500]
 RANDOM_SEED = 42
 OUTPUT_BASE_DIR = Path('prompts')
 
-
 def load_blog1k(file_path: str = 'resources/blog1000.csv.gz') -> pd.DataFrame:
-    """load blog1k corpus from compressed csv"""
+    """Load BLOG1K corpus from compressed csv"""
     try:
         df = pd.read_csv(file_path, compression='infer')
         logger.info(f"loaded {len(df)} entries from {file_path}")
@@ -68,12 +71,12 @@ def load_blog1k(file_path: str = 'resources/blog1000.csv.gz') -> pd.DataFrame:
 
 
 def get_word_count(text: str, tokenizer: MosesTokenizer) -> int:
-    """get word count using moses tokenizer for consistency"""
+    """Get word count using moses tokenizer for consistency"""
     return len(tokenizer.tokenize(text, escape=False))
 
 
 def select_authors(df: pd.DataFrame, num_authors: int = NUM_AUTHORS) -> List[str]:
-    """randomly select authors from training split"""
+    """Randomly select authors from training split"""
     train_authors = df[df.split == 'train']['id'].unique()
     random.seed(RANDOM_SEED)
     selected = random.sample(list(train_authors), num_authors)
@@ -88,10 +91,10 @@ def collect_author_samples(
     tokenizer: MosesTokenizer
 ) -> Dict[int, str]:
     """
-    collect samples for an author to meet different word count thresholds
+    Collect samples for an author to meet different word count thresholds
     returns dict mapping threshold -> concatenated text
 
-    only uses texts from training split to avoid data leakage
+    Only uses texts from training split to avoid data leakage
     """
     # explicitly verify we're only getting training texts
     author_df = df[df.id == author_id]
