@@ -28,8 +28,8 @@ analysis_results/                       # Output directory
 Usage Examples:
 
 1. Analyze specific model for a research question:
-   >>> python analyze.py --corpus rj --rq rq1.1_basic_paraphrase \\
-   ...                   --model meta-llama/Llama-3.1-8B-Instruct
+   python analyze.py --corpus rj --rq rq1.1_basic_paraphrase \\
+                     --model meta-llama/Llama-3.1-8B-Instruct
 
    This will:
    - Load results from defense_evaluation/rj/rq1/rq1.1_basic_paraphrase/llama-3.1-8b-instruct/
