@@ -153,57 +153,64 @@ def ndcg_score(y_true, y_pred_probs, k=None):
 
 
 def calculate_metrics(y_true, y_pred_probs):
-    """Helper function to calculate core metrics."""
+    """
+    calculate attribution metrics with proper normalization for candidate pool size.
+    follows established metrics from security/privacy venues.
+
+    Args:
+        y_true: array-like of shape (n_samples,)
+        y_pred_probs: array-like of shape (n_samples, n_authors)
+    """
     metrics = {}
+    n_candidates = y_pred_probs.shape[1]
 
-    # Classification metrics
-    metrics['accuracy'] = np.mean(np.argmax(y_pred_probs, axis=1) == y_true)
-
-    # Mean Reciprocal Rank
+    # 1. ranking metrics (naturally handle different candidate pool sizes)
     ranks = []
-    for i, true_label in enumerate(y_true):
-        pred_probs = y_pred_probs[i]
-        rank = len(pred_probs) - np.where(np.argsort(pred_probs) == true_label)[0][0]
-        ranks.append(1 / rank)
+    for true_label, probs in zip(y_true, y_pred_probs):
+        rank = len(probs) - np.where(np.argsort(probs) == true_label)[0][0]
+        ranks.append(1 / rank)  # MRR naturally scales
     metrics['mrr'] = np.mean(ranks)
+    metrics['mrr_std'] = np.std(ranks)
 
-    # Mean Average Precision
-    metrics['map'] = average_precision_score(
-        y_true.reshape(-1, 1) == np.arange(y_pred_probs.shape[1]),
-        y_pred_probs
-    )
+    # 2. top-k accuracy (standard in attribution literature)
+    for k in [1, 3, 5]:
+        if k > n_candidates:
+            continue  # skip if k larger than candidate pool
+        top_k_correct = 0
+        for true_label, probs in zip(y_true, y_pred_probs):
+            top_k_indices = np.argsort(probs)[-k:]
+            if true_label in top_k_indices:
+                top_k_correct += 1
+        metrics[f'top_{k}_acc'] = top_k_correct / len(y_true)
 
-    # Entropy and confidence metrics
+    # 3. entropy normalized by maximum possible entropy for the candidate pool
+    max_entropy = np.log2(n_candidates)  # maximum entropy for uniform distribution
     entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
-    metrics['entropy'] = np.mean(entropies)
-    metrics['entropy_std'] = np.std(entropies)
+    normalized_entropies = entropies / max_entropy  # now bounded [0,1]
+    metrics['entropy_normalized'] = np.mean(normalized_entropies)
+    metrics['entropy_normalized_std'] = np.std(normalized_entropies)
 
+    # 4. confidence gap relative to uniform baseline
+    uniform_gap = 1 / n_candidates  # gap if predictions were uniform
     confidence_gaps = []
     for probs in y_pred_probs:
         sorted_probs = np.sort(probs)
-        confidence_gaps.append(sorted_probs[-1] - sorted_probs[-2])
-    metrics['conf_gap'] = np.mean(confidence_gaps)
-    metrics['conf_gap_std'] = np.std(confidence_gaps)
+        gap = sorted_probs[-1] - sorted_probs[-2]
+        confidence_gaps.append(gap / uniform_gap)  # normalize by baseline
+    metrics['conf_gap_normalized'] = np.mean(confidence_gaps)
+    metrics['conf_gap_normalized_std'] = np.std(confidence_gaps)
 
-    # Top-K Accuracy
-    for k in [1, 3, 5]:
-        metrics[f'top_{k}_acc'] = np.mean([
-            true_label in np.argsort(probs)[-k:]
-            for true_label, probs in zip(y_true, y_pred_probs)
-        ])
+    # 5. combined ranking metric (weight different k values by candidate pool size)
+    rank_weights = np.array(
+        [1 / k for k in [1, min(3, n_candidates), min(5, n_candidates)]])
+    rank_weights = rank_weights / rank_weights.sum()  # normalize weights
 
-    # NDCG at different k values
-    for k in [1, 3, 5, None]:
-        ndcg_scores = [
-            ndcg_score(true_label, probs, k)
-            for true_label, probs in zip(y_true, y_pred_probs)
-        ]
-        metrics[f'ndcg@{k if k else "all"}'] = np.mean(ndcg_scores)
-
-    # Distribution metrics
-    gini_scores = [gini_coefficient(probs) for probs in y_pred_probs]
-    metrics['gini'] = np.mean(gini_scores)
-    metrics['gini_std'] = np.std(gini_scores)
+    weighted_rank_score = (
+            rank_weights[0] * metrics.get('top_1_acc', 0) +
+            rank_weights[1] * metrics.get('top_3_acc', 0) +
+            rank_weights[2] * metrics.get('top_5_acc', 0)
+    )
+    metrics['weighted_rank_score'] = weighted_rank_score
 
     return metrics
 
@@ -448,25 +455,39 @@ class DefenseEvaluator:
 
         # log summary metrics
         logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")
-        # 'results' is typically {seed: {model_type: {...}, model_type: {...}}}
         for seed, seed_dict in results.items():
-            logger.info(f"--- Seed: {seed} ---")
+            logger.info(f"\n--- Seed: {seed} ---")
             for model_type, metrics in seed_dict.items():
-                logger.info(f"{model_type.upper()} Attribution Results:")
-                # original performance
                 orig = metrics['attribution']['original_metrics']
-                logger.info(f"  Original Accuracy: {orig['accuracy']:.4f}")
-                logger.info(f"  Original MRR:      {orig['mrr']:.4f}")
+                transformed = metrics['attribution']['transformed_metrics']
 
-                # defense effectiveness
-                eff = metrics['attribution']['effectiveness']
-                logger.info(f"  MRR Change:        {eff['mrr_change']:.4f}")
-                logger.info(f"  Entropy Increase:  {eff['entropy_increase']:.4f}")
+                logger.info(f"\n{model_type.upper()} Results:")
 
-                # text quality
+                # Primary metrics (MRR and Top-k)
+                logger.info("Ranking Performance:")
+                logger.info(f"  MRR: {orig['mrr']:.4f} → {transformed['mrr']:.4f}")
+                for k in [1, 3, 5]:
+                    if f'top_{k}_acc' in orig:  # only show if k applicable
+                        logger.info(
+                            f"  Top-{k}: {orig[f'top_{k}_acc']:.4f} → {transformed[f'top_{k}_acc']:.4f}")
+
+                # normalized distribution metrics
+                logger.info("\nPrediction Distribution (Normalized):")
+                logger.info(
+                    f"  Entropy: {orig['entropy_normalized']:.4f} → {transformed['entropy_normalized']:.4f}")
+                logger.info(
+                    f"  Conf Gap: {orig['conf_gap_normalized']:.4f} → {transformed['conf_gap_normalized']:.4f}")
+
+                # combined score
+                logger.info(
+                    f"\nWeighted Rank Score: {orig['weighted_rank_score']:.4f} → {transformed['weighted_rank_score']:.4f}")
+
+                # text quality (independent of candidate pool)
                 qual = metrics['quality']
-                logger.info(f"  BLEU Score:        {qual['bleu']['bleu']:.4f}")
-                logger.info(f"  METEOR Score:      {qual['meteor']['meteor_avg']:.4f}")
+                logger.info("\nText Quality:")
+                logger.info(f"  BLEU: {qual['bleu']['bleu']:.4f}")
+                logger.info(f"  METEOR: {qual['meteor']['meteor_avg']:.4f}")
+                logger.info(f"  BERTScore: {qual['bertscore']['bertscore_f1_avg']:.4f}")
 
     def main_loop(self, args):
         """
