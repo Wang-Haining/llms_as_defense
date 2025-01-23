@@ -10,8 +10,8 @@ This script:
 3. Handles multiple seeds to ensure statistical robustness.
 
 Usage:
-    python analyze.py --corpus rj --rq rq1.1 --model meta-llama/Llama-3.1-8B-Instruct
-    python analyze.py --corpus ebg --rq rq1  # analyze all models in a corpus
+    python analyze.py --corpus rj --rq rq1.1_basic_paraphrase --model meta-llama/Llama-3.1-8B-Instruct
+    python analyze.py --corpus ebg --rq rq1.1_basic_paraphrase  # analyze all models in a corpus
 """
 
 import argparse
@@ -86,16 +86,15 @@ def analyze_results(results: Dict, num_seeds: int) -> Dict:
 
 def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
     """analyze evaluation results for a specific corpus, research question, and model."""
-    base_dir = Path("defense_evaluation") / corpus / rq
+    base_dir = Path("defense_evaluation") / corpus / "rq1" / rq
     if model:
         # analyze a specific model
-        model_dir = base_dir.glob(f"**/{model.split('/')[-1].lower()}/evaluation.npz")
-        model_files = list(model_dir)
-        if not model_files:
+        model_dir = base_dir / model.split('/')[-1].lower() / "evaluation.npz"
+        if not model_dir.exists():
             raise FileNotFoundError(f"no evaluation results found for model: {model}")
 
         logger.info(f"analyzing {model} for corpus {corpus} and RQ {rq}.")
-        results = load_npz(model_files[0])  # load evaluation results
+        results = load_npz(model_dir)  # load evaluation results
         analysis = analyze_results(results, num_seeds)
 
         logger.info(f"results for {model}:")
@@ -106,11 +105,11 @@ def analyze_corpus(corpus: str, rq: str, model: str = None, num_seeds: int = 5):
 
     else:
         # analyze all models for the corpus and RQ
-        model_dirs = list(base_dir.glob(f"**/*/evaluation.npz"))
+        model_dirs = list(base_dir.glob(f"*/evaluation.npz"))
         if not model_dirs:
             raise FileNotFoundError(f"no evaluation results found for corpus: {corpus} and RQ: {rq}")
 
-        models_used = set([str(p.parent.stem) for p in model_dirs])
+        models_used = set([p.parent.stem for p in model_dirs])
         logger.info(
             f"found evaluation results for {len(models_used)} models in corpus {corpus} and RQ {rq}.")
 
@@ -170,7 +169,7 @@ def main():
         "--rq",
         required=True,
         choices=RQS,
-        help="research question to analyze (e.g., rq1, rq1.1).",
+        help="research question to analyze (e.g., rq1.1_basic_paraphrase).",
     )
     parser.add_argument(
         "--model",
