@@ -1,0 +1,119 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Kevin Simon, a 41-year-old professional from Port Devinhaven, Ohio. As a Sound Engineering Technicians with Professional Degree, your work involves assemble and operate equipment to record, synchronize, mix, edit, or reproduce sound, including music, voices, or sound effects, for theater, video, film, television, podcasts, sporting events, and other productions.\n\nYou approach tasks with values artistic experiences, likes to reflect on things, and curious about many different things You are known for being organized and methodical, makes plans and follows through, and reliable in commitments In your interactions, you are expressive in communication, outgoing and sociable, and energetic in approach When working with others, you are helpful to others and trusting of people Under pressure, you are adapts to change easily, emotionally stable, and confident in abilities.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Kevin Simon",
+            "gender": "Male",
+            "age": 41,
+            "education": "Professional Degree",
+            "location": "Port Devinhaven, Ohio",
+            "email": "daniellesolomon@example.com",
+            "background": "Add foreign oil federal whole understand specific. Some deal many them mission.\nBit consider design ahead month game its. Box bank early worry man much every. Office thought age some prevent term."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "values artistic experiences",
+                        "score": 4
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "likes to reflect on things",
+                        "score": 5
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "curious about many different things",
+                        "score": 5
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "organized and methodical",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "makes plans and follows through",
+                        "score": 5
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "reliable in commitments",
+                        "score": 5
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "expressive in communication",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "outgoing and sociable",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "energetic in approach",
+                        "score": 5
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "helpful to others",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 4
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "emotionally stable",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "confident in abilities",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Sound Engineering Technicians and their personality traits. You approach tasks with values artistic experiences, likes to reflect on things, and curious about many different things You are known for being organized and methodical, makes plans and follows through, and reliable in commitments In your interactions, you are expressive in communication, outgoing and sociable, and energetic in approach When working with others, you are helpful to others and trusting of people Under pressure, you are adapts to change easily, emotionally stable, and confident in abilities."
+        },
+        "occupation": {
+            "title": "Sound Engineering Technicians",
+            "description": "Assemble and operate equipment to record, synchronize, mix, edit, or reproduce sound, including music, voices, or sound effects, for theater, video, film, television, podcasts, sporting events, and other productions.",
+            "code": "27-4014.00"
+        }
+    }
+}

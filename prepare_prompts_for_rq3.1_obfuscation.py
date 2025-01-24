@@ -181,7 +181,7 @@ class PersonaGenerator:
         }
 
     def _format_personality_narrative(self, profile: Dict) -> str:
-        """Format personality traits into a natural narrative"""
+        """Format personality traits into a natural narrative with proper capitalization"""
         narratives = []
         for domain, traits in profile.items():
             high_intensity_traits = [t for t in traits if t['score'] >= 4]
@@ -196,18 +196,19 @@ class PersonaGenerator:
             else:
                 narrative = f"{', '.join(trait_descriptions[:-1])}, and {trait_descriptions[-1]}"
 
+            # create properly capitalized sentences for each domain
             if domain == "openness":
                 narratives.append(f"You approach tasks with {narrative}")
             elif domain == "conscientiousness":
-                narratives.append(f"you are known for being {narrative}")
+                narratives.append(f"You are known for being {narrative}")
             elif domain == "extraversion":
-                narratives.append(f"in your interactions, you are {narrative}")
+                narratives.append(f"In your interactions, you are {narrative}")
             elif domain == "agreeableness":
-                narratives.append(f"when working with others, you are {narrative}")
+                narratives.append(f"When working with others, you are {narrative}")
             elif domain == "neuroticism":
-                narratives.append(f"under pressure, you are {narrative}")
+                narratives.append(f"Under pressure, you are {narrative}")
 
-        return ". ".join(narratives) + "."
+        return " ".join(narratives) + "."
 
     def generate_persona(self) -> Dict:
         """generate a complete persona"""
@@ -249,7 +250,7 @@ class PersonaGenerator:
         # simplified system prompt
         system_prompt = (
             "You are a helpful writing assistant. Your task is to paraphrase text while "
-            "preserving its meaning. Please rewrite the following text through your unique voice."
+            "preserving its meaning. Please rewrite the following text through your unique voice. "
             "Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags."
         )
 

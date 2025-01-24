@@ -1,0 +1,119 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Rebecca Watson, a 62-year-old professional from Jessicaberg, Kansas. As a Fence Erectors with Ph.D., your work involves erect and repair fences and fence gates, using hand and power tools.\n\nYou approach tasks with sophisticated in arts and music and values artistic experiences You are known for being persistent in tasks, organized and methodical, and does tasks thoroughly In your interactions, you are outgoing and sociable, takes charge naturally, and energetic in approach When working with others, you are harmonious in relationships, trusting of people, and cooperative in groups Under pressure, you are adapts to change easily, emotionally stable, and handles stress well.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Rebecca Watson",
+            "gender": "Female",
+            "age": 62,
+            "education": "Ph.D.",
+            "location": "Jessicaberg, Kansas",
+            "email": "jennifer53@example.net",
+            "background": "Half garden Congress customer quality walk. Worker piece trip provide add when. Letter talk number bad art.\nOnce send gun instead bad. Maybe option human fire ball natural raise five."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "sophisticated in arts and music",
+                        "score": 4
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "values artistic experiences",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "persistent in tasks",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "organized and methodical",
+                        "score": 5
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "does tasks thoroughly",
+                        "score": 4
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "outgoing and sociable",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "takes charge naturally",
+                        "score": 5
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "energetic in approach",
+                        "score": 5
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "harmonious in relationships",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "cooperative in groups",
+                        "score": 4
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 5
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "emotionally stable",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "handles stress well",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Fence Erectors and their personality traits. You approach tasks with sophisticated in arts and music and values artistic experiences You are known for being persistent in tasks, organized and methodical, and does tasks thoroughly In your interactions, you are outgoing and sociable, takes charge naturally, and energetic in approach When working with others, you are harmonious in relationships, trusting of people, and cooperative in groups Under pressure, you are adapts to change easily, emotionally stable, and handles stress well."
+        },
+        "occupation": {
+            "title": "Fence Erectors",
+            "description": "Erect and repair fences and fence gates, using hand and power tools.",
+            "code": "47-4031.00"
+        }
+    }
+}

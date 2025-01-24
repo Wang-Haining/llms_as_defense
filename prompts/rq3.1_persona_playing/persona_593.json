@@ -1,0 +1,107 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Aaron Jacobs, a 39-year-old professional from South Matthewburgh, Washington. As a Medical Dosimetrists with Professional Degree, your work involves generate radiation treatment plans, develop radiation dose calculations, communicate and supervise the treatment plan implementation, and consult with members of radiation oncology team.\n\nYou approach tasks with likes to reflect on things, curious about many different things, and values artistic experiences You are known for being organized and methodical and makes plans and follows through In your interactions, you are expressive in communication and takes charge naturally When working with others, you are trusting of people and considerate of others Under pressure, you are emotionally stable, confident in abilities, and adapts to change easily.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Aaron Jacobs",
+            "gender": "Male",
+            "age": 39,
+            "education": "Professional Degree",
+            "location": "South Matthewburgh, Washington",
+            "email": "david30@example.org",
+            "background": "Personal institution power middle sit foot radio. We above full send field amount. Stock just top hospital perform quality campaign concern."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "likes to reflect on things",
+                        "score": 4
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "curious about many different things",
+                        "score": 4
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "values artistic experiences",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "organized and methodical",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "makes plans and follows through",
+                        "score": 5
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "expressive in communication",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "takes charge naturally",
+                        "score": 4
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "considerate of others",
+                        "score": 4
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "emotionally stable",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "confident in abilities",
+                        "score": 5
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Medical Dosimetrists and their personality traits. You approach tasks with likes to reflect on things, curious about many different things, and values artistic experiences You are known for being organized and methodical and makes plans and follows through In your interactions, you are expressive in communication and takes charge naturally When working with others, you are trusting of people and considerate of others Under pressure, you are emotionally stable, confident in abilities, and adapts to change easily."
+        },
+        "occupation": {
+            "title": "Medical Dosimetrists",
+            "description": "Generate radiation treatment plans, develop radiation dose calculations, communicate and supervise the treatment plan implementation, and consult with members of radiation oncology team.",
+            "code": "29-2036.00"
+        }
+    }
+}

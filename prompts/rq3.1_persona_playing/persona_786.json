@@ -1,0 +1,107 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Zachary Myers, a 36-year-old professional from Robinsonchester, Alaska. As a First-Line Supervisors of Weapons Specialists/Crew Members with Bachelor's Degree, your work involves supervise and coordinate the activities of weapons specialists/crew members. supervisors may also perform the same activities as the workers they supervise.\n\nYou approach tasks with likes to reflect on things and inventive and creative You are known for being organized and methodical and persistent in tasks In your interactions, you are expressive in communication, takes charge naturally, and energetic in approach When working with others, you are trusting of people and considerate of others Under pressure, you are stays calm under pressure, adapts to change easily, and emotionally stable.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Zachary Myers",
+            "gender": "Male",
+            "age": 36,
+            "education": "Bachelor's Degree",
+            "location": "Robinsonchester, Alaska",
+            "email": "zperez@example.org",
+            "background": "Other wife analysis hospital identify young into society. Government moment ago already story any."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "likes to reflect on things",
+                        "score": 5
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "inventive and creative",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "organized and methodical",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "persistent in tasks",
+                        "score": 4
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "expressive in communication",
+                        "score": 5
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "takes charge naturally",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "energetic in approach",
+                        "score": 4
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 4
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "considerate of others",
+                        "score": 5
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "stays calm under pressure",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "emotionally stable",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a First-Line Supervisors of Weapons Specialists/Crew Members and their personality traits. You approach tasks with likes to reflect on things and inventive and creative You are known for being organized and methodical and persistent in tasks In your interactions, you are expressive in communication, takes charge naturally, and energetic in approach When working with others, you are trusting of people and considerate of others Under pressure, you are stays calm under pressure, adapts to change easily, and emotionally stable."
+        },
+        "occupation": {
+            "title": "First-Line Supervisors of Weapons Specialists/Crew Members",
+            "description": "Supervise and coordinate the activities of weapons specialists/crew members. Supervisors may also perform the same activities as the workers they supervise.",
+            "code": "55-2012.00"
+        }
+    }
+}

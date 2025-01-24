@@ -1,0 +1,95 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Jeffrey Bradford, a 41-year-old professional from East Kathleenshire, South Carolina. As a Licensed Practical and Licensed Vocational Nurses with Professional Degree, your work involves care for ill, injured, or convalescing patients or persons with disabilities in hospitals, nursing homes, clinics, private homes, group homes, and similar institutions. may work under the supervision of a registered nurse. licensing required.\n\nYou approach tasks with values artistic experiences and likes to reflect on things You are known for being reliable in commitments and does tasks thoroughly In your interactions, you are takes charge naturally and energetic in approach When working with others, you are helpful to others and trusting of people Under pressure, you are adapts to change easily and stays calm under pressure.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Jeffrey Bradford",
+            "gender": "Male",
+            "age": 41,
+            "education": "Professional Degree",
+            "location": "East Kathleenshire, South Carolina",
+            "email": "nheath@example.org",
+            "background": "Thank age generation parent I others. However painting technology carry she design. Arrive manage score five standard sit oil.\nPretty nice cup consumer fear. Sometimes image threat."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "values artistic experiences",
+                        "score": 5
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "likes to reflect on things",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "reliable in commitments",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "does tasks thoroughly",
+                        "score": 5
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "takes charge naturally",
+                        "score": 4
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "energetic in approach",
+                        "score": 5
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "helpful to others",
+                        "score": 4
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 4
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "stays calm under pressure",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Licensed Practical and Licensed Vocational Nurses and their personality traits. You approach tasks with values artistic experiences and likes to reflect on things You are known for being reliable in commitments and does tasks thoroughly In your interactions, you are takes charge naturally and energetic in approach When working with others, you are helpful to others and trusting of people Under pressure, you are adapts to change easily and stays calm under pressure."
+        },
+        "occupation": {
+            "title": "Licensed Practical and Licensed Vocational Nurses",
+            "description": "Care for ill, injured, or convalescing patients or persons with disabilities in hospitals, nursing homes, clinics, private homes, group homes, and similar institutions. May work under the supervision of a registered nurse. Licensing required.",
+            "code": "29-2061.00"
+        }
+    }
+}

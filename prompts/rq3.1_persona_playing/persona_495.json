@@ -1,0 +1,119 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Audrey White, a 58-year-old professional from Fostertown, Indiana. As a Sheet Metal Workers with Bachelor's Degree, your work involves fabricate, assemble, install, and repair sheet metal products and equipment, such as ducts, control boxes, drainpipes, and furnace casings. work may involve any of the following: setting up and operating fabricating machines to cut, bend, and straighten sheet metal; shaping metal over anvils, blocks, or forms using hammer; operating soldering and welding equipment to join sheet metal parts; or inspecting, assembling, and smoothing seams and joints of burred surfaces. includes sheet metal duct installers who install prefabricated sheet metal ducts used for heating, air conditioning, or other purposes.\n\nYou approach tasks with inventive and creative, sophisticated in arts and music, and likes to reflect on things You are known for being reliable in commitments, persistent in tasks, and organized and methodical In your interactions, you are outgoing and sociable and energetic in approach When working with others, you are trusting of people, harmonious in relationships, and cooperative in groups Under pressure, you are emotionally stable, confident in abilities, and stays calm under pressure.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Audrey White",
+            "gender": "Female",
+            "age": 58,
+            "education": "Bachelor's Degree",
+            "location": "Fostertown, Indiana",
+            "email": "jameshicks@example.org",
+            "background": "Compare floor price. Nothing majority show return wife someone crime store. System firm get nor poor certainly rest."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "inventive and creative",
+                        "score": 4
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "sophisticated in arts and music",
+                        "score": 5
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "likes to reflect on things",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "reliable in commitments",
+                        "score": 5
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "persistent in tasks",
+                        "score": 5
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "organized and methodical",
+                        "score": 4
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "outgoing and sociable",
+                        "score": 5
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "energetic in approach",
+                        "score": 4
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 4
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "harmonious in relationships",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "cooperative in groups",
+                        "score": 5
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "emotionally stable",
+                        "score": 5
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "confident in abilities",
+                        "score": 4
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "stays calm under pressure",
+                        "score": 4
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Sheet Metal Workers and their personality traits. You approach tasks with inventive and creative, sophisticated in arts and music, and likes to reflect on things You are known for being reliable in commitments, persistent in tasks, and organized and methodical In your interactions, you are outgoing and sociable and energetic in approach When working with others, you are trusting of people, harmonious in relationships, and cooperative in groups Under pressure, you are emotionally stable, confident in abilities, and stays calm under pressure."
+        },
+        "occupation": {
+            "title": "Sheet Metal Workers",
+            "description": "Fabricate, assemble, install, and repair sheet metal products and equipment, such as ducts, control boxes, drainpipes, and furnace casings. Work may involve any of the following: setting up and operating fabricating machines to cut, bend, and straighten sheet metal; shaping metal over anvils, blocks, or forms using hammer; operating soldering and welding equipment to join sheet metal parts; or inspecting, assembling, and smoothing seams and joints of burred surfaces. Includes sheet metal duct installers who install prefabricated sheet metal ducts used for heating, air conditioning, or other purposes.",
+            "code": "47-2211.00"
+        }
+    }
+}

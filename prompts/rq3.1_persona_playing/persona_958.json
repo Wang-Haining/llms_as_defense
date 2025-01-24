@@ -1,0 +1,113 @@
+{
+    "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Please rewrite the following text through your unique voice. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+    "user": "For this task, please write in the voice of the following persona:\n\nYou are Tristan Barr, a 60-year-old professional from Holmesfort, Oregon. As a Marine Engineers and Naval Architects with Ph.D., your work involves design, develop, and evaluate the operation of marine vessels, ship machinery, and related equipment, such as power supply and propulsion systems.\n\nYou approach tasks with curious about many different things and inventive and creative You are known for being makes plans and follows through, reliable in commitments, and persistent in tasks In your interactions, you are confident in social situations, takes charge naturally, and outgoing and sociable When working with others, you are cooperative in groups, trusting of people, and helpful to others Under pressure, you are confident in abilities and adapts to change easily.\n\nUsing this persona's voice and perspective, please rewrite the following text while maintaining its core meaning.\n\nText to be modified:\n\n{text}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+    "metadata": {
+        "demographics": {
+            "name": "Tristan Barr",
+            "gender": "Male",
+            "age": 60,
+            "education": "Ph.D.",
+            "location": "Holmesfort, Oregon",
+            "email": "greenegregory@example.org",
+            "background": "Wall together describe something. Born its avoid common tough commercial remember.\nCurrent first candidate whose medical explain discover public. Contain tree effect rich between cold though."
+        },
+        "personality": {
+            "profile": {
+                "openness": [
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "curious about many different things",
+                        "score": 5
+                    },
+                    {
+                        "domain": "openness",
+                        "facet": "",
+                        "description": "inventive and creative",
+                        "score": 4
+                    }
+                ],
+                "conscientiousness": [
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "makes plans and follows through",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "reliable in commitments",
+                        "score": 4
+                    },
+                    {
+                        "domain": "conscientiousness",
+                        "facet": "",
+                        "description": "persistent in tasks",
+                        "score": 4
+                    }
+                ],
+                "extraversion": [
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "confident in social situations",
+                        "score": 5
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "takes charge naturally",
+                        "score": 5
+                    },
+                    {
+                        "domain": "extraversion",
+                        "facet": "",
+                        "description": "outgoing and sociable",
+                        "score": 4
+                    }
+                ],
+                "agreeableness": [
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "cooperative in groups",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "trusting of people",
+                        "score": 5
+                    },
+                    {
+                        "domain": "agreeableness",
+                        "facet": "",
+                        "description": "helpful to others",
+                        "score": 4
+                    }
+                ],
+                "neuroticism": [
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "confident in abilities",
+                        "score": 5
+                    },
+                    {
+                        "domain": "neuroticism",
+                        "facet": "",
+                        "description": "adapts to change easily",
+                        "score": 5
+                    }
+                ]
+            },
+            "writing_style": "Their writing style reflects their role as a Marine Engineers and Naval Architects and their personality traits. You approach tasks with curious about many different things and inventive and creative You are known for being makes plans and follows through, reliable in commitments, and persistent in tasks In your interactions, you are confident in social situations, takes charge naturally, and outgoing and sociable When working with others, you are cooperative in groups, trusting of people, and helpful to others Under pressure, you are confident in abilities and adapts to change easily."
+        },
+        "occupation": {
+            "title": "Marine Engineers and Naval Architects",
+            "description": "Design, develop, and evaluate the operation of marine vessels, ship machinery, and related equipment, such as power supply and propulsion systems.",
+            "code": "17-2121.00"
+        }
+    }
+}
