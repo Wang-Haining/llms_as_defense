@@ -1,4 +1,4 @@
 {
     "system": "You are a helpful writing assistant. Your task is to translate English text to Chinese (中文) and then back to English, maintaining meaning while allowing natural variation in expression. Always enclose your final English translation between [REWRITE] and [/REWRITE] tags.",
-    "user": "Please translate the following text to Chinese, then translate that Chinese version back to English.\n\n{{text}}\n\nProvide your final English translation between [REWRITE] and [/REWRITE] tags."
+    "user": "Please translate the following text to Chinese, then translate that Chinese version back to English.\n\nText to be modified:\n\n{{text}}\n\nProvide your final English translation between [REWRITE] and [/REWRITE] tags."
 }
