@@ -121,11 +121,11 @@ class ExperimentConfig:
         )
 
     def get_prompt_path(self) -> Path:
-        """Get the path to prompt file, handling special case for persona-based RQ3.1"""
+        """Get the path to prompt file, handling special cases for RQ3.x scenarios"""
         base_prompt_dir = Path('prompts')
 
-        # handle persona-based RQ3.1
-        if self.sub_question == "rq3.1_persona_playing":
+        # special handling for different RQ3.x scenarios
+        if self.sub_question == "rq3.1_obfuscation_persona":
             persona_dir = base_prompt_dir / self.sub_question
             if not persona_dir.exists():
                 raise FileNotFoundError(f"Persona directory not found: {persona_dir}")
@@ -138,7 +138,57 @@ class ExperimentConfig:
             # randomly select one persona file
             return random.choice(persona_files)
 
-        # dfault case: direct json file
+        # handle RQ3.2 imitation with different word counts
+        elif self.sub_question.startswith("rq3.2_imitation_w_"):
+            imitation_dir = base_prompt_dir / self.sub_question
+            if not imitation_dir.exists():
+                raise FileNotFoundError(
+                    f"Imitation directory not found: {imitation_dir}")
+
+            # list all json files in the directory
+            imitation_files = [f for f in imitation_dir.glob("*.json")]
+            if not imitation_files:
+                raise FileNotFoundError(f"No imitation files found in {imitation_dir}")
+
+            # randomly select one imitation file
+            return random.choice(imitation_files)
+
+        # handle RQ3.3 simplification with exemplar
+        elif self.sub_question == "rq3.3_simplification_w_exemplar":
+            exemplar_dir = base_prompt_dir / self.sub_question
+            if not exemplar_dir.exists():
+                raise FileNotFoundError(f"Exemplar directory not found: {exemplar_dir}")
+
+            # list all json files in the directory
+            exemplar_files = [f for f in exemplar_dir.glob("*.json")]
+            if not exemplar_files:
+                raise FileNotFoundError(f"No exemplar files found in {exemplar_dir}")
+
+            # randomly select one exemplar file
+            return random.choice(exemplar_files)
+
+        # handle RQ3.3 simplification with vocabulary and exemplar
+        elif self.sub_question == "rq3.3_simplification_w_vocabulary_and_exemplar":
+            vocab_exemplar_dir = base_prompt_dir / self.sub_question
+            if not vocab_exemplar_dir.exists():
+                raise FileNotFoundError(
+                    f"Vocabulary and exemplar directory not found: {vocab_exemplar_dir}")
+
+            # list all json files in the directory
+            vocab_exemplar_files = [f for f in vocab_exemplar_dir.glob("*.json")]
+            if not vocab_exemplar_files:
+                raise FileNotFoundError(
+                    f"No vocabulary and exemplar files found in {vocab_exemplar_dir}")
+
+            # randomly select one file
+            return random.choice(vocab_exemplar_files)
+
+        # handle RQ3.3 simplification with vocabulary only (single file)
+        elif self.sub_question == "rq3.3_simplification_w_vocabulary":
+            # direct json file for vocabulary-based simplification
+            return base_prompt_dir / f"{self.sub_question}.json"
+
+        # default case: direct json file
         return base_prompt_dir / f"{self.sub_question}.json"
 
 
@@ -658,7 +708,7 @@ async def main():
             raise FileNotFoundError(f"prompt configuration not found: {prompt_path}")
 
         # log the selected persona file for RQ3.1
-        if config.sub_question == "rq3.1_persona_playing":
+        if config.sub_question == "rq3.1_obfuscation_persona":
             logger.info(f"Selected persona file: {prompt_path.name}")
 
         instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
