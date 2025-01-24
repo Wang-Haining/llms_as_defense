@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq3.3_simplification_w_exemplar
+#SBATCH --job-name=run_llm_defense_rq3.3_simplification_w_vocabulary_gemma2_9b
 #SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
@@ -17,7 +17,7 @@ module load CUDA/12.2.0
 . .venv/bin/activate
 
 MODEL="google/gemma-2-9b-it"
-RQ="rq3.3_simplification_w_exemplar"
+RQ="rq3.3_simplification_w_vocabulary"
 PROVIDER="local"
 SLEEP_TIME=30
 CORPORA=("ebg" "rj" "lcmc")
