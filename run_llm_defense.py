@@ -125,7 +125,7 @@ class ExperimentConfig:
         base_prompt_dir = Path('prompts')
 
         # special handling for different RQ3.x scenarios
-        if self.sub_question == "rq3.1_obfuscation_persona":
+        if self.sub_question == "rq3.1_obfuscation_w_persona":
             persona_dir = base_prompt_dir / self.sub_question
             if not persona_dir.exists():
                 raise FileNotFoundError(f"Persona directory not found: {persona_dir}")
@@ -708,7 +708,7 @@ async def main():
             raise FileNotFoundError(f"prompt configuration not found: {prompt_path}")
 
         # log the selected persona file for RQ3.1
-        if config.sub_question == "rq3.1_obfuscation_persona":
+        if config.sub_question == "rq3.1_obfuscation_w_persona":
             logger.info(f"Selected persona file: {prompt_path.name}")
 
         instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
