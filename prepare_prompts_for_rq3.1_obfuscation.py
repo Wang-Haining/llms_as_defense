@@ -20,10 +20,10 @@ BFI-10 Dimensions:
 
 Output Structure:
     prompts/rq3.1_persona_playing/
-    ├── persona_000.json  # individual persona prompts
-    ├── persona_001.json
+    ├── persona_00.json  # individual persona prompts
+    ├── persona_01.json
     ├── ...
-    └── persona_099.json
+    └── persona_99.json
 
 Each persona file contains:
     {
