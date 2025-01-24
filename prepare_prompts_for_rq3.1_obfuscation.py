@@ -262,7 +262,7 @@ class PersonaGenerator:
             f"{personality_narrative}\n\n"
             f"Using this persona's voice and perspective, please rewrite the following text "
             f"while maintaining its core meaning."
-            f"\n\nText to be modified:\n\n{{text}}\n\n"
+            f"\n\nText to be modified:\n\n{{{{text}}}}\n\n"
             f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
         )
 
@@ -296,7 +296,7 @@ def generate_persona_prompts(n: int = 100, output_dir: str = "prompts/rq3.1_obfu
         prompts.append(formatted_prompt)
 
         # save individual prompt with zero-padded numbering
-        file_name = f"persona_{i:03d}.json"
+        file_name = f"persona_{i:02d}.json"
         with open(output_path / file_name, 'w', encoding='utf-8') as f:
             json.dump(formatted_prompt, f, indent=4, ensure_ascii=False)
 
