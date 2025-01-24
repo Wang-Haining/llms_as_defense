@@ -562,3 +562,4 @@ class SVMPredictor:
             Numpy array of prediction probabilities (n_samples, n_classes)
         """
         return self.pipeline.predict_proba(texts)
+
