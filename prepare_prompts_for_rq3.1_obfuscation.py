@@ -273,7 +273,7 @@ class PersonaGenerator:
         }
 
 
-def generate_persona_prompts(n: int = 1000, output_dir: str = "prompts/rq3.1_persona_playing") -> List[Dict]:
+def generate_persona_prompts(n: int = 100, output_dir: str = "prompts/rq3.1_obfuscation_w_persona") -> List[Dict]:
     """generate a set of persona-based prompts"""
     generator = PersonaGenerator()
     prompts = []
@@ -304,8 +304,8 @@ def generate_persona_prompts(n: int = 1000, output_dir: str = "prompts/rq3.1_per
 
 
 if __name__ == "__main__":
-    # generate 1000 persona prompts
+    # generate 100 persona prompts
     prompts = generate_persona_prompts()
-    print(f"Generated {len(prompts)} persona prompts in prompts/rq3.1_persona_playing/")
+    print(f"Generated {len(prompts)} persona prompts in prompts/rq3.1_obfuscation_w_persona/")
     print("\nExample prompt structure:")
     print(json.dumps(prompts[0], indent=2))
