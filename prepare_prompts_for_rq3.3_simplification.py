@@ -75,7 +75,6 @@ def create_vocabulary_prompt(voa_words: List[str]) -> Dict:
                 "sentences that make sense.\n\n"
                 "Your writing should not raise any eyebrows when a human reads over "
                 "it and the point should still be clearly conveyed.\n\n"
-                "This is the VOA Special English word list you are permitted to use:"
                 f"{format_word_list(voa_words)}"
                 "\n\nText to be modified:\n\n{{text}}\n\n"
                 "Provide your rewrite between [REWRITE] and [/REWRITE] tags.")
@@ -117,7 +116,6 @@ def create_combined_prompt(article: Dict, voa_words: List[str]) -> Dict:
                 "sentences that make sense.\n\n"
                 "Your writing should not raise any eyebrows when a human reads over "
                 "it and the point should still be clearly conveyed."
-                "\nThis is the VOA Special English word list you are permitted to use:"
                 f"{format_word_list(voa_words)}\n\n"
                 f"Here is an example of Special English writing from VOA:"
                 f"\n\n{article['content']}"
