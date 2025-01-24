@@ -159,7 +159,7 @@ def create_prompt_json(
             f"Here is an example of the writing style you are expected to mimic:"
             f"\n\n'''\n{exemplar_text}\n'''\n\n"
             f"Please rewrite the following text to match this writing style while "
-            f"maintaining its core meaning:\n\n{{text}}\n\n"
+            f"maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\n"
             f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
         ),
         "metadata": {

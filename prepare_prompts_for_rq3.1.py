@@ -230,7 +230,7 @@ class PersonaGenerator:
         }
 
     def generate_prompt(self, persona: Dict) -> Dict[str, str]:
-        """Create a naturally flowing prompt from a persona"""
+        """Create a naturally flowing prompt from a persona with details in user prompt"""
         demographics = persona['demographics']
         occupation = persona['occupation']
         education = demographics.get('education', 'an unspecified level of education')
@@ -246,19 +246,23 @@ class PersonaGenerator:
             persona['personality']['profile']
         )
 
+        # simplified system prompt
         system_prompt = (
+            "You are a helpful writing assistant. Your task is to paraphrase text while "
+            "preserving its meaning. Please rewrite the following text through your unique voice."
+            "Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags."
+        )
+
+        # detailed user prompt with persona
+        user_prompt = (
+            f"For this task, please write in the voice of the following persona:\n\n"
             f"You are {demographics['name']}, a {demographics['age']}-year-old professional from "
             f"{demographics['location']}. {professional_background}\n\n"
             f"{personality_narrative}\n\n"
-            "Drawing from your background and personality, your task is to rewrite text while "
-            "preserving its core meaning but expressing it through your unique perspective. "
-            "Always enclose your rewritten version between [REWRITE] and [/REWRITE] tags."
-        )
-
-        user_prompt = (
-            "Please rewrite the following text through your unique voice, "
-            f"while maintaining its core meaning:\n\n{{{{text}}}}\n\n"
-            "Provide your rewrite between [REWRITE] and [/REWRITE] tags."
+            f"Using this persona's voice and perspective, please rewrite the following text "
+            f"while maintaining its core meaning."
+            f"\n\nText to be modified:\n\n{{text}}\n\n"
+            f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
         )
 
         return {
