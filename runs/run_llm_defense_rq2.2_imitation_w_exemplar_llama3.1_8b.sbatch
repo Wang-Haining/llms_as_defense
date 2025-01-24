@@ -1,6 +1,6 @@
 #!/bin/sh
 #SBATCH --job-name=run_llm_defense_rq2.2_imitation_w_example_llama3.1_8b
-##SBATCH --account=group-jasonclark
+#SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
 #SBATCH --cpus-per-task=8
@@ -16,24 +16,20 @@ module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 . .venv/bin/activate
 
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus ebg \
---rq rq2.2_imitation_w_example \
---model "meta-llama/Llama-3.1-8B-Instruct" \
---provider local
+MODEL="meta-llama/Llama-3.1-8B-Instruct"
+RQ="rq2.2_imitation_w_exemplar"
+PROVIDER="local"
+SLEEP_TIME=30
+CORPORA=("ebg" "rj" "lcmc")
 
-sleep 30
+for corpus in "${CORPORA[@]}"; do
+    CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
+        --corpus "$corpus" \
+        --rq "$RQ" \
+        --model "$MODEL" \
+        --provider "$PROVIDER"
 
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus rj \
---rq rq2.2_imitation_w_example \
---model "meta-llama/Llama-3.1-8B-Instruct" \
---provider local
-
-sleep 30
-
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus lcmc \
---rq rq2.2_imitation_w_example \
---model "meta-llama/Llama-3.1-8B-Instruct" \
---provider local
+    if [ "$corpus" != "${CORPORA[-1]}" ]; then
+        sleep $SLEEP_TIME
+    fi
+done

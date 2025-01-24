@@ -1,6 +1,5 @@
 #!/bin/sh
 #SBATCH --job-name=run_llm_defense_rq1.1_basic_paraphrase_gemma2_9b
-##SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
 #SBATCH --cpus-per-task=8
@@ -11,29 +10,24 @@
 #SBATCH --mail-user=haining.wang@montana.edu
 #SBATCH --mail-type=ALL
 
-
 module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 . .venv/bin/activate
 
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus ebg \
---rq rq1.1_basic_paraphrase \
---model "google/gemma-2-9b-it" \
---provider local
+MODEL="google/gemma-2-9b-it"
+RQ="rq1.1_basic_paraphrase"
+PROVIDER="local"
+SLEEP_TIME=30
+CORPORA=("ebg" "rj" "lcmc")
 
-sleep 30
+for corpus in "${CORPORA[@]}"; do
+    CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
+        --corpus "$corpus" \
+        --rq "$RQ" \
+        --model "$MODEL" \
+        --provider "$PROVIDER"
 
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus rj \
---rq rq1.1_basic_paraphrase \
---model "google/gemma-2-9b-it" \
---provider local
-
-sleep 30
-
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus lcmc \
---rq rq1.1_basic_paraphrase \
---model "google/gemma-2-9b-it" \
---provider local
+    if [ "$corpus" != "${CORPORA[-1]}" ]; then
+        sleep $SLEEP_TIME
+    fi
+done

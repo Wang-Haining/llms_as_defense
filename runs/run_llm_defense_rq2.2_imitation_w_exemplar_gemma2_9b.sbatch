@@ -29,9 +29,3 @@ for corpus in "${CORPORA[@]}"; do
         sleep $SLEEP_TIME
     fi
 done
-
-CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
---corpus lcmc \
---rq rq2.2_imitation_w_exemplar \
---model "google/gemma-2-9b-it" \
---provider local
