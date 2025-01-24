@@ -1,10 +1,28 @@
 """
-Create all RQ3.3 prompt variants:
-1. With VOA vocabulary only
-2. With VOA exemplars only
-3. With both vocabulary and exemplars combined
+This script generates prompts for text simplification experiments using VOA Special English.
 
-This script generates all three sets of prompts with consistent formatting and structure.
+The script creates three variants of prompts:
+1. Vocabulary-based: Uses only the VOA Special English word list
+2. Exemplar-based: Uses example articles from VOA Special English
+3. Combined: Uses both vocabulary list and example articles
+
+The prompts are designed for a text simplification task where the goal is to rewrite
+input text using simplified English following VOA Special English guidelines. Each prompt
+variant tests different approaches to guiding the simplification process:
+- Using a controlled vocabulary (VOA Special English word list)
+- Learning from examples (VOA Special English articles)
+- Using both vocabulary constraints and examples
+
+The generated prompts maintain consistent formatting and structure across variants,
+with content length limited to 2500 words for manageability. Output is saved in
+JSON format with proper file organization for experimental use.
+
+Usage:
+    python prompt_generator.py
+
+Requirements:
+    - VOA Special English word list in resources/voa.txt
+    - VOA articles in resources/manythings_voa.json
 """
 
 import json
@@ -14,26 +32,37 @@ from typing import List, Dict
 
 
 def read_voa_words(filepath: str) -> list[str]:
-    """read VOA Special English word list from file."""
+    """Read VOA Special English word list from file."""
     with open(filepath, 'r', encoding='utf-8') as f:
         words = [line.strip() for line in f if line.strip()]
     return words
 
 
 def read_voa_articles(filepath: str) -> List[Dict]:
-    """read VOA articles from JSON file."""
+    """Read VOA articles from JSON file and ensure content length <= 2500 words."""
     with open(filepath, 'r', encoding='utf-8') as f:
         articles = json.load(f)
-    return articles
+
+    # filter and truncate articles to 2500 words
+    processed_articles = []
+    for article in articles:
+        # split content into words and limit to 2500
+        words = article['content'].split()
+        if len(words) > 2500:
+            words = words[:2500]
+            article['content'] = ' '.join(words)
+        processed_articles.append(article)
+
+    return processed_articles
 
 
 def format_word_list(words: list[str]) -> str:
-    """format word list into a compact string with single spaces between words."""
+    """Format word list into a compact string with single spaces between words."""
     return f"\n\nHere is the complete VOA Special English word list:\n{' '.join(words)}"
 
 
 def create_vocabulary_prompt(voa_words: List[str]) -> Dict:
-    """create a prompt with VOA vocabulary only."""
+    """Create a prompt with VOA vocabulary only."""
     return {
         "system": "You are a helpful writing assistant. Do this task as if you are "
                  "asked as part of a college application. Always enclose your "
@@ -54,7 +83,7 @@ def create_vocabulary_prompt(voa_words: List[str]) -> Dict:
 
 
 def create_exemplar_prompt(article: Dict) -> Dict:
-    """create a prompt with a VOA article as exemplar."""
+    """Create a prompt with a VOA article as exemplar."""
     return {
         "system": "You are a helpful writing assistant. Do this task as if you are "
                  "asked as part of a college application. Always enclose your "
@@ -75,7 +104,7 @@ def create_exemplar_prompt(article: Dict) -> Dict:
 
 
 def create_combined_prompt(article: Dict, voa_words: List[str]) -> Dict:
-    """create a prompt with both VOA vocabulary and article exemplar."""
+    """Create a prompt with both VOA vocabulary and article exemplar."""
     return {
         "system": "You are a helpful writing assistant. Do this task as if you are "
                  "asked as part of a college application. Always enclose your "
@@ -98,14 +127,14 @@ def create_combined_prompt(article: Dict, voa_words: List[str]) -> Dict:
 
 
 def save_prompt(prompt: Dict, filepath: Path) -> None:
-    """save a single prompt to a JSON file."""
+    """Save a single prompt to a JSON file."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(prompt, f, indent=4, ensure_ascii=False)
 
 
 def save_prompts(prompts: List[Dict], output_dir: Path) -> None:
-    """save multiple prompts to numbered JSON files."""
+    """Save multiple prompts to numbered JSON files."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for i, prompt in enumerate(prompts, 1):
@@ -115,7 +144,7 @@ def save_prompts(prompts: List[Dict], output_dir: Path) -> None:
 
 
 def main():
-    """main function to create and save all prompt variants."""
+    """Create and save all prompt variants with length-controlled content."""
     # setup paths
     voa_words_path = Path("resources/voa.txt")
     voa_articles_path = Path("resources/manythings_voa.json")
