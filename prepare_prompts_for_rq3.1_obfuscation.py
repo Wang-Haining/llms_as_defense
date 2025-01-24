@@ -23,7 +23,7 @@ Output Structure:
     ├── persona_000.json  # individual persona prompts
     ├── persona_001.json
     ├── ...
-    └── persona_999.json
+    └── persona_099.json
 
 Each persona file contains:
     {
@@ -33,7 +33,7 @@ Each persona file contains:
     }
 
 Usage:
-    # Generate 1000 persona prompts
+    # Generate 100 persona prompts
     python persona_generator.py
 
 Dependencies:
