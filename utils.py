@@ -28,7 +28,7 @@ RQS = ('rq1.1_basic_paraphrase',
        'rq3.1_obfuscation_persona',
        'rq3.2_imitation_w_500words', 'rq3.2_imitation_w_1000words',
        'rq3.2_imitation_w_2500words',
-       'rq3.3_simplification_w_vocabulary','rq3.3_simplification_w_exemplar',
+       'rq3.3_simplification_w_vocabulary', 'rq3.3_simplification_w_exemplar',
        'rq3.3_simplification_w_vocabulary_and_exemplar',
        )
 LLMS = ('meta-llama/Llama-3.1-8B',
@@ -38,6 +38,7 @@ LLMS = ('meta-llama/Llama-3.1-8B',
         'gpt-4o-2024-08-06')
 
 CORPORA = ('ebg', 'rj', 'lcmc')
+
 
 def get_corpus_stats() -> None:
     """
