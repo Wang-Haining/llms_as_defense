@@ -7,7 +7,7 @@ This script validates experiment outputs by:
 3. Generating a detailed report of any missing data
 
 Usage:
-    python validate_llm_outputs.py  # checks default models (llama and gemma)
+    python validate_llm_outputs.py  # checks default models
     python validate_llm_outputs.py --models "meta-llama/Llama-3.1-8B"
     python validate_llm_outputs.py --models claude-3-5-sonnet-20241022 gpt-4-0125-preview
     python validate_llm_outputs.py --rq rq1.1_basic_paraphrase  # check specific research question
@@ -37,10 +37,8 @@ def normalize_model_name(model: str) -> str:
     """normalize model names for comparison with directory names"""
     # extract last part after / if present
     model_name = model.split('/')[-1].lower()
-    # remove version tags from api models
-    model_name = model_name.split('-2024')[0]  # handles 2024 dates
-    model_name = model_name.split('-20241')[0]  # handles 2024 dates with month
     return model_name
+
 
 class ExperimentValidator:
     def __init__(
