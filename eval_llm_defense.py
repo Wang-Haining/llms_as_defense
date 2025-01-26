@@ -61,6 +61,7 @@ File Formats:
    the same structure as individual seed files.
 
 Usage:
+    python eval_llm_defense.py --model "google/gemma-2b-it"  # for all rqs
     python eval_llm_defense.py --rq rq1.1_basic_paraphrase --model "google/gemma-2b-it"
 """
 
@@ -558,16 +559,19 @@ class DefenseEvaluator:
                     trans_ranks = np.argsort(trans_prob)[::-1]
 
                     example_metrics.append({
-                        "example_id": idx,
-                        "true_label": true_label,
+                        "example_id": int(idx),  # convert from numpy int
+                        "true_label": int(true_label),  # convert from numpy int
                         "orig_probs": orig_prob.tolist(),
                         "trans_probs": trans_prob.tolist(),
-                        "original_rank": np.where(orig_ranks == true_label)[0][0],
-                        "transformed_rank": np.where(trans_ranks == true_label)[0][0],
-                        "mrr_change": (1 / (
-                                    np.where(trans_ranks == true_label)[0][0] + 1) -
-                                       1 / (np.where(orig_ranks == true_label)[0][
-                                                0] + 1))
+                        "original_rank": int(np.where(orig_ranks == true_label)[0][0]),
+                        # convert numpy int
+                        "transformed_rank": int(
+                            np.where(trans_ranks == true_label)[0][0]),
+                        # convert numpy int
+                        "mrr_change": float(1 / (np.where(trans_ranks == true_label)[0][
+                                                     0] + 1) -  # convert numpy float
+                                            1 / (np.where(orig_ranks == true_label)[0][
+                                                     0] + 1))
                     })
 
                 # calculate text quality metrics
@@ -582,7 +586,8 @@ class DefenseEvaluator:
                         'inputs': {
                             'original_texts': test_texts,
                             'transformed_texts': transformed_texts,
-                            'true_labels': test_labels.tolist()
+                            'true_labels': [int(x) for x in test_labels]
+                            # convert numpy ints
                         },
                         'predictions': {
                             'original_probs': orig_preds.tolist(),
@@ -604,9 +609,9 @@ class DefenseEvaluator:
                         'corpus': corpus,
                         'research_question': rq,
                         'model_name': model_name,
-                        'seed': seed_id,
-                        'n_examples': len(test_texts),
-                        'n_classes': len(np.unique(test_labels))
+                        'seed': int(seed_id),  # convert if numpy int
+                        'n_examples': int(len(test_texts)),
+                        'n_classes': int(len(np.unique(test_labels))) # convert numpy int
                     },
                     'results': seed_results,
                     'example_metrics': example_metrics
