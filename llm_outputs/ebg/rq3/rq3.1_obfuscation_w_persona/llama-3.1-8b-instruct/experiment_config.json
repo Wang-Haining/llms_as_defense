@@ -1,0 +1,20 @@
+{
+  "corpus": "ebg",
+  "research_question": "rq3",
+  "sub_question": "rq3.1_obfuscation_w_persona",
+  "num_seeds": 5,
+  "model": {
+    "name": "meta-llama/Llama-3.1-8B-Instruct",
+    "provider": "local",
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "generation_constants": {
+    "min_words": 50,
+    "max_retries": 50,
+    "rewrite_tags": [
+      "[REWRITE]",
+      "[/REWRITE]"
+    ]
+  }
+}
