@@ -506,9 +506,12 @@ class DefenseEvaluator:
         logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds")
 
         # prepare output directory
+        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
+        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
+        model_dir = model_name.split('/')[-1].lower()
+
         output_base = (
-                self.output_dir / corpus / rq.split('_')[0] / rq /
-                model_name.split('/')[-1].lower()
+                self.output_dir / corpus / rq_main / rq_base / model_dir
         )
         output_base.mkdir(parents=True, exist_ok=True)
 
