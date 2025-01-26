@@ -411,6 +411,22 @@ class DefenseEvaluator:
             'roberta': RobertaPredictor
         }
 
+    def _get_output_path(self, corpus: str, rq: str, model_name: str) -> Path:
+        """Get standardized output path for both experiment and save results.
+
+        Args:
+            corpus: corpus name (rj/ebg/lcmc)
+            rq: full research question identifier (e.g. rq1.1_basic_paraphrase)
+            model_name: full model name
+
+        Returns:
+            Path: Standardized path for output files
+        """
+        rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
+        model_dir = model_name.split('/')[-1].lower()
+
+        return self.output_dir / corpus / rq_main / rq / model_dir
+
     def _load_predictor(
         self,
         corpus: str,
@@ -463,12 +479,7 @@ class DefenseEvaluator:
 
     def evaluate_experiment(self, corpus: str, rq: str, model_name: str) -> Dict[
         str, Dict]:
-        """
-        Evaluate LLM-based defense against attribution models for a specific experiment.
-
-        Returns:
-            Dict mapping seeds to their evaluation results including attribution and quality metrics.
-        """
+        """Evaluate LLM-based defense against attribution models."""
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
 
         # load original test data
@@ -510,9 +521,7 @@ class DefenseEvaluator:
         rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
         model_dir = model_name.split('/')[-1].lower()
 
-        output_base = (
-                self.output_dir / corpus / rq_main / rq_base / model_dir
-        )
+        output_base = self._get_output_path(corpus, rq, model_name)
         output_base.mkdir(parents=True, exist_ok=True)
 
         # evaluate each seed
@@ -641,15 +650,8 @@ class DefenseEvaluator:
             rq: research question identifier
             model_name: model name
         """
-        # extract RQ numbers and keep lowercase
-        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
-        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
-        model_dir = model_name.split('/')[-1].lower()
-
-        # construct path following the specified structure
-        save_dir = (
-                self.output_dir / corpus / rq_main / rq / model_dir
-        )
+        # get output directory using common path construction
+        save_dir = self._get_output_path(corpus, rq, model_name)
         save_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = save_dir / "evaluation.json"
