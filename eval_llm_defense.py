@@ -423,27 +423,6 @@ class DefenseEvaluator:
         )
         return self.predictor_classes[model_type](model_dir)
 
-    def _get_experiment_paths(self, corpus: str, rq: str, model_name: str) -> Path:
-        """Get experiment directory based on RQ identifier and model name.
-
-        Args:
-            corpus: corpus name (rj/ebg/lcmc)
-            rq: research question identifier (e.g. rq1.1_basic_paraphrase)
-            model_name: full model name (e.g. google/gemma-2b-it)
-
-        Returns:
-            Path to experiment directory
-        """
-        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
-        rq_main = rq_base.split('.')[0]  # e.g., 'rq1'
-
-        # model dir name: take last part of model path
-        model_dir = model_name.split('/')[-1].lower()
-
-        expected_path = self.llm_outputs_dir / corpus / rq_main / rq / model_dir
-        logger.info(f"Constructed path: {expected_path}")
-        return expected_path
-
     def _load_llm_outputs(
         self,
         corpus: str,
@@ -625,16 +604,49 @@ class DefenseEvaluator:
 
         return all_seed_results
 
-    def save_results(self,
-                     results: Dict,
-                     corpus: str,
-                     rq: str,
-                     model_name: str) -> None:
+    def _get_experiment_paths(self, corpus: str, rq: str, model_name: str) -> Path:
+        """Get experiment directory based on RQ identifier and model name.
+
+        Args:
+            corpus: corpus name (rj/ebg/lcmc)
+            rq: research question identifier (e.g. rq1.1_basic_paraphrase)
+            model_name: full model name (e.g. google/gemma-2b-it)
+
+        Returns:
+            Path to experiment directory
+        """
+        # extract RQ numbers and keep lowercase
         rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
-        rq_main = rq_base.split('.')[0]  # e.g., 'rq1'
+        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
+
+        # model dir name: take last part of model path
         model_dir = model_name.split('/')[-1].lower()
 
-        save_dir = self.output_dir / corpus / rq_main / rq_base / model_dir
+        expected_path = (
+                self.llm_outputs_dir / corpus / rq_main / rq_base / model_dir
+        )
+        logger.info(f"Constructed path: {expected_path}")
+        return expected_path
+
+    def save_results(self, results: Dict, corpus: str, rq: str,
+                     model_name: str) -> None:
+        """Save evaluation results following the specified directory structure.
+
+        Args:
+            results: evaluation results dictionary
+            corpus: corpus name (rj/ebg/lcmc)
+            rq: research question identifier
+            model_name: model name
+        """
+        # extract RQ numbers and keep lowercase
+        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
+        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
+        model_dir = model_name.split('/')[-1].lower()
+
+        # construct path following the specified structure
+        save_dir = (
+                self.output_dir / corpus / rq_main / rq_base / model_dir
+        )
         save_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = save_dir / "evaluation.json"
