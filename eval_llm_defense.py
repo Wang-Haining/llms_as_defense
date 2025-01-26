@@ -625,19 +625,18 @@ class DefenseEvaluator:
 
         return all_seed_results
 
-    def save_results(
-            self,
-            results: Dict,
-            corpus: str,
-            rq: str,
-            model_name: str
-    ) -> None:
-        """Save evaluation results following consistent structure and log summary."""
-        exp_dir = self._get_experiment_paths(corpus, rq, model_name)
-        save_dir = self.output_dir / exp_dir.relative_to(self.llm_outputs_dir)
+    def save_results(self,
+                     results: Dict,
+                     corpus: str,
+                     rq: str,
+                     model_name: str) -> None:
+        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
+        rq_main = rq_base.split('.')[0]  # e.g., 'rq1'
+        model_dir = model_name.split('/')[-1].lower()
+
+        save_dir = self.output_dir / corpus / rq_main / rq_base / model_dir
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        # save to JSON instead of npz for better readability
         output_file = save_dir / "evaluation.json"
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
