@@ -31,7 +31,7 @@ RQS = ('rq1.1_basic_paraphrase',
        'rq3.3_simplification_w_vocabulary', 'rq3.3_simplification_w_exemplar',
        'rq3.3_simplification_w_vocabulary_and_exemplar',
        )
-LLMS = ('meta-llama/Llama-3.1-8B',
+LLMS = ('meta-llama/Llama-3.1-8B-Instruct',
         'google/gemma-2-9b-it',
         'mistralai/Ministral-8B-Instruct-2410',
         'claude-3-5-sonnet-20241022',
