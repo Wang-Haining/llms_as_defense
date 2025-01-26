@@ -618,7 +618,7 @@ class DefenseEvaluator:
         Returns:
             Path to experiment directory
         """
-        # extract RQ numbers and keep lowercase
+        # extract RQ numbers for parent directory
         rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
         rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
 
@@ -626,9 +626,9 @@ class DefenseEvaluator:
         model_dir = model_name.split('/')[-1].lower()
 
         expected_path = (
-                self.llm_outputs_dir / corpus / rq_main / rq_base / model_dir
+                self.llm_outputs_dir / corpus / rq_main / rq / model_dir
         )
-        logger.info(f"Constructed path: {expected_path}")
+        logger.info(f"Looking for files in: {expected_path}")
         return expected_path
 
     def save_results(self, results: Dict, corpus: str, rq: str,
@@ -648,7 +648,7 @@ class DefenseEvaluator:
 
         # construct path following the specified structure
         save_dir = (
-                self.output_dir / corpus / rq_main / rq_base / model_dir
+                self.output_dir / corpus / rq_main / rq / model_dir
         )
         save_dir.mkdir(parents=True, exist_ok=True)
 
