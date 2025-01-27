@@ -37,7 +37,7 @@ LLMS = ('meta-llama/Llama-3.1-8B-Instruct',
         'claude-3-5-sonnet-20241022',
         'gpt-4o-2024-08-06')
 
-CORPORA = ('ebg', 'rj', 'lcmc')
+CORPORA = ('ebg', 'rj')
 
 
 def get_corpus_stats() -> None:
@@ -52,7 +52,10 @@ def get_corpus_stats() -> None:
     """
     tokenize = lambda s: MosesTokenizer(lang="en").tokenize(s, escape=False)
 
-    corpus_to_function = {"rj": load_rj, "ebg": load_ebg, "lcmc": load_lcmc}
+    corpus_to_function = {"rj": load_rj,
+                          "ebg": load_ebg,
+                          # "lcmc": load_lcmc
+                          }
 
     def _corpus_stat(corpus, task):
         get_raw_func = corpus_to_function.get(corpus)
@@ -92,9 +95,9 @@ def get_corpus_stats() -> None:
     # EBG
     for task in ["no_protection", "imitation", "obfuscation"]:
         _corpus_stat("ebg", task)
-    # LCMC v.1.1-Interview
-    for task in ["no_protection"]:
-        _corpus_stat("lcmc", task)
+    # # LCMC v.1.1-Interview
+    # for task in ["no_protection"]:
+    #     _corpus_stat("lcmc", task)
 
 
 def load_corpus(corpus: str, task: str) -> Tuple[
@@ -120,7 +123,7 @@ def load_corpus(corpus: str, task: str) -> Tuple[
     valid_corpora = {
         'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
         'ebg': ['no_protection', 'imitation', 'obfuscation'],
-        'lcmc': ['no_protection']
+        # 'lcmc': ['no_protection']
     }
 
     if corpus not in valid_corpora:
@@ -132,7 +135,7 @@ def load_corpus(corpus: str, task: str) -> Tuple[
     loaders = {
         'rj': load_rj,
         'ebg': load_ebg,
-        'lcmc': load_lcmc
+        # 'lcmc': load_lcmc
     }
 
     train_text, train_labels_raw, test_text, test_labels_raw = loaders[corpus](task)
@@ -306,168 +309,168 @@ def load_ebg(
     return train_text, train_label, test_text, test_label
 
 
-def load_lcmc(
-    task: str = "no_protection", corpus_dir: str = "corpora/lcmc"
-) -> Tuple[List[str], List[str], List[str], List[str]]:
-    """
-    Read in texts and labels from the Loyola Computer Mediated Communication (LCMC)
-    corpus. The corpus contains various genres and topics, and is categorized into
-    spoken and written modalities.
-
-    We are only interested using written materials to fingerprint the interview sample.
-    One of the interview samples will be chosen as if there is 'no protection' involved,
-    simulating the cross-modal scenario of authorship attribution attacks.
-
-    The subset created is named LCMC V.1.1-Interview, useful for cross-modal authorship
-    attribution studies. It has an average training size of 8071 (std. deviation 1673)
-    and an average testing size of 654 (std. deviation 228), which nicely mirrors the
-    amounts of data used in RJ and EBG.
-
-    The LCMC corpus follows specific file naming conventions for files of individual's
-    text: email, essay, blog, interview, chat (individual contribution), discussion
-    (individual contribution).
-    The naming conventions are as follows: Sn or Snn X n Y n
-
-    - one or 2 digit identifier for participant (with Subject renumbering)
-    - genre identifier:
-        E = Email
-        S = Essay
-        B = Blog
-        C = Chat
-        P = Phone Interview
-        D = Discussion
-    - For Phase 1 genres, order this genre encountered by the individual in phase 1
-    (1, 2, or 3)
-    - topic identifier:
-        C = Catholic Church
-        G = Gay Marriage
-        I = War In Iraq
-        M = Legalization of Marijuana
-        P = Privacy Rights
-        S = Sex Discrimination
-    - order topic appeared in this genre for this individual
-
-    Example: "S2P2S5" translates to: Second participant text; phone interview was second
-    genre encountered (in Phase 1); sex discrimination was the fifth topic encountered
-    in interviews.
-
-    Args:
-        task: Specifies the data retrieval task, fixed to 'cross_modal'.
-        corpus_dir: Path to the LCMC corpus directory. Defaults to "corpora/lcmc".
-
-    Returns:
-        The text and labels of the training and testing sets.
-
-    Notes:
-        1. Two naming errors were corrected:
-           - 'S21S2G4.txt' -> 'S21D2G4.txt'.
-           - 'S1D113.txt' -> 'S1D1I3.txt'.
-        2. The dataset is designed to be executed once. After the initial run with a
-            seed of 42, a JSON file containing LCMC V1.1-Interview is generated in the
-            `./corpora/lcmc/lcmc_v1.1_interview.json`
-    """
-    path_to_json = os.path.join(corpus_dir, f"lcmc_v1.1_interview.json")
-    # if the subcorpus already exists
-    if os.path.exists(path_to_json):
-        lcmc_sub = json.load(open(path_to_json, "r"))
-        print(f"Loading saved LCMC {task}.")
-
-        return (
-            lcmc_sub["train_text"],
-            lcmc_sub["train_label"],
-            lcmc_sub["test_text"],
-            lcmc_sub["test_label"],
-        )
-    else:
-        random.seed(42)
-        data = []
-        all_categories = [
-            "Chat",
-            "Discussion",
-            "Interviews",  # speech transcribed
-            "Blogs",
-            "Emails",
-            "Essays",
-        ]  # written
-        # read all samples
-        for d in [
-            os.path.join(d.path, "Correlated")
-            for d in os.scandir(corpus_dir)
-            if d.name in all_categories
-        ]:
-            for f in os.scandir(d):
-                entry = {}
-                file_name = f.name.split(".")[0]
-                # regularize user numbering to 7
-                file_name = (
-                    file_name
-                    if len(file_name) == 7
-                    else file_name[:1] + "0" + file_name[1:]
-                )
-                entry["label"] = file_name[:3]
-                entry["genre"] = file_name[3]
-                entry["topic"] = file_name[5]
-                entry["text"] = open(
-                    f.path,
-                    "r",
-                    encoding=chardet.detect(open(f.path, "rb").read())["encoding"],
-                ).read()
-                data.append(entry)
-
-        if task == "no_protection":  # -> LCMC-Spoken
-            # using 3 written genres as training
-            train_dicts = list(
-                filter(lambda ent: ent["genre"] in ["E", "S", "B"], data)
-            )
-            # randomly choose 3 interview samples (concatenated) for each author as testing
-            # that is, the topics are randomly chosen from 6 possible topics
-            test_dicts = []
-            for label in [
-                "S{:02d}".format(num) for num in range(1, 22)
-            ]:  # 21 candidates
-                test_dicts.extend(
-                    random.sample(
-                        list(
-                            filter(
-                                lambda ent: (ent["label"] == label)
-                                and (ent["genre"] == "P"),
-                                data,
-                            )
-                        ),
-                        k=1,
-                    )
-                )
-        else:
-            raise ValueError(f"Unknown task: {task}.")
-        # unpack train and test sample dicts
-        train_text = [d["text"] for d in train_dicts]
-        train_label = [d["label"] for d in train_dicts]
-        test_text, test_label = [], []
-        for label in ["S{:02d}".format(num) for num in range(1, 22)]:
-            test_label.append(label)
-            test_text.append(
-                "\n\n".join(
-                    [
-                        ent["text"]
-                        for ent in list(
-                            filter(lambda ent: ent["label"] in label, test_dicts)
-                        )
-                    ]
-                )
-            )
-        # save it
-        os.makedirs(corpus_dir, exist_ok=True)
-        data_to_save = {
-            "train_text": train_text,
-            "train_label": train_label,
-            "test_text": test_text,
-            "test_label": test_label,
-        }
-        with open(path_to_json, "w", encoding="utf-8") as f:
-            json.dump(data_to_save, f, ensure_ascii=False, indent=4)
-            print(f"LCMC V1.1-Interview is saved to {path_to_json}.")
-
-    return train_text, train_label, test_text, test_label
+# def load_lcmc(
+#     task: str = "no_protection", corpus_dir: str = "corpora/lcmc"
+# ) -> Tuple[List[str], List[str], List[str], List[str]]:
+#     """
+#     Read in texts and labels from the Loyola Computer Mediated Communication (LCMC)
+#     corpus. The corpus contains various genres and topics, and is categorized into
+#     spoken and written modalities.
+#
+#     We are only interested using written materials to fingerprint the interview sample.
+#     One of the interview samples will be chosen as if there is 'no protection' involved,
+#     simulating the cross-modal scenario of authorship attribution attacks.
+#
+#     The subset created is named LCMC V.1.1-Interview, useful for cross-modal authorship
+#     attribution studies. It has an average training size of 8071 (std. deviation 1673)
+#     and an average testing size of 654 (std. deviation 228), which nicely mirrors the
+#     amounts of data used in RJ and EBG.
+#
+#     The LCMC corpus follows specific file naming conventions for files of individual's
+#     text: email, essay, blog, interview, chat (individual contribution), discussion
+#     (individual contribution).
+#     The naming conventions are as follows: Sn or Snn X n Y n
+#
+#     - one or 2 digit identifier for participant (with Subject renumbering)
+#     - genre identifier:
+#         E = Email
+#         S = Essay
+#         B = Blog
+#         C = Chat
+#         P = Phone Interview
+#         D = Discussion
+#     - For Phase 1 genres, order this genre encountered by the individual in phase 1
+#     (1, 2, or 3)
+#     - topic identifier:
+#         C = Catholic Church
+#         G = Gay Marriage
+#         I = War In Iraq
+#         M = Legalization of Marijuana
+#         P = Privacy Rights
+#         S = Sex Discrimination
+#     - order topic appeared in this genre for this individual
+#
+#     Example: "S2P2S5" translates to: Second participant text; phone interview was second
+#     genre encountered (in Phase 1); sex discrimination was the fifth topic encountered
+#     in interviews.
+#
+#     Args:
+#         task: Specifies the data retrieval task, fixed to 'cross_modal'.
+#         corpus_dir: Path to the LCMC corpus directory. Defaults to "corpora/lcmc".
+#
+#     Returns:
+#         The text and labels of the training and testing sets.
+#
+#     Notes:
+#         1. Two naming errors were corrected:
+#            - 'S21S2G4.txt' -> 'S21D2G4.txt'.
+#            - 'S1D113.txt' -> 'S1D1I3.txt'.
+#         2. The dataset is designed to be executed once. After the initial run with a
+#             seed of 42, a JSON file containing LCMC V1.1-Interview is generated in the
+#             `./corpora/lcmc/lcmc_v1.1_interview.json`
+#     """
+#     path_to_json = os.path.join(corpus_dir, f"lcmc_v1.1_interview.json")
+#     # if the subcorpus already exists
+#     if os.path.exists(path_to_json):
+#         lcmc_sub = json.load(open(path_to_json, "r"))
+#         print(f"Loading saved LCMC {task}.")
+#
+#         return (
+#             lcmc_sub["train_text"],
+#             lcmc_sub["train_label"],
+#             lcmc_sub["test_text"],
+#             lcmc_sub["test_label"],
+#         )
+#     else:
+#         random.seed(42)
+#         data = []
+#         all_categories = [
+#             "Chat",
+#             "Discussion",
+#             "Interviews",  # speech transcribed
+#             "Blogs",
+#             "Emails",
+#             "Essays",
+#         ]  # written
+#         # read all samples
+#         for d in [
+#             os.path.join(d.path, "Correlated")
+#             for d in os.scandir(corpus_dir)
+#             if d.name in all_categories
+#         ]:
+#             for f in os.scandir(d):
+#                 entry = {}
+#                 file_name = f.name.split(".")[0]
+#                 # regularize user numbering to 7
+#                 file_name = (
+#                     file_name
+#                     if len(file_name) == 7
+#                     else file_name[:1] + "0" + file_name[1:]
+#                 )
+#                 entry["label"] = file_name[:3]
+#                 entry["genre"] = file_name[3]
+#                 entry["topic"] = file_name[5]
+#                 entry["text"] = open(
+#                     f.path,
+#                     "r",
+#                     encoding=chardet.detect(open(f.path, "rb").read())["encoding"],
+#                 ).read()
+#                 data.append(entry)
+#
+#         if task == "no_protection":  # -> LCMC-Spoken
+#             # using 3 written genres as training
+#             train_dicts = list(
+#                 filter(lambda ent: ent["genre"] in ["E", "S", "B"], data)
+#             )
+#             # randomly choose 3 interview samples (concatenated) for each author as testing
+#             # that is, the topics are randomly chosen from 6 possible topics
+#             test_dicts = []
+#             for label in [
+#                 "S{:02d}".format(num) for num in range(1, 22)
+#             ]:  # 21 candidates
+#                 test_dicts.extend(
+#                     random.sample(
+#                         list(
+#                             filter(
+#                                 lambda ent: (ent["label"] == label)
+#                                 and (ent["genre"] == "P"),
+#                                 data,
+#                             )
+#                         ),
+#                         k=1,
+#                     )
+#                 )
+#         else:
+#             raise ValueError(f"Unknown task: {task}.")
+#         # unpack train and test sample dicts
+#         train_text = [d["text"] for d in train_dicts]
+#         train_label = [d["label"] for d in train_dicts]
+#         test_text, test_label = [], []
+#         for label in ["S{:02d}".format(num) for num in range(1, 22)]:
+#             test_label.append(label)
+#             test_text.append(
+#                 "\n\n".join(
+#                     [
+#                         ent["text"]
+#                         for ent in list(
+#                             filter(lambda ent: ent["label"] in label, test_dicts)
+#                         )
+#                     ]
+#                 )
+#             )
+#         # save it
+#         os.makedirs(corpus_dir, exist_ok=True)
+#         data_to_save = {
+#             "train_text": train_text,
+#             "train_label": train_label,
+#             "test_text": test_text,
+#             "test_label": test_label,
+#         }
+#         with open(path_to_json, "w", encoding="utf-8") as f:
+#             json.dump(data_to_save, f, ensure_ascii=False, indent=4)
+#             print(f"LCMC V1.1-Interview is saved to {path_to_json}.")
+#
+#     return train_text, train_label, test_text, test_label
 
 
 def vectorize_writeprints_static(docs):
