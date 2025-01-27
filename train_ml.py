@@ -7,16 +7,16 @@ The implementation includes two attribution models:
 2. SVM with Writeprints-static features
 
 Directory Structure:
-results/{save_path}/              # or other supplied subdirectory
-├── {corpus}/                     # rj, ebg, or lcmc
-│   ├── {task}/                  # e.g., no_protection, imitation, obfuscation
+results/                         # or other supplied subdirectory
+├── {corpus}/                    # rj and ebg
+│   ├── {task}/                 # e.g., no_protection, imitation, obfuscation
 │   │   ├── logreg/
-│   │   │   ├── predictions.npz  # contains y_true, y_pred_probs
+│   │   │   ├── predictions.json  # contains y_true, y_pred_probs as native Python types
 │   │   │   └── model/
-│   │   │       ├── model.pkl    # saved sklearn pipeline
+│   │   │       ├── model.pkl     # saved sklearn pipeline
 │   │   │       └── metadata.json # contains model_type and n_labels
 │   │   └── svm/
-│   │       ├── predictions.npz
+│   │       ├── predictions.json
 │   │       └── model/
 │   │           ├── model.pkl
 │   │           └── metadata.json
@@ -38,6 +38,8 @@ Notes:
     - LogisticRegression uses Koppel512 function word features
     - SVM uses Writeprints-static features
     - Models are saved as complete sklearn pipelines including preprocessing steps
+    - Predictions are saved in JSON format with native Python types for compatibility
+    - Separate predictor classes provided for future use with new texts
 """
 
 import argparse
@@ -49,14 +51,13 @@ from typing import Dict, List
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model._sgd_fast import Regression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (FunctionTransformer, Normalizer,
                                    StandardScaler)
 from sklearn.svm import SVC
 
 from utils import (load_corpus, vectorize_koppel512,
-                   vectorize_writeprints_static)
+                   vectorize_writeprints_static, CORPORA)
 
 # setup logging
 logging.basicConfig(
@@ -69,7 +70,6 @@ logger = logging.getLogger(__name__)
 CORPUS_TASK_MAP = {
     'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
     'ebg': ['no_protection', 'imitation', 'obfuscation'],
-    'lcmc': ['no_protection']
 }
 
 
@@ -148,12 +148,6 @@ class MLModel:
                     'solver': 'lbfgs',
                     'max_iter': 5000,
                 }
-            elif corpus == 'lcmc':
-                logreg_params = {
-                    'C': 0.01,
-                    'solver': 'lbfgs',
-                    'max_iter': 5000,
-                }
             else:
                 raise ValueError(f"unrecognized corpus type: {corpus}")
 
@@ -175,16 +169,6 @@ class MLModel:
                     'max_iter': -1,
                     'probability': True
                 }
-            elif corpus == 'lcmc':
-                svm_params = {
-                    'C': 0.1,
-                    'kernel': 'poly',
-                    'degree': 2,
-                    'gamma': 'scale',
-                    'coef0': 10.0,
-                    'max_iter': -1,
-                    'probability': True
-                }
             else:
                 raise ValueError(f"unrecognized corpus type: {corpus}")
 
@@ -197,7 +181,7 @@ class MLModel:
 
     def set_corpus(self, corpus: str):
         """Update pipeline with corpus-specific parameters"""
-        if corpus not in ['rj', 'ebg', 'lcmc']:
+        if corpus not in CORPORA:
             raise ValueError(f"unrecognized corpus type: {corpus}")
         self.corpus = corpus
         self._initialize_pipeline(corpus)
@@ -211,7 +195,21 @@ class MLModel:
             corpus: str,
             task: str,
     ) -> Dict:
-        """Train model and evaluate on test set"""
+        """
+        Train model and evaluate on test set. Saves model for future use and predictions
+        in a format compatible with defense evaluation scripts.
+
+        Args:
+            train_text: training texts
+            train_labels: training labels
+            test_text: test texts
+            test_labels: test labels
+            corpus: corpus name (e.g., 'rj', 'ebg')
+            task: task name (e.g., 'no_protection', 'imitation')
+
+        Returns:
+            Dict with model path and accuracy
+        """
         exp_dir = self.output_dir / corpus / task / self.model_type
         exp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -222,34 +220,32 @@ class MLModel:
         # get predictions
         test_probs = self.pipeline.predict_proba(test_text)
 
-        # save model
+        # save model and metadata
         model_dir = exp_dir / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
 
+        # save trained pipeline
         with open(model_dir / "model.pkl", "wb") as f:
             pickle.dump(self.pipeline, f)
 
-        # save metadata
+        # save metadata (needed for prediction)
         metadata = {
             "model_type": self.model_type,
-            "n_labels": len(np.unique(train_labels))
+            "n_labels": int(len(np.unique(train_labels)))
         }
-
         with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
-        # save predictions
-        np.savez(
-            exp_dir / "predictions.npz",
-            y_true=test_labels,
-            y_pred_probs=test_probs
-        )
+        # save predictions in format compatible with defense evaluation
+        predictions = {
+            "y_true": [int(x) for x in test_labels],
+            "y_pred_probs": [[float(p) for p in row] for row in test_probs]
+        }
+        with open(exp_dir / "predictions.json", "w", encoding='utf-8') as f:
+            json.dump(predictions, f, indent=2, ensure_ascii=False)
 
-        # calculate accuracy for logging
-        accuracy = np.mean(
-            np.argmax(test_probs, axis=1) == test_labels
-        )
-
+        # calculate and log accuracy
+        accuracy = float(np.mean(np.argmax(test_probs, axis=1) == test_labels))
         logger.info(
             f"Results for {corpus}-{task} using {self.model_type}: "
             f"accuracy={accuracy:.4f}"
@@ -336,7 +332,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--corpus",
         type=str,
-        choices=['rj', 'ebg', 'lcmc'],
+        choices=CORPORA,
         help="Specific corpus to evaluate (default: all)"
     )
     parser.add_argument(
@@ -362,9 +358,9 @@ if __name__ == "__main__":
         help="Subdirectory under results for saving"
     )
     parser.add_argument(
-        "--output_dir",
+        "--threat_models_dir",
         type=str,
-        default="results",
+        default="threat_models",
         help="Base directory for results"
     )
 
