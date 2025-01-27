@@ -1,4 +1,5 @@
-"""Training script for RoBERTa-based authorship attribution models.
+"""
+Training script for RoBERTa-based authorship attribution models.
 
 This script trains RoBERTa models for authorship attribution on different text corpora.
 It trains models with multiple seeds on each corpus using the 'no_protection' dataset.
@@ -22,6 +23,7 @@ import logging
 from collections import defaultdict
 
 import numpy as np
+import wandb
 from utils import load_corpus, CORPORA, FIXED_SEEDS
 from roberta import RobertaBest
 
@@ -31,6 +33,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+PROJECT_NAME = "LLM as Defense"
 
 
 def create_val_split(train_text, train_labels):
@@ -57,6 +61,7 @@ def train_corpus(
         model: RobertaBest,
         corpus: str,
         num_seeds: int,
+        training_args: dict,
         logger: logging.Logger
 ) -> None:
     """Train RoBERTa with multiple seeds on a specific corpus."""
@@ -75,6 +80,22 @@ def train_corpus(
     # train with multiple seeds
     seeds = FIXED_SEEDS[:num_seeds]
     for seed in seeds:
+        # initialize wandb for this run
+        run = wandb.init(
+            project=PROJECT_NAME,
+            group=f"{corpus}_roberta",
+            name=f"roberta_{corpus}_seed_{seed}",
+            config={
+                "model_type": "roberta",
+                "model_name": "roberta-base",
+                "corpus": corpus,
+                "seed": seed,
+                "n_authors": len(np.unique(train_labels)),
+                **training_args
+            },
+            reinit=True  # allow multiple runs in same process
+        )
+
         logger.info(f"Training with seed: {seed}")
 
         try:
@@ -89,6 +110,12 @@ def train_corpus(
                 seed=seed
             )
 
+            # log final metrics to wandb
+            wandb.log({
+                "final_val_accuracy": results['val_metrics']['accuracy'],
+                "final_test_accuracy": results['test_metrics']['accuracy']
+            })
+
             logger.info(
                 f"Completed training for {corpus} seed {seed}: "
                 f"val_acc={results['val_metrics']['accuracy']:.4f}, "
@@ -96,19 +123,21 @@ def train_corpus(
             )
         except Exception as e:
             logger.error(f"Error training seed {seed}: {str(e)}")
-            continue
+        finally:
+            # ensure wandb run is finished properly
+            run.finish()
 
 
 def main(args):
     # initialize model with training params
-    model = RobertaBest(
-        training_args={
-            'learning_rate': args.learning_rate,
-            'batch_size': args.batch_size,
-            'num_epochs': args.num_epochs,
-            'warmup_steps': args.warmup_steps
-        }
-    )
+    training_args = {
+        'learning_rate': args.learning_rate,
+        'batch_size': args.batch_size,
+        'num_epochs': args.num_epochs,
+        'warmup_steps': args.warmup_steps
+    }
+
+    model = RobertaBest(training_args=training_args)
 
     # determine corpora to process
     corpora = [args.corpus] if args.corpus else CORPORA
@@ -116,7 +145,13 @@ def main(args):
     # train on each corpus
     for corpus in corpora:
         try:
-            train_corpus(model, corpus, args.num_seeds, logger)
+            train_corpus(
+                model=model,
+                corpus=corpus,
+                num_seeds=args.num_seeds,
+                training_args=training_args,
+                logger=logger
+            )
         except Exception as e:
             logger.error(f"Error processing {corpus}: {str(e)}")
             continue
@@ -142,7 +177,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_seeds",
         type=int,
-        default=3,
+        default=5,
         help="Number of seeds to use (max 10)"
     )
 
