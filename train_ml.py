@@ -9,25 +9,21 @@ The implementation includes two attribution models:
 Directory Structure:
 threat_models/
 ├── {corpus}/                    # rj and ebg
-│   ├── logreg/
-│   │   ├── model/              # trained on no_protection training set
-│   │   │   ├── model.pkl       # saved sklearn pipeline
-│   │   │   └── metadata.json   # contains model_type and n_labels
-│   │   ├── no_protection_predictions.json
-│   │   ├── imitation_predictions.json
-│   │   └── obfuscation_predictions.json
-│   └── svm/
-│       ├── model/
-│       ├── no_protection_predictions.json
-│       ├── imitation_predictions.json
-│       └── obfuscation_predictions.json
+│   ├── {task}/                 # e.g., no_protection, imitation, obfuscation
+│   │   ├── logreg/
+│   │   │   ├── model/          # training data differs by corpus:
+│   │   │   │   ├── model.pkl   # - RJ: uses task-specific training data
+│   │   │   │   └── metadata.json# - EBG: uses common no_protection training data
+│   │   │   └── predictions.json # predictions on task's test set
+│   │   └── svm/
+│   │       ├── model/
+│   │       └── predictions.json
+│   └── {another_task}/
 └── {another_corpus}/
 
 Notes:
-    - Models are trained once per corpus using no_protection training data
-    - Same model is used to make predictions on different test sets
-    - Predictions are saved in JSON format with native Python types for compatibility
-    - Separate predictor classes provided for making predictions on new texts
+    - RJ: models trained with *task-specific* training data
+    - EBG: models trained with common no_protection training data
 """
 
 import argparse
@@ -147,18 +143,15 @@ class MLModel:
             ])
         else:  # svm
             # use corpus-specific parameters based on grid search results
-            if corpus in ['rj', 'ebg']:
-                svm_params = {
-                    'C': 0.0001,
-                    'kernel': 'poly',
-                    'degree': 3,
-                    'gamma': 'scale',
-                    'coef0': 100.0,
-                    'max_iter': -1,
-                    'probability': True
-                }
-            else:
-                raise ValueError(f"unrecognized corpus type: {corpus}")
+            svm_params = {
+                'C': 0.0001,
+                'kernel': 'poly',
+                'degree': 3,
+                'gamma': 'scale',
+                'coef0': 100.0,
+                'max_iter': -1,
+                'probability': True
+            }
 
             self.pipeline = Pipeline([
                 ("features", FunctionTransformer(vectorize_writeprints_static)),
@@ -179,23 +172,29 @@ class MLModel:
             train_text: List[str],
             train_labels: np.ndarray,
             corpus: str,
+            task: str,
     ) -> Dict:
         """
-        Train model on no_protection data and make predictions on all test sets.
+        Train model and evaluate. Handles corpus-specific training data:
+        - RJ: Uses task-specific training data
+        - EBG: Uses common no_protection training data
+        Both use same directory structure and evaluation approach.
 
         Args:
-            train_text: training texts from no_protection case
-            train_labels: training labels from no_protection case
+            train_text: training texts (task-specific for RJ, common for EBG)
+            train_labels: training labels
             corpus: corpus name (e.g., 'rj', 'ebg')
+            task: task name (e.g., 'no_protection', 'imitation')
 
         Returns:
-            Dict with model path and accuracies
+            Dict with model path and accuracy
         """
-        exp_dir = self.output_dir / corpus / self.model_type
+        # use consistent directory structure for both corpora
+        exp_dir = self.output_dir / corpus / task / self.model_type
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        # train model on no_protection training data
-        logger.info(f"Training {self.model_type} model for {corpus}...")
+        # train model
+        logger.info(f"Training {self.model_type} model for {corpus}-{task}...")
         self.pipeline.fit(train_text, train_labels)
 
         # save model and metadata
@@ -207,62 +206,73 @@ class MLModel:
 
         metadata = {
             "model_type": self.model_type,
-            "n_labels": int(len(np.unique(train_labels)))
+            "n_labels": int(len(np.unique(train_labels))),
+            "corpus": corpus,
+            "task": task,
+            "training_data": "task_specific" if corpus == "rj" else "common_no_protection"
         }
         with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
-        # make predictions for each task
-        results = {"model_path": str(model_dir), "accuracies": {}}
+        # load test data and make predictions
+        _, _, test_text, test_labels = load_corpus(corpus, task)
+        test_probs = self.pipeline.predict_proba(test_text)
 
-        for task in CORPUS_TASK_MAP[corpus]:
-            # load test data for this task
-            _, _, test_text, test_labels = load_corpus(corpus, task)
+        # save predictions
+        predictions = {
+            "y_true": [int(x) for x in test_labels],
+            "y_pred_probs": [[float(p) for p in row] for row in test_probs]
+        }
+        with open(exp_dir / "predictions.json", "w", encoding="utf-8") as f:
+            json.dump(predictions, f, indent=2, ensure_ascii=False)
 
-            # get predictions
-            test_probs = self.pipeline.predict_proba(test_text)
+        # calculate accuracy
+        accuracy = float(np.mean(np.argmax(test_probs, axis=1) == test_labels))
+        logger.info(
+            f"Results for {corpus}-{task} using {self.model_type}: "
+            f"accuracy={accuracy:.4f}"
+        )
 
-            # save predictions
-            predictions = {
-                "y_true": [int(x) for x in test_labels],
-                "y_pred_probs": [[float(p) for p in row] for row in test_probs]
-            }
-            pred_file = exp_dir / f"{task}_predictions.json"
-            with open(pred_file, "w", encoding="utf-8") as f:
-                json.dump(predictions, f, indent=2, ensure_ascii=False)
-
-            # calculate accuracy
-            accuracy = float(np.mean(np.argmax(test_probs, axis=1) == test_labels))
-            results["accuracies"][task] = accuracy
-            logger.info(
-                f"Results for {corpus}-{task} using {self.model_type}: "
-                f"accuracy={accuracy:.4f}"
-            )
-
-        return results
+        return {
+            "model_path": str(model_dir),
+            "accuracy": accuracy
+        }
 
 
 def evaluate_corpus_task(
         model: MLModel,
         corpus: str,
+        task: str,
         logger: logging.Logger
 ) -> None:
-    """Train model for corpus and evaluate on all tasks."""
-    logger.info(f"Processing corpus: {corpus}")
+    """
+    Evaluate ML model on corpus/task.
 
-    # load no_protection training data
-    train_text, train_labels, _, _ = load_corpus(corpus, "no_protection")
+    Uses appropriate training data based on corpus:
+    - RJ: Uses task-specific training data
+    - EBG: Uses common no_protection training data for all tasks
+    """
+    logger.info(f"Evaluating {corpus}-{task}")
 
-    # train and evaluate on all tasks
+    # load appropriate training data
+    if corpus == 'rj':
+        # RJ: use task-specific training data
+        train_text, train_labels, _, _ = load_corpus(corpus, task)
+    else:  # EBG
+        # EBG: use common training data from no_protection
+        train_text, train_labels, _, _ = load_corpus(corpus, "no_protection")
+
+    # train and evaluate
     results = model.train_and_evaluate(
         train_text=train_text,
         train_labels=train_labels,
-        corpus=corpus
+        corpus=corpus,
+        task=task
     )
 
     logger.info(
-        f"Model saved at: {results['model_path']}\n"
-        f"Accuracies across tasks: {results['accuracies']}"
+        f"Model saved at: {results['model_path']}, "
+        f"accuracy: {results['accuracy']:.4f}"
     )
 
 
