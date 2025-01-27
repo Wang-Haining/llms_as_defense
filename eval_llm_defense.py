@@ -30,14 +30,14 @@ Key Components:
 Directory Structure:
 defense_evaluation/                        # or specified output_dir
 ├── {corpus}/                              # rj, ebg, or lcmc
-│   ├── RQ{N}/                             # main research question (e.g., RQ1)
-│   │   ├── RQ{N}.{M}/                     # sub-question (e.g., RQ1.1)
+│   ├── rq{N}/                             # main research question (e.g., RQ1)
+│   │   ├── rq{N}.{M}/                     # sub-question (e.g., RQ1.1)
 │   │   │   ├── {model_name}/              # e.g., gemma-2b-it
 │   │   │   │   ├── evaluation.json        # consolidated results
 │   │   │   │   └── seed_{seed}.json       # per-seed results
 │   │   │   └── {another_model}/
-│   │   └── RQ{N}.{M+1}/
-│   └── RQ{N+1}/
+│   │   └── rq{N}.{M+1}/
+│   └── rq{N+1}/
 └── {another_corpus}/
 
 File Formats:
