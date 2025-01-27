@@ -1,29 +1,25 @@
 """Model and predictor classes for RoBERTa-based authorship attribution.
 
-The module implements RoBERTa-based authorship attribution using fixed splits for
-training, validation and testing. The trained models serve as threat models that try
+The module implements RoBERTa-based authorship attribution using the no_protection
+dataset for training and evaluation. The trained models serve as threat models that try
 to identify the author of a given text.
 
-The module expects input data to already be split into training and test sets. It
-automatically creates a validation set by taking the first sample from each author in
-the training set.
-
-Model outputs are saved under threat_models/{corpus}/roberta/ with the following structure:
-    threat_models/
-    └── {corpus}/
-        └── roberta/
-            ├── checkpoints/      # training checkpoints
-            ├── model/           # saved model and tokenizer
-            │   ├── config.json
-            │   ├── metadata.json
-            │   ├── pytorch_model.bin
-            │   └── tokenizer_config.json
-            └── predictions.npz  # test set predictions
+Directory Structure:
+threat_models/
+├── {corpus}/                    # rj or ebg
+│   └── no_protection/          # uses no_protection data for training/testing
+│       └── roberta/            # model type
+│           ├── model/          # saved model, tokenizer and metadata
+│           │   ├── config.json
+│           │   ├── metadata.json  # includes corpus, task info
+│           │   ├── pytorch_model.bin
+│           │   └── tokenizer files...
+│           └── predictions.json  # predictions on no_protection test set
 """
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import numpy as np
 import torch
@@ -78,7 +74,8 @@ class RobertaBest:
             per_device_eval_batch_size=self.training_args.get('batch_size', 32),
             num_train_epochs=self.training_args.get('num_epochs', 100),
             warmup_steps=self.training_args.get('warmup_steps', 20),
-            load_best_model_at_end=True,
+            load_best_model_at_end=True,        # load best at end of training
+            save_total_limit=1,              # only keep the best checkpoint
             metric_for_best_model="eval_loss",
             greater_is_better=False,
             dataloader_pin_memory=True,
@@ -89,7 +86,6 @@ class RobertaBest:
             save_strategy="steps",
             logging_strategy="steps",
             bf16=True,
-            save_total_limit=1,
             report_to="wandb",
             ddp_find_unused_parameters=False,
             no_cuda=self.device == "cpu",
@@ -104,20 +100,43 @@ class RobertaBest:
             test_text: List[str],
             test_labels: np.ndarray,
             corpus: str,
-    ) -> Dict:
-        """Train model on fixed splits and save best model."""
-        output_dir = Path("threat_models") / corpus / "roberta"
-        output_dir.mkdir(parents=True, exist_ok=True)
+            seed: int,
+    ) -> Dict[str, Any]:
+        """Train model using no_protection training data and evaluate on test set.
+
+        Args:
+            train_text: training texts from no_protection dataset
+            train_labels: training labels
+            val_text: validation texts
+            val_labels: validation labels
+            test_text: test texts from no_protection dataset
+            test_labels: test labels
+            corpus: corpus name (e.g., 'rj', 'ebg')
+
+        Returns:
+            Dict with model path and metrics
+        """
+        # setup directory structure
+        exp_dir = Path("threat_models") / corpus / "no_protection" / "roberta"
+        exp_dir.mkdir(parents=True, exist_ok=True)
+
+        # set all random seeds
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
         # start wandb run
         wandb.init(
             project=PROJECT_NAME,
-            name=f"roberta_{corpus}",
-            tags=[corpus, "roberta", self.model_name],
+            group=f"{corpus}_no_protection_roberta",  # group runs by corpus and task
+            name=f"roberta_{corpus}_no_protection_seed_{seed}",
+            tags=[corpus, "roberta", self.model_name, "no_protection"],
             config={
+                "seed": seed,
                 "model_type": "roberta",
                 "model_name": self.model_name,
                 "corpus": corpus,
+                "task": "no_protection",
                 "n_authors": len(np.unique(train_labels)),
                 "learning_rate": self.training_args.get("learning_rate", 3e-5),
                 "batch_size": self.training_args.get("batch_size", 32),
@@ -151,8 +170,8 @@ class RobertaBest:
         trainer = Trainer(
             model=model,
             args=self.get_training_args(
-                output_dir=str(output_dir / "checkpoints"),
-                run_name=f"{corpus}_roberta",
+                output_dir=str(exp_dir / "checkpoints"),
+                run_name=f"{corpus}_roberta_no_protection_seed_{seed}",
             ),
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
@@ -168,21 +187,21 @@ class RobertaBest:
 
         # compute validation metrics
         val_metrics = {
-            "loss": val_output.metrics["test_loss"],
-            "accuracy": np.mean(
+            "loss": float(val_output.metrics["test_loss"]),
+            "accuracy": float(np.mean(
                 np.argmax(val_output.predictions, axis=1) == val_labels
-            ),
+            )),
         }
 
-        # compute test metrics
+        # get test probabilities and metrics
         test_probs = torch.nn.functional.softmax(
             torch.from_numpy(test_output.predictions), dim=-1
         ).numpy()
         test_metrics = {
-            "loss": test_output.metrics["test_loss"],
-            "accuracy": np.mean(
+            "loss": float(test_output.metrics["test_loss"]),
+            "accuracy": float(np.mean(
                 np.argmax(test_output.predictions, axis=1) == test_labels
-            ),
+            )),
         }
 
         # log final metrics to wandb and print
@@ -194,36 +213,49 @@ class RobertaBest:
         }
         wandb.log(final_metrics)
 
-        print(f"\nFinal metrics for {corpus}:")
+        print(f"\nFinal metrics for {corpus}-no_protection:")
         print(f"Val loss: {val_metrics['loss']:.4f}")
         print(f"Val accuracy: {val_metrics['accuracy']:.4f}")
         print(f"Test loss: {test_metrics['loss']:.4f}")
         print(f"Test accuracy: {test_metrics['accuracy']:.4f}")
 
         # save model and metadata
-        model_dir = output_dir / "model"
+        model_dir = exp_dir / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
         model.save_pretrained(model_dir)
         self.tokenizer.save_pretrained(model_dir)
 
         metadata = {
-            "val_metrics": val_metrics,
-            "test_metrics": test_metrics,
+            "model_type": "roberta",
             "model_name": self.model_name,
-            "n_labels": len(np.unique(train_labels)),
+            "n_labels": int(len(np.unique(train_labels))),
+            "corpus": corpus,
+            "task": "no_protection",
+            "val_metrics": val_metrics,
+            "test_metrics": test_metrics
         }
         with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
         # save predictions
-        np.savez(
-            output_dir / "predictions.npz",
-            y_true=test_labels,
-            y_pred_probs=test_probs,
-        )
+        predictions = {
+            "y_true": [int(x) for x in test_labels],
+            "y_pred_probs": [[float(p) for p in row] for row in test_probs]
+        }
+        with open(exp_dir / "predictions.json", "w", encoding="utf-8") as f:
+            json.dump(predictions, f, indent=2, ensure_ascii=False)
 
-        # cleanup non-optimal checkpoints
-        checkpoint_dir = output_dir / "checkpoints"
+        # save the final best model
+        final_model = trainer.state.best_model_checkpoint
+        if final_model:
+            logger.info(f"Loading best model from {final_model}")
+            model = RobertaForSequenceClassification.from_pretrained(
+                final_model,
+                num_labels=len(np.unique(train_labels))
+            ).to(self.device)
+
+        # cleanup checkpoints directory
+        checkpoint_dir = exp_dir / "checkpoints"
         if checkpoint_dir.exists():
             import shutil
             shutil.rmtree(checkpoint_dir)
@@ -233,6 +265,7 @@ class RobertaBest:
         return {
             "model_path": str(model_dir),
             "val_metrics": val_metrics,
+            "test_metrics": test_metrics
         }
 
 

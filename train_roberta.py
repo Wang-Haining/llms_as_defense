@@ -1,26 +1,20 @@
 """Training script for RoBERTa-based authorship attribution models.
 
 This script trains RoBERTa models for authorship attribution on different text corpora.
-It trains one model per corpus using the 'no_protection' dataset split as the training
-data. A validation set is automatically created by taking the first sample from each
-author in the training set.
+It trains models with multiple seeds on each corpus using the 'no_protection' dataset.
+A validation set is automatically created by taking the first sample from each author
+in the training set.
 
-The script supports training on the following corpora:
+The script supports training on:
 - RJ (Riddell-Juola): Cross-topic authorship attribution
 - EBG (Extended Brennan-Greenstadt): Topic-overlap authorship attribution
 
-The trained models serve as threat models - they attempt to identify authors of texts
-and are used to evaluate the effectiveness of various authorship obfuscation methods.
-
 Usage:
     # Train on a specific corpus
-    python train_roberta.py --corpus rj --learning_rate 1e-4 --batch_size 32
+    python train_roberta.py --corpus rj --learning_rate 1e-4 --batch_size 32 --num_seeds 5
 
     # Train on all corpora with default parameters
     python train_roberta.py
-
-The script uses wandb for experiment tracking and early stopping for training.
-Models and predictions are saved under the threat_models directory.
 """
 
 import argparse
@@ -28,7 +22,7 @@ import logging
 from collections import defaultdict
 
 import numpy as np
-from utils import load_corpus, CORPORA
+from utils import load_corpus, CORPORA, FIXED_SEEDS
 from roberta import RobertaBest
 
 # setup logging
@@ -62,35 +56,47 @@ def create_val_split(train_text, train_labels):
 def train_corpus(
         model: RobertaBest,
         corpus: str,
+        num_seeds: int,
         logger: logging.Logger
 ) -> None:
-    """Train RoBERTa on a specific corpus."""
+    """Train RoBERTa with multiple seeds on a specific corpus."""
     logger.info(f"Training on corpus: {corpus}")
 
-    # load data (using no_protection for training)
-    train_text, train_labels, test_text, test_labels = load_corpus(corpus,
-                                                                   "no_protection")
+    # load data (using no_protection for both training and testing)
+    train_text, train_labels, test_text, test_labels = load_corpus(
+        corpus, "no_protection"
+    )
 
     # create validation split
     train_text, train_labels, val_text, val_labels = create_val_split(
         train_text, train_labels
     )
 
-    # train and evaluate
-    results = model.train_and_evaluate(
-        train_text=train_text,
-        train_labels=train_labels,
-        val_text=val_text,
-        val_labels=val_labels,
-        test_text=test_text,
-        test_labels=test_labels,
-        corpus=corpus
-    )
+    # train with multiple seeds
+    seeds = FIXED_SEEDS[:num_seeds]
+    for seed in seeds:
+        logger.info(f"Training with seed: {seed}")
 
-    logger.info(
-        f"Model trained for {corpus}: "
-        f"val_acc={results['val_metrics']['accuracy']:.4f}"
-    )
+        try:
+            results = model.train_and_evaluate(
+                train_text=train_text,
+                train_labels=train_labels,
+                val_text=val_text,
+                val_labels=val_labels,
+                test_text=test_text,
+                test_labels=test_labels,
+                corpus=corpus,
+                seed=seed
+            )
+
+            logger.info(
+                f"Completed training for {corpus} seed {seed}: "
+                f"val_acc={results['val_metrics']['accuracy']:.4f}, "
+                f"test_acc={results['test_metrics']['accuracy']:.4f}"
+            )
+        except Exception as e:
+            logger.error(f"Error training seed {seed}: {str(e)}")
+            continue
 
 
 def main(args):
@@ -110,7 +116,7 @@ def main(args):
     # train on each corpus
     for corpus in corpora:
         try:
-            train_corpus(model, corpus, logger)
+            train_corpus(model, corpus, args.num_seeds, logger)
         except Exception as e:
             logger.error(f"Error processing {corpus}: {str(e)}")
             continue
@@ -133,6 +139,17 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--warmup_steps", type=int, default=20)
+    parser.add_argument(
+        "--num_seeds",
+        type=int,
+        default=3,
+        help="Number of seeds to use (max 10)"
+    )
 
     args = parser.parse_args()
+
+    # validate num_seeds
+    if args.num_seeds > 10:
+        parser.error("Maximum number of seeds is 10")
+
     main(args)
