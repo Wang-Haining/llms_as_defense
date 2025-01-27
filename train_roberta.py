@@ -1,24 +1,34 @@
-"""
-Evaluate RoBERTa-base's performance as an authorship attribution model across corpora
-and tasks.
+"""Training script for RoBERTa-based authorship attribution models.
+
+This script trains RoBERTa models for authorship attribution on different text corpora.
+It trains one model per corpus using the 'no_protection' dataset split as the training
+data. A validation set is automatically created by taking the first sample from each
+author in the training set.
+
+The script supports training on the following corpora:
+- RJ (Riddell-Juola): Cross-topic authorship attribution
+- EBG (Extended Brennan-Greenstadt): Topic-overlap authorship attribution
+
+The trained models serve as threat models - they attempt to identify authors of texts
+and are used to evaluate the effectiveness of various authorship obfuscation methods.
 
 Usage:
-    # run specific corpus and task
-    python train_roberta.py --corpus rj --task no_protection
+    # Train on a specific corpus
+    python train_roberta.py --corpus rj --learning_rate 1e-4 --batch_size 32
 
-    # run all tasks for a specific corpus
-    python train_roberta.py --corpus rj
-
-    # run everything (default)
+    # Train on all corpora with default parameters
     python train_roberta.py
+
+The script uses wandb for experiment tracking and early stopping for training.
+Models and predictions are saved under the threat_models directory.
 """
 
 import argparse
 import logging
+from collections import defaultdict
 
-import wandb
-from utils import load_corpus
-
+import numpy as np
+from utils import load_corpus, CORPORA
 from roberta import RobertaBest
 
 # setup logging
@@ -28,52 +38,64 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# define valid scenarios
-CORPUS_TASK_MAP = {
-    'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
-    'ebg': ['no_protection', 'imitation', 'obfuscation'],
-    'lcmc': ['no_protection']
-}
+
+def create_val_split(train_text, train_labels):
+    """Create validation set using first sample from each class."""
+    # group samples by label
+    label_to_idx = defaultdict(list)
+    for i, label in enumerate(train_labels):
+        label_to_idx[label].append(i)
+
+    # get validation indices (first sample of each class)
+    val_indices = [indices[0] for indices in label_to_idx.values()]
+    train_indices = [i for i in range(len(train_labels)) if i not in val_indices]
+
+    # split data
+    val_text = [train_text[i] for i in val_indices]
+    val_labels = train_labels[val_indices]
+    new_train_text = [train_text[i] for i in train_indices]
+    new_train_labels = train_labels[train_indices]
+
+    return new_train_text, new_train_labels, val_text, val_labels
 
 
-def evaluate_corpus_task(
+def train_corpus(
         model: RobertaBest,
         corpus: str,
-        task: str,
         logger: logging.Logger
 ) -> None:
-    """Evaluate RoBERTa on a specific corpus and task."""
-    logger.info(f"Evaluating {corpus}-{task}")
+    """Train RoBERTa on a specific corpus."""
+    logger.info(f"Training on corpus: {corpus}")
 
-    # load data
-    train_text, train_labels, test_text, test_labels = load_corpus(corpus, task)
+    # load data (using no_protection for training)
+    train_text, train_labels, test_text, test_labels = load_corpus(corpus,
+                                                                   "no_protection")
+
+    # create validation split
+    train_text, train_labels, val_text, val_labels = create_val_split(
+        train_text, train_labels
+    )
 
     # train and evaluate
     results = model.train_and_evaluate(
         train_text=train_text,
         train_labels=train_labels,
+        val_text=val_text,
+        val_labels=val_labels,
         test_text=test_text,
         test_labels=test_labels,
-        corpus=corpus,
-        task=task
+        corpus=corpus
     )
 
     logger.info(
-        f"Best model for {corpus}-{task}: "
-        f"seed={results['best_seed']}, "
-        f"fold={results['best_fold']}, "
-        f"val_acc={results['best_val_metrics']['accuracy']:.4f}"
+        f"Model trained for {corpus}: "
+        f"val_acc={results['val_metrics']['accuracy']:.4f}"
     )
 
 
 def main(args):
-    # initialize wandb
-    # wandb.init(project="LLM as Defense")
-
     # initialize model with training params
     model = RobertaBest(
-        output_dir=args.output_dir,
-        save_path=args.save_path,
         training_args={
             'learning_rate': args.learning_rate,
             'batch_size': args.batch_size,
@@ -82,78 +104,35 @@ def main(args):
         }
     )
 
-    # determine what to evaluate
-    if args.corpus:
-        if args.corpus not in CORPUS_TASK_MAP:
-            raise ValueError(f"Invalid corpus: {args.corpus}")
-        corpora = [args.corpus]
-    else:
-        corpora = list(CORPUS_TASK_MAP.keys())
+    # determine corpora to process
+    corpora = [args.corpus] if args.corpus else CORPORA
 
-    # evaluate specified scenarios
+    # train on each corpus
     for corpus in corpora:
-        logger.info(f"Processing corpus: {corpus}")
-
-        if args.task:
-            if args.task not in CORPUS_TASK_MAP[corpus]:
-                logger.warning(f"Task {args.task} not available for corpus {corpus}, skipping")
-                continue
-            tasks = [args.task]
-        else:
-            tasks = CORPUS_TASK_MAP[corpus]
-
-        for task in tasks:
-            try:
-                evaluate_corpus_task(model, corpus, task, logger)
-            except Exception as e:
-                logger.error(f"Error processing {corpus}-{task}: {str(e)}")
-                continue
-
-    wandb.finish()
+        try:
+            train_corpus(model, corpus, logger)
+        except Exception as e:
+            logger.error(f"Error processing {corpus}: {str(e)}")
+            continue
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate RoBERTa across different corpora and scenarios"
+        description="Train RoBERTa as an authorship attribution model"
     )
-    # corpus and task selection
+    # corpus selection
     parser.add_argument(
         "--corpus",
         type=str,
-        choices=['rj', 'ebg', 'lcmc'],
-        help="Specific corpus to evaluate (default: all)"
-    )
-    parser.add_argument(
-        "--task",
-        type=str,
-        help="Specific task to evaluate (default: all tasks for chosen corpus)"
-    )
-
-    # path arguments
-    parser.add_argument(
-        "--save_path",
-        type=str,
-        default="baselines",
-        help="Subdirectory under results for saving"
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="results",
-        help="Base directory for results"
+        choices=CORPORA,
+        help="Specific corpus to train on (default: all)"
     )
 
     # training arguments
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--learning_rate", type=float, default=3e-5)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--num_epochs", type=int, default=100)
+    parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--warmup_steps", type=int, default=20)
 
     args = parser.parse_args()
-
-    # validate task if provided
-    if args.task and args.corpus and args.task not in CORPUS_TASK_MAP[args.corpus]:
-        parser.error(f"Task '{args.task}' is not valid for corpus '{args.corpus}'. "
-                    f"Valid tasks are: {CORPUS_TASK_MAP[args.corpus]}")
-
     main(args)
