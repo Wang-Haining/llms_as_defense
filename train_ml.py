@@ -292,14 +292,27 @@ def main(args):
     else:
         corpora = list(CORPUS_TASK_MAP.keys())
 
-    # evaluate each corpus
+    # evaluate specified scenarios
     for corpus in corpora:
-        try:
-            model.set_corpus(corpus)  # update model parameters for current corpus
-            evaluate_corpus_task(model, corpus, logger)
-        except Exception as e:
-            logger.error(f"Error processing corpus {corpus}: {str(e)}")
-            continue
+        logger.info(f"Processing corpus: {corpus}")
+        # update model parameters for current corpus
+        model.set_corpus(corpus)
+
+        if args.task:
+            if args.task not in CORPUS_TASK_MAP[corpus]:
+                logger.warning(
+                    f"Task {args.task} not available for corpus {corpus}, skipping")
+                continue
+            tasks = [args.task]
+        else:
+            tasks = CORPUS_TASK_MAP[corpus]
+
+        for task in tasks:
+            try:
+                evaluate_corpus_task(model, corpus, task, logger)
+            except Exception as e:
+                logger.error(f"Error processing {corpus}-{task}: {str(e)}")
+                continue
 
 
 if __name__ == "__main__":
