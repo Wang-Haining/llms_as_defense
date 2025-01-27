@@ -29,7 +29,7 @@ Key Components:
 
 Directory Structure:
 defense_evaluation/                        # or specified output_dir
-├── {corpus}/                              # rj, ebg, or lcmc
+├── {corpus}/                              # rj and ebg
 │   ├── rq{N}/                             # main research question (e.g., RQ1)
 │   │   ├── rq{N}.{M}/                     # sub-question (e.g., RQ1.1)
 │   │   │   ├── {model_name}/              # e.g., gemma-2b-it
@@ -415,7 +415,7 @@ class DefenseEvaluator:
         """Get standardized output path for both experiment and save results.
 
         Args:
-            corpus: corpus name (rj/ebg/lcmc)
+            corpus: corpus name (rj/ebg)
             rq: full research question identifier (e.g. rq1.1_basic_paraphrase)
             model_name: full model name
 
@@ -433,7 +433,7 @@ class DefenseEvaluator:
         model_type: str
     ) -> object:
         """Load trained model predictor for given corpus and type."""
-        model_dir = self.threat_models_dir / corpus / model_type / "model"
+        model_dir = self.threat_models_dir / corpus / "no_protection" / model_type / "model"
 
         return self.predictor_classes[model_type](model_dir)
 
@@ -618,7 +618,7 @@ class DefenseEvaluator:
         """Get experiment directory based on RQ identifier and model name.
 
         Args:
-            corpus: corpus name (rj/ebg/lcmc)
+            corpus: corpus name (rj/ebg)
             rq: research question identifier (e.g. rq1.1_basic_paraphrase)
             model_name: full model name (e.g. google/gemma-2b-it)
 
@@ -644,7 +644,7 @@ class DefenseEvaluator:
 
         Args:
             results: evaluation results dictionary
-            corpus: corpus name (rj/ebg/lcmc)
+            corpus: corpus name (rj/ebg)
             rq: research question identifier
             model_name: model name
         """
@@ -756,7 +756,7 @@ def main():
     parser.add_argument(
         '--corpus',
         type=str,
-        choices=['rj', 'ebg', 'lcmc'],
+        choices=CORPORA,
         help='Specific corpus to evaluate (default: all)'
     )
     parser.add_argument(
