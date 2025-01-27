@@ -45,6 +45,8 @@ CORPUS_TASK_MAP = {
     'ebg': ['no_protection', 'imitation', 'obfuscation'],
 }
 
+FIXED_SEEDS = [93187, 95617, 98473, 101089, 103387,
+               105673, 108061, 110431, 112757, 115327]
 
 def get_corpus_stats() -> None:
     """

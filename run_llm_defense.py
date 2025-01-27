@@ -31,14 +31,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import anthropic
 from openai import AsyncOpenAI
-from pydantic import BaseModel
-from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
-import logging
-from typing import Union, List, Dict, Optional
+from vllm import LLM, SamplingParams
 
-
-from utils import load_corpus
+from utils import FIXED_SEEDS, load_corpus
 
 # configure logging
 logging.basicConfig(
@@ -47,10 +43,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-FIXED_SEEDS = [
-    93187, 95617, 98473, 101089, 103387,
-    105673, 108061, 110431, 112757, 115327
-]
 REWRITE_START_TAG = "[REWRITE]"
 REWRITE_END_TAG = "[/REWRITE]"
 MIN_WORDS = 50
