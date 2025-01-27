@@ -7,39 +7,27 @@ The implementation includes two attribution models:
 2. SVM with Writeprints-static features
 
 Directory Structure:
-results/                         # or other supplied subdirectory
+threat_models/
 ├── {corpus}/                    # rj and ebg
-│   ├── {task}/                 # e.g., no_protection, imitation, obfuscation
-│   │   ├── logreg/
-│   │   │   ├── predictions.json  # contains y_true, y_pred_probs as native Python types
-│   │   │   └── model/
-│   │   │       ├── model.pkl     # saved sklearn pipeline
-│   │   │       └── metadata.json # contains model_type and n_labels
-│   │   └── svm/
-│   │       ├── predictions.json
-│   │       └── model/
-│   │           ├── model.pkl
-│   │           └── metadata.json
-│   └── {another_task}/
+│   ├── logreg/
+│   │   ├── model/              # trained on no_protection training set
+│   │   │   ├── model.pkl       # saved sklearn pipeline
+│   │   │   └── metadata.json   # contains model_type and n_labels
+│   │   ├── no_protection_predictions.json
+│   │   ├── imitation_predictions.json
+│   │   └── obfuscation_predictions.json
+│   └── svm/
+│       ├── model/
+│       ├── no_protection_predictions.json
+│       ├── imitation_predictions.json
+│       └── obfuscation_predictions.json
 └── {another_corpus}/
 
-Usage:
-    # run specific corpus and task
-    python train_ml.py --corpus rj --task no_protection --model logreg
-
-    # run all tasks for a specific corpus
-    python train_ml.py --corpus rj --model svm
-
-    # run everything (default)
-    python train_ml.py --model logreg
-
 Notes:
-    - Both models provide point estimates as probability distributions over authors
-    - LogisticRegression uses Koppel512 function word features
-    - SVM uses Writeprints-static features
-    - Models are saved as complete sklearn pipelines including preprocessing steps
+    - Models are trained once per corpus using no_protection training data
+    - Same model is used to make predictions on different test sets
     - Predictions are saved in JSON format with native Python types for compatibility
-    - Separate predictor classes provided for future use with new texts
+    - Separate predictor classes provided for making predictions on new texts
 """
 
 import argparse
@@ -190,45 +178,33 @@ class MLModel:
             self,
             train_text: List[str],
             train_labels: np.ndarray,
-            test_text: List[str],
-            test_labels: np.ndarray,
             corpus: str,
-            task: str,
     ) -> Dict:
         """
-        Train model and evaluate on test set. Saves model for future use and predictions
-        in a format compatible with defense evaluation scripts.
+        Train model on no_protection data and make predictions on all test sets.
 
         Args:
-            train_text: training texts
-            train_labels: training labels
-            test_text: test texts
-            test_labels: test labels
+            train_text: training texts from no_protection case
+            train_labels: training labels from no_protection case
             corpus: corpus name (e.g., 'rj', 'ebg')
-            task: task name (e.g., 'no_protection', 'imitation')
 
         Returns:
-            Dict with model path and accuracy
+            Dict with model path and accuracies
         """
-        exp_dir = self.output_dir / corpus / task / self.model_type
+        exp_dir = self.output_dir / corpus / self.model_type
         exp_dir.mkdir(parents=True, exist_ok=True)
 
-        # train model
-        logger.info(f"Training {self.model_type} model...")
+        # train model on no_protection training data
+        logger.info(f"Training {self.model_type} model for {corpus}...")
         self.pipeline.fit(train_text, train_labels)
-
-        # get predictions
-        test_probs = self.pipeline.predict_proba(test_text)
 
         # save model and metadata
         model_dir = exp_dir / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
 
-        # save trained pipeline
         with open(model_dir / "model.pkl", "wb") as f:
             pickle.dump(self.pipeline, f)
 
-        # save metadata (needed for prediction)
         metadata = {
             "model_type": self.model_type,
             "n_labels": int(len(np.unique(train_labels)))
@@ -236,47 +212,57 @@ class MLModel:
         with open(model_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
 
-        # save predictions in format compatible with defense evaluation
-        predictions = {
-            "y_true": [int(x) for x in test_labels],
-            "y_pred_probs": [[float(p) for p in row] for row in test_probs]
-        }
-        with open(exp_dir / "predictions.json", "w", encoding='utf-8') as f:
-            json.dump(predictions, f, indent=2, ensure_ascii=False)
+        # make predictions for each task
+        results = {"model_path": str(model_dir), "accuracies": {}}
 
-        # calculate and log accuracy
-        accuracy = float(np.mean(np.argmax(test_probs, axis=1) == test_labels))
-        logger.info(
-            f"Results for {corpus}-{task} using {self.model_type}: "
-            f"accuracy={accuracy:.4f}"
-        )
+        for task in CORPUS_TASK_MAP[corpus]:
+            # load test data for this task
+            _, _, test_text, test_labels = load_corpus(corpus, task)
 
-        return {
-            "model_path": str(model_dir),
-            "accuracy": accuracy
-        }
+            # get predictions
+            test_probs = self.pipeline.predict_proba(test_text)
+
+            # save predictions
+            predictions = {
+                "y_true": [int(x) for x in test_labels],
+                "y_pred_probs": [[float(p) for p in row] for row in test_probs]
+            }
+            pred_file = exp_dir / f"{task}_predictions.json"
+            with open(pred_file, "w", encoding="utf-8") as f:
+                json.dump(predictions, f, indent=2, ensure_ascii=False)
+
+            # calculate accuracy
+            accuracy = float(np.mean(np.argmax(test_probs, axis=1) == test_labels))
+            results["accuracies"][task] = accuracy
+            logger.info(
+                f"Results for {corpus}-{task} using {self.model_type}: "
+                f"accuracy={accuracy:.4f}"
+            )
+
+        return results
 
 
 def evaluate_corpus_task(
         model: MLModel,
         corpus: str,
-        task: str,
         logger: logging.Logger
 ) -> None:
-    """Evaluate ML model on a specific corpus and task."""
-    logger.info(f"Evaluating {corpus}-{task}")
+    """Train model for corpus and evaluate on all tasks."""
+    logger.info(f"Processing corpus: {corpus}")
 
-    # load data
-    train_text, train_labels, test_text, test_labels = load_corpus(corpus, task)
+    # load no_protection training data
+    train_text, train_labels, _, _ = load_corpus(corpus, "no_protection")
 
-    # train and evaluate
+    # train and evaluate on all tasks
     results = model.train_and_evaluate(
         train_text=train_text,
         train_labels=train_labels,
-        test_text=test_text,
-        test_labels=test_labels,
-        corpus=corpus,
-        task=task
+        corpus=corpus
+    )
+
+    logger.info(
+        f"Model saved at: {results['model_path']}\n"
+        f"Accuracies across tasks: {results['accuracies']}"
     )
 
     logger.info(
