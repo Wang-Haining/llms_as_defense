@@ -358,7 +358,7 @@ if __name__ == "__main__":
         help="Subdirectory under results for saving"
     )
     parser.add_argument(
-        "--threat_models_dir",
+        "--output_dir",
         type=str,
         default="threat_models",
         help="Base directory for results"
