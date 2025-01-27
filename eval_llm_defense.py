@@ -154,29 +154,26 @@ def compute_true_class_confidence(y_true: np.ndarray,
 
 
 def compute_entropy(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """Compute normalized entropy of predictions.
+    """Compute entropy of predictions.
 
     Args:
         y_pred_probs: array of prediction probabilities
 
     Returns:
-        Mean normalized entropy & std of normalized entropy
+        Mean entropy & std of entropy
     """
-    n_classes = y_pred_probs.shape[1]
-    max_entropy = np.log2(n_classes)
     entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
-    normalized_entropies = entropies / max_entropy
-    return float(np.mean(normalized_entropies)), float(np.std(normalized_entropies))
+    return float(np.mean(entropies)), float(np.std(entropies))
 
 
 def compute_gini(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """compute gini coefficient of predictions.
+    """compute Gini coefficient of predictions.
 
     Args:
         y_pred_probs: array of prediction probabilities
 
     Returns:
-        Mean gini coefficient & std of gini coefficient
+        Mean Gini coefficient & std of Gini coefficient
     """
     gini_scores = []
     for probs in y_pred_probs:
@@ -294,10 +291,10 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
     n_classes = len(
         pre_metrics.get('true_class_probs', [1]))  # fallback to 1 if not available
 
-    # Ideal conditions for each metric
+    # ideal conditions for each metric
     ideals = {
         'accuracy': 1 / n_classes,  # random guessing
-        'entropy': 1.0,  # fully uniform (normalized)
+        'entropy': np.log2(n_classes),  # fully uniform distribution entropy
         'gini': 0.0,  # perfectly equal distribution
         'tvd': 0.0,  # no deviation from uniform
         'mrr': 1 / n_classes,  # random ranking
@@ -328,7 +325,7 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
 
     # 3. distribution metrics - progress toward ideal conditions
 
-    # Entropy (toward 1.0 - perfect uniformity)
+    # entropy (toward 1.0 - perfect uniformity)
     pre_entropy_gap = abs(pre_metrics['entropy'] - ideals['entropy'])
     post_entropy_gap = abs(post_metrics['entropy'] - ideals['entropy'])
     effectiveness['entropy_abs_increase'] = float(
