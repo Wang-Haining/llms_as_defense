@@ -388,18 +388,18 @@ class DefenseEvaluator:
 
     def __init__(
         self,
-        results_dir: Path,
+        threat_models_dir: Path,
         llm_outputs_dir: Path,
         output_dir: Path
     ):
         """Initialize evaluator with paths to required data.
 
         Args:
-            results_dir: directory containing trained models
+            threat_models_dir: directory containing trained models
             llm_outputs_dir: directory containing LLM transformations
             output_dir: directory to save evaluation results
         """
-        self.results_dir = Path(results_dir)
+        self.threat_models_dir = Path(threat_models_dir)
         self.llm_outputs_dir = Path(llm_outputs_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -433,10 +433,8 @@ class DefenseEvaluator:
         model_type: str
     ) -> object:
         """Load trained model predictor for given corpus and type."""
-        model_dir = (
-            self.results_dir / corpus / "no_protection" /
-            model_type / "model"
-        )
+        model_dir = self.threat_models_dir / corpus / model_type / "model"
+
         return self.predictor_classes[model_type](model_dir)
 
     def _load_llm_outputs(
@@ -738,9 +736,9 @@ def main():
     )
 
     parser.add_argument(
-        '--results_dir',
+        '--threat_models_dir',
         type=Path,
-        default=Path('results'),
+        default=Path('threat_models'),
         help='Directory containing trained models'
     )
     parser.add_argument(
@@ -775,7 +773,7 @@ def main():
     args = parser.parse_args()
 
     evaluator = DefenseEvaluator(
-        results_dir=args.results_dir,
+        threat_models_dir=args.threat_models_dir,
         llm_outputs_dir=args.llm_outputs,
         output_dir=args.output_dir
     )
