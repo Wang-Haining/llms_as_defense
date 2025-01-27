@@ -180,7 +180,6 @@ def main():
     corpora = {
         "rj": load_rj,
         "ebg": load_ebg,
-        # "lcmc": load_lcmc
     }
 
     # optimize for each corpus
@@ -195,7 +194,7 @@ def main():
             )
             all_results[corpus_name] = results
         except Exception as e:
-            logger.error(f"Rrror optimizing {corpus_name}: {str(e)}")
+            logger.error(f"Error optimizing {corpus_name}: {str(e)}")
             raise  # re-raise to see full traceback
 
     # save combined results
@@ -238,36 +237,25 @@ if __name__ == "__main__":
 
 
 # ==================================================
-# 2025-01-15 21:25:38,367 - INFO - OPTIMIZATION SUMMARY
+# OPTIMIZATION SUMMARY
 # ==================================================
-# 2025-01-15 21:25:38,368 - INFO -
 # RJ corpus:
-# 2025-01-15 21:25:38,368 - INFO - best parameters:
-# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 100.0
-# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.776
-# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.286
-# 2025-01-15 21:25:38,368 - INFO - number of authors: 21
-# 2025-01-15 21:25:38,368 - INFO - training samples: 254
-# 2025-01-15 21:25:38,368 - INFO - test samples: 21
-# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
-# 2025-01-15 21:25:38,368 - INFO -
+# 2025-01-27 10:22:58,930 - INFO - best parameters:
+# 2025-01-27 10:22:58,930 - INFO -   logreg__C: 100.0
+# 2025-01-27 10:22:58,930 - INFO - CV accuracy: 0.669
+# 2025-01-27 10:22:58,930 - INFO - test accuracy: 0.286
+# 2025-01-27 10:22:58,930 - INFO - number of authors: 21
+# 2025-01-27 10:22:58,930 - INFO - training samples: 254
+# 2025-01-27 10:22:58,930 - INFO - test samples: 21
+# 2025-01-27 10:22:58,930 - INFO - feature dimensions: 512
+# 2025-01-27 10:22:58,930 - INFO -
 # EBG corpus:
-# 2025-01-15 21:25:38,368 - INFO - best parameters:
-# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 1.0
-# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.647
-# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.667
-# 2025-01-15 21:25:38,368 - INFO - number of authors: 45
-# 2025-01-15 21:25:38,368 - INFO - training samples: 654
-# 2025-01-15 21:25:38,368 - INFO - test samples: 45
-# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
-# 2025-01-15 21:25:38,368 - INFO -
-# LCMC corpus:
-# 2025-01-15 21:25:38,368 - INFO - best parameters:
-# 2025-01-15 21:25:38,368 - INFO -   logreg__C: 0.01
-# 2025-01-15 21:25:38,368 - INFO - CV accuracy: 0.585
-# 2025-01-15 21:25:38,368 - INFO - test accuracy: 0.238
-# 2025-01-15 21:25:38,368 - INFO - number of authors: 21
-# 2025-01-15 21:25:38,368 - INFO - training samples: 378
-# 2025-01-15 21:25:38,368 - INFO - test samples: 21
-# 2025-01-15 21:25:38,368 - INFO - feature dimensions: 512
+# 2025-01-27 10:22:58,930 - INFO - best parameters:
+# 2025-01-27 10:22:58,930 - INFO -   logreg__C: 0.1
+# 2025-01-27 10:22:58,930 - INFO - CV accuracy: 0.667
+# 2025-01-27 10:22:58,930 - INFO - test accuracy: 0.644
+# 2025-01-27 10:22:58,930 - INFO - number of authors: 45
+# 2025-01-27 10:22:58,930 - INFO - training samples: 654
+# 2025-01-27 10:22:58,930 - INFO - test samples: 45
+# 2025-01-27 10:22:58,930 - INFO - feature dimensions: 512
 # ==================================================

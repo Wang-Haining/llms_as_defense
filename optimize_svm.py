@@ -241,42 +241,29 @@ if __name__ == "__main__":
     main()
 
 # ==================================================
-# 2025-01-15 21:02:06,525 - INFO - OPTIMIZATION SUMMARY
+# OPTIMIZATION SUMMARY
 # ==================================================
-# 2025-01-15 21:02:06,525 - INFO -
 # RJ corpus:
-# 2025-01-15 21:02:06,525 - INFO - best parameters:
-# 2025-01-15 21:02:06,525 - INFO -   svm__C: 0.0001
-# 2025-01-15 21:02:06,525 - INFO -   svm__coef0: 100.0
-# 2025-01-15 21:02:06,525 - INFO -   svm__degree: 3
-# 2025-01-15 21:02:06,525 - INFO - CV accuracy: 0.858
-# 2025-01-15 21:02:06,525 - INFO - test accuracy: 0.286
-# 2025-01-15 21:02:06,525 - INFO - number of authors: 21
-# 2025-01-15 21:02:06,525 - INFO - training samples: 254
-# 2025-01-15 21:02:06,525 - INFO - test samples: 21
-# 2025-01-15 21:02:06,525 - INFO - feature dimensions: 552
-# 2025-01-15 21:02:06,525 - INFO -
+# 2025-01-27 10:28:46,003 - INFO - best parameters:
+# 2025-01-27 10:28:46,003 - INFO -   svm__C: 0.0001
+# 2025-01-27 10:28:46,003 - INFO -   svm__coef0: 100.0
+# 2025-01-27 10:28:46,003 - INFO -   svm__degree: 3
+# 2025-01-27 10:28:46,003 - INFO - CV accuracy: 0.823
+# 2025-01-27 10:28:46,003 - INFO - test accuracy: 0.286
+# 2025-01-27 10:28:46,003 - INFO - number of authors: 21
+# 2025-01-27 10:28:46,003 - INFO - training samples: 254
+# 2025-01-27 10:28:46,003 - INFO - test samples: 21
+# 2025-01-27 10:28:46,003 - INFO - feature dimensions: 552
+# 2025-01-27 10:28:46,003 - INFO -
 # EBG corpus:
-# 2025-01-15 21:02:06,525 - INFO - best parameters:
-# 2025-01-15 21:02:06,525 - INFO -   svm__C: 0.0001
-# 2025-01-15 21:02:06,525 - INFO -   svm__coef0: 100.0
-# 2025-01-15 21:02:06,525 - INFO -   svm__degree: 3
-# 2025-01-15 21:02:06,525 - INFO - CV accuracy: 0.797
-# 2025-01-15 21:02:06,525 - INFO - test accuracy: 0.711
-# 2025-01-15 21:02:06,525 - INFO - number of authors: 45
-# 2025-01-15 21:02:06,525 - INFO - training samples: 654
-# 2025-01-15 21:02:06,525 - INFO - test samples: 45
-# 2025-01-15 21:02:06,525 - INFO - feature dimensions: 552
-# 2025-01-15 21:02:06,525 - INFO -
-# LCMC corpus:
-# 2025-01-15 21:02:06,525 - INFO - best parameters:
-# 2025-01-15 21:02:06,525 - INFO -   svm__C: 0.1
-# 2025-01-15 21:02:06,525 - INFO -   svm__coef0: 10.0
-# 2025-01-15 21:02:06,525 - INFO -   svm__degree: 2
-# 2025-01-15 21:02:06,525 - INFO - CV accuracy: 0.633
-# 2025-01-15 21:02:06,525 - INFO - test accuracy: 0.143
-# 2025-01-15 21:02:06,525 - INFO - number of authors: 21
-# 2025-01-15 21:02:06,525 - INFO - training samples: 378
-# 2025-01-15 21:02:06,525 - INFO - test samples: 21
-# 2025-01-15 21:02:06,525 - INFO - feature dimensions: 552
+# 2025-01-27 10:28:46,003 - INFO - best parameters:
+# 2025-01-27 10:28:46,003 - INFO -   svm__C: 0.01
+# 2025-01-27 10:28:46,003 - INFO -   svm__coef0: 100.0
+# 2025-01-27 10:28:46,003 - INFO -   svm__degree: 2
+# 2025-01-27 10:28:46,003 - INFO - CV accuracy: 0.809
+# 2025-01-27 10:28:46,003 - INFO - test accuracy: 0.689
+# 2025-01-27 10:28:46,003 - INFO - number of authors: 45
+# 2025-01-27 10:28:46,003 - INFO - training samples: 654
+# 2025-01-27 10:28:46,003 - INFO - test samples: 45
+# 2025-01-27 10:28:46,003 - INFO - feature dimensions: 552
 # ==================================================
