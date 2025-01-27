@@ -43,7 +43,6 @@ CORPORA = ('ebg', 'rj')
 CORPUS_TASK_MAP = {
     'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
     'ebg': ['no_protection', 'imitation', 'obfuscation'],
-    'lcmc': ['no_protection']
 }
 
 
