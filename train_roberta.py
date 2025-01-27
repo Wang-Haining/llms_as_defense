@@ -11,7 +11,7 @@ The script supports training on:
 
 Usage:
     # Train on a specific corpus
-    python train_roberta.py --corpus rj --learning_rate 1e-4 --batch_size 32 --num_seeds 5
+    python train_roberta.py --corpus rj --learning_rate 3e-5 --batch_size 32 --num_seeds 3
 
     # Train on all corpora with default parameters
     python train_roberta.py
