@@ -11,7 +11,7 @@ from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.svm import SVC
 from tqdm import tqdm
 
-from utils import load_ebg, load_lcmc, load_rj, vectorize_writeprints_static
+from utils import load_ebg, load_rj, vectorize_writeprints_static
 
 # setup logging
 logging.basicConfig(
@@ -178,13 +178,13 @@ def optimize_svm_for_corpus(
 
 def main():
     # setup output directory
-    output_dir = Path("results/optimization/svm")
+    output_dir = Path("threat_models/optimization/svm")
 
     # define corpora
     corpora = {
         "rj": load_rj,
         "ebg": load_ebg,
-        "lcmc": load_lcmc
+        # "lcmc": load_lcmc
     }
 
     # optimize for each corpus

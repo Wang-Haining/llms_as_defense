@@ -10,7 +10,7 @@ from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 
-from utils import load_ebg, load_lcmc, load_rj, vectorize_koppel512
+from utils import load_ebg, load_rj, vectorize_koppel512
 
 # setup logging
 logging.basicConfig(
@@ -174,13 +174,13 @@ def optimize_logreg_for_corpus(
 
 def main():
     # setup output directory
-    output_dir = Path("results/optimization/logreg")
+    output_dir = Path("threat_models/optimization/logreg")
 
     # define corpora
     corpora = {
         "rj": load_rj,
         "ebg": load_ebg,
-        "lcmc": load_lcmc
+        # "lcmc": load_lcmc
     }
 
     # optimize for each corpus
