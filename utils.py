@@ -39,6 +39,13 @@ LLMS = ('meta-llama/Llama-3.1-8B-Instruct',
 
 CORPORA = ('ebg', 'rj')
 
+# define scenarios
+CORPUS_TASK_MAP = {
+    'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
+    'ebg': ['no_protection', 'imitation', 'obfuscation'],
+    'lcmc': ['no_protection']
+}
+
 
 def get_corpus_stats() -> None:
     """
