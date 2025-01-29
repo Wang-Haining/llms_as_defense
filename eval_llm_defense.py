@@ -1,16 +1,17 @@
 """
 Evaluate effectiveness of LLM-based defense against authorship attribution models.
 
-This script implements a comprehensive evaluation framework for assessing the effectiveness
-of LLM-based defenses against authorship attribution attacks. It measures both the absolute
-improvement and progress toward ideal defensive conditions.
+This script implements a comprehensive evaluation framework for assessing the
+effectiveness of LLM-based defenses against authorship attribution attacks. It measures
+both the absolute improvement and progress toward ideal defensive conditions.
 
 Key Components:
 1. Attribution Performance Metrics:
    - Accuracy@1/5 and F1@1/5 scores
-   - True class confidence
+   - True class confidence and wrong classification entropy
    - Distribution metrics (entropy, Gini coefficient, TVD)
    - Ranking metrics (MRR, Wasserstein distance)
+   - KL divergence between original and transformed predictions
 
 2. Defense Effectiveness Measures:
    - Absolute changes in all metrics
@@ -20,6 +21,8 @@ Key Components:
      * Equal class probabilities (min Gini)
      * Random ranking (MRR = 1/n_classes)
      * Maximum redistribution (Wasserstein)
+     * Maximum wrong classification entropy
+     * Optimal KL divergence from original predictions
 
 3. Text Quality Metrics:
    - PINC (Paraphrase In N-gram Changes)
@@ -48,7 +51,8 @@ File Formats:
      * True labels
      * Original and transformed prediction probabilities
    - Attribution Metrics:
-     * Original and transformed metrics
+     * Original metrics (all attribution metrics except KL divergence)
+     * Transformed metrics (all attribution metrics plus KL divergence)
      * Progress toward ideal defensive conditions
    - Text Quality Metrics:
      * PINC, BLEU, METEOR, BERTScore
