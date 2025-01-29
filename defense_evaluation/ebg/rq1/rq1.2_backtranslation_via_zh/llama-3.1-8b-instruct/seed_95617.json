@@ -4406,7 +4406,9 @@
           "mrr": 0.7502268297005139,
           "mrr_std": 0.36231505637983125,
           "wasserstein": 0.41416795855372757,
-          "wasserstein_std": 0.053113836558710735
+          "wasserstein_std": 0.053113836558710735,
+          "wrong_entropy": 3.2402019394308708,
+          "wrong_entropy_std": 0.8395899781742494
         },
         "transformed_metrics": {
           "accuracy@1": 0.022222222222222223,
@@ -4423,7 +4425,10 @@
           "mrr": 0.09608304121370739,
           "mrr_std": 0.17283822401583113,
           "wasserstein": 0.40915044825848274,
-          "wasserstein_std": 0.05706889918147317
+          "wasserstein_std": 0.05706889918147317,
+          "wrong_entropy": 2.6966704821875993,
+          "wrong_entropy_std": 1.3180135748924138,
+          "kl_divergence": 6.127596894311643
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.6444444444444444,
@@ -4442,7 +4447,10 @@
           "mrr_abs_reduction": 0.6541437884868065,
           "mrr_ideal_progress": -2.61895137777395,
           "wasserstein_abs_increase": -0.005017510295244831,
-          "wasserstein_ideal_progress": -0.0085647590781445
+          "wasserstein_ideal_progress": -0.0085647590781445,
+          "wrong_entropy_abs_change": -0.5435314572432715,
+          "wrong_entropy_ideal_progress": 0.16774616749311022,
+          "kl_divergence": 6.127596894311643
         }
       },
       "quality": {
@@ -4710,7 +4718,7 @@
           "bertscore_precision_avg": 0.4740923047065735,
           "bertscore_precision_std": 0.07580751180648804,
           "bertscore_recall_avg": 0.47170311212539673,
-          "bertscore_recall_std": 0.07603388279676437,
+          "bertscore_recall_std": 0.07603389024734497,
           "bertscore_f1_avg": 0.47286325693130493,
           "bertscore_f1_std": 0.07583324611186981,
           "bertscore_individual": [
@@ -4856,8 +4864,8 @@
             },
             {
               "precision": 0.4311181306838989,
-              "recall": 0.4267156422138214,
-              "f1": 0.4289056062698364
+              "recall": 0.42671558260917664,
+              "f1": 0.42890551686286926
             },
             {
               "precision": 0.46395987272262573,
@@ -9341,7 +9349,9 @@
           "mrr": 0.8097450697450698,
           "mrr_std": 0.32754494714301413,
           "wasserstein": 0.2989295101470955,
-          "wasserstein_std": 0.048762912745149795
+          "wasserstein_std": 0.048762912745149795,
+          "wrong_entropy": 4.639276871701786,
+          "wrong_entropy_std": 0.34766682421836254
         },
         "transformed_metrics": {
           "accuracy@1": 0.0,
@@ -9358,7 +9368,10 @@
           "mrr": 0.06040740980460908,
           "mrr_std": 0.04810909506861147,
           "wasserstein": 0.2927166914363695,
-          "wasserstein_std": 0.05298582800295079
+          "wasserstein_std": 0.05298582800295079,
+          "wrong_entropy": 4.33073904325285,
+          "wrong_entropy_std": 0.6795839648913559,
+          "kl_divergence": 2.2094011513990375
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.7333333333333333,
@@ -9377,7 +9390,10 @@
           "mrr_abs_reduction": 0.7493376599404606,
           "mrr_ideal_progress": -3.938597853608277,
           "wasserstein_abs_increase": -0.006212818710725987,
-          "wasserstein_ideal_progress": -0.008861903047765613
+          "wasserstein_ideal_progress": -0.008861903047765613,
+          "wrong_entropy_abs_change": -0.3085378284489364,
+          "wrong_entropy_ideal_progress": 0.06650558631905022,
+          "kl_divergence": 2.2094011513990375
         }
       },
       "quality": {
@@ -9645,7 +9661,7 @@
           "bertscore_precision_avg": 0.4740923047065735,
           "bertscore_precision_std": 0.07580751180648804,
           "bertscore_recall_avg": 0.47170311212539673,
-          "bertscore_recall_std": 0.07603388279676437,
+          "bertscore_recall_std": 0.07603389024734497,
           "bertscore_f1_avg": 0.47286325693130493,
           "bertscore_f1_std": 0.07583324611186981,
           "bertscore_individual": [
@@ -9791,8 +9807,8 @@
             },
             {
               "precision": 0.4311181306838989,
-              "recall": 0.4267156422138214,
-              "f1": 0.4289056062698364
+              "recall": 0.42671558260917664,
+              "f1": 0.42890551686286926
             },
             {
               "precision": 0.46395987272262573,
@@ -14276,7 +14292,9 @@
           "mrr": 0.9103240740740741,
           "mrr_std": 0.2598877798075132,
           "wasserstein": 0.4554938732715285,
-          "wasserstein_std": 0.0386818348812703
+          "wasserstein_std": 0.0386818348812703,
+          "wrong_entropy": 2.73893141746521,
+          "wrong_entropy_std": 1.2985292673110962
         },
         "transformed_metrics": {
           "accuracy@1": 0.022222222222222223,
@@ -14293,7 +14311,10 @@
           "mrr": 0.07355125920175729,
           "mrr_std": 0.14362250832136883,
           "wasserstein": 0.43692444061765223,
-          "wasserstein_std": 0.04794487366892294
+          "wasserstein_std": 0.04794487366892294,
+          "wrong_entropy": 1.5304253101348877,
+          "wrong_entropy_std": 1.2831692695617676,
+          "kl_divergence": 8.199752807617188
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.8666666666666666,
@@ -14312,7 +14333,10 @@
           "mrr_abs_reduction": 0.8367728148723168,
           "mrr_ideal_progress": -9.331075271678912,
           "wasserstein_abs_increase": -0.018569432653876283,
-          "wasserstein_ideal_progress": -0.03410325750684592
+          "wasserstein_ideal_progress": -0.03410325750684592,
+          "wrong_entropy_abs_change": -1.2085061073303223,
+          "wrong_entropy_ideal_progress": 0.4412327010541777,
+          "kl_divergence": 8.199752807617188
         }
       },
       "quality": {
@@ -14580,7 +14604,7 @@
           "bertscore_precision_avg": 0.4740923047065735,
           "bertscore_precision_std": 0.07580751180648804,
           "bertscore_recall_avg": 0.47170311212539673,
-          "bertscore_recall_std": 0.07603388279676437,
+          "bertscore_recall_std": 0.07603389024734497,
           "bertscore_f1_avg": 0.47286325693130493,
           "bertscore_f1_std": 0.07583324611186981,
           "bertscore_individual": [
@@ -14726,8 +14750,8 @@
             },
             {
               "precision": 0.4311181306838989,
-              "recall": 0.4267156422138214,
-              "f1": 0.4289056062698364
+              "recall": 0.42671558260917664,
+              "f1": 0.42890551686286926
             },
             {
               "precision": 0.46395987272262573,

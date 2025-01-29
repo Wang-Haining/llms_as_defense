@@ -4406,7 +4406,9 @@
           "mrr": 0.7502268297005139,
           "mrr_std": 0.36231505637983125,
           "wasserstein": 0.41416795855372757,
-          "wasserstein_std": 0.053113836558710735
+          "wasserstein_std": 0.053113836558710735,
+          "wrong_entropy": 3.2402019394308708,
+          "wrong_entropy_std": 0.8395899781742494
         },
         "transformed_metrics": {
           "accuracy@1": 0.0,
@@ -4423,7 +4425,10 @@
           "mrr": 0.0759335025846175,
           "mrr_std": 0.10780026850127183,
           "wasserstein": 0.4255872385168286,
-          "wasserstein_std": 0.05019079328678598
+          "wasserstein_std": 0.05019079328678598,
+          "wrong_entropy": 2.541559372188834,
+          "wrong_entropy_std": 1.3178558846008854,
+          "kl_divergence": 8.575817987722886
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.6666666666666666,
@@ -4442,7 +4447,10 @@
           "mrr_abs_reduction": 0.6742933271158964,
           "mrr_ideal_progress": -2.6996227269221786,
           "wasserstein_abs_increase": 0.011419279963101048,
-          "wasserstein_ideal_progress": 0.019492412765457084
+          "wasserstein_ideal_progress": 0.019492412765457084,
+          "wrong_entropy_abs_change": -0.6986425672420369,
+          "wrong_entropy_ideal_progress": 0.21561698323183856,
+          "kl_divergence": 8.575817987722886
         }
       },
       "quality": {
@@ -9341,7 +9349,9 @@
           "mrr": 0.8097450697450698,
           "mrr_std": 0.32754494714301413,
           "wasserstein": 0.2989295101470955,
-          "wasserstein_std": 0.048762912745149795
+          "wasserstein_std": 0.048762912745149795,
+          "wrong_entropy": 4.639276871701786,
+          "wrong_entropy_std": 0.34766682421836254
         },
         "transformed_metrics": {
           "accuracy@1": 0.022222222222222223,
@@ -9358,7 +9368,10 @@
           "mrr": 0.08786492523825258,
           "mrr_std": 0.15042017999420584,
           "wasserstein": 0.3625298719946734,
-          "wasserstein_std": 0.05601116221103206
+          "wasserstein_std": 0.05601116221103206,
+          "wrong_entropy": 3.647930372203849,
+          "wrong_entropy_std": 1.0614576687067572,
+          "kl_divergence": 3.1414100071287256
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.711111111111111,
@@ -9377,7 +9390,10 @@
           "mrr_abs_reduction": 0.7218801445068171,
           "mrr_ideal_progress": -3.794278253601843,
           "wasserstein_abs_increase": 0.06360036184757789,
-          "wasserstein_ideal_progress": 0.09071892593984714
+          "wasserstein_ideal_progress": 0.09071892593984714,
+          "wrong_entropy_abs_change": -0.9913464994979369,
+          "wrong_entropy_ideal_progress": 0.21368556499502253,
+          "kl_divergence": 3.1414100071287256
         }
       },
       "quality": {
@@ -14276,7 +14292,9 @@
           "mrr": 0.9103240740740741,
           "mrr_std": 0.2598877798075132,
           "wasserstein": 0.4554938732715285,
-          "wasserstein_std": 0.0386818348812703
+          "wasserstein_std": 0.0386818348812703,
+          "wrong_entropy": 2.73893141746521,
+          "wrong_entropy_std": 1.2985292673110962
         },
         "transformed_metrics": {
           "accuracy@1": 0.0,
@@ -14293,7 +14311,10 @@
           "mrr": 0.060971572485338674,
           "mrr_std": 0.06508512992905426,
           "wasserstein": 0.409071162765505,
-          "wasserstein_std": 0.05263504030400755
+          "wasserstein_std": 0.05263504030400755,
+          "wrong_entropy": 2.3212454319000244,
+          "wrong_entropy_std": 1.2938798666000366,
+          "kl_divergence": 7.25480842590332
         },
         "effectiveness": {
           "accuracy@1_abs_change": -0.8888888888888888,
@@ -14312,7 +14333,10 @@
           "mrr_abs_reduction": 0.8493525015887354,
           "mrr_ideal_progress": -9.471354689889878,
           "wasserstein_abs_increase": -0.046422710506023535,
-          "wasserstein_ideal_progress": -0.08525654391612222
+          "wasserstein_ideal_progress": -0.08525654391612222,
+          "wrong_entropy_abs_change": -0.41768598556518555,
+          "wrong_entropy_ideal_progress": 0.15249961459485542,
+          "kl_divergence": 7.25480842590332
         }
       },
       "quality": {
