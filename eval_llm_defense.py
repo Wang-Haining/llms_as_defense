@@ -1,9 +1,9 @@
 """
 Evaluate effectiveness of LLM-based defense against authorship attribution models.
 
-This script implements a comprehensive evaluation framework for assessing the
-effectiveness of LLM-based defenses against authorship attribution attacks. It measures
-both the absolute improvement and progress toward ideal defensive conditions.
+This script implements a comprehensive evaluation framework for assessing the effectiveness
+of LLM-based defenses against authorship attribution attacks. It measures both the absolute
+improvement and progress toward ideal defensive conditions.
 
 Key Components:
 1. Attribution Performance Metrics:
@@ -21,8 +21,7 @@ Key Components:
      * Equal class probabilities (min Gini)
      * Random ranking (MRR = 1/n_classes)
      * Maximum redistribution (Wasserstein)
-     * Maximum wrong classification entropy
-     * Optimal KL divergence from original predictions
+     * Maximum wrong classification entropy when misclassified
 
 3. Text Quality Metrics:
    - PINC (Paraphrase In N-gram Changes)
@@ -768,6 +767,14 @@ class DefenseEvaluator:
                     f"  Wasserstein: {orig['wasserstein']:.4f} → {transformed['wasserstein']:.4f}")
                 logger.info(
                     f"    Progress to Max: {effect['wasserstein_ideal_progress']:.4f}")
+
+                # new metrics
+                logger.info("\nNew Attribution Metrics:")
+                logger.info(
+                    f"  Wrong Classification Entropy: {orig['wrong_entropy']:.4f} → {transformed['wrong_entropy']:.4f}")
+                logger.info(
+                    f"    Progress to Maximum: {effect['wrong_entropy_ideal_progress']:.4f}")
+                logger.info(f"  KL Divergence: {transformed['kl_divergence']:.4f}")
 
                 # text quality
                 qual = metrics['quality']
