@@ -241,12 +241,59 @@ def compute_wasserstein(y_pred_probs: np.ndarray) -> tuple[float, float]:
     return float(np.mean(wasserstein_scores)), float(np.std(wasserstein_scores))
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray) -> dict:
+def compute_kl_divergence(y_pred_probs_orig: np.ndarray,
+                          y_pred_probs_trans: np.ndarray) -> float:
+    """compute KL divergence between original and transformed probability distributions.
+
+    Args:
+        y_pred_probs_orig: array of prediction probabilities for original texts
+        y_pred_probs_trans: array of prediction probabilities for transformed texts
+
+    Returns:
+        mean KL divergence
+    """
+    kl_values = []
+    for orig_probs, trans_probs in zip(y_pred_probs_orig, y_pred_probs_trans):
+        # add small constant to avoid division by zero
+        kl = np.sum(orig_probs * np.log2((orig_probs + 1e-10) / (trans_probs + 1e-10)))
+        kl_values.append(kl)
+
+    return float(np.mean(kl_values))
+
+
+def compute_wrong_classification_entropy(y_true: np.ndarray,
+                                         y_pred_probs: np.ndarray) -> tuple[
+    float, float]:
+    """compute entropy of wrong classifications.
+
+    Args:
+        y_true: array of true labels
+        y_pred_probs: array of prediction probabilities
+
+    Returns:
+        mean and std of entropy for wrong classifications
+    """
+    wrong_entropies = []
+    for true_label, probs in zip(y_true, y_pred_probs):
+        pred_label = np.argmax(probs)
+        if pred_label != true_label:
+            # compute entropy for wrong classifications
+            ent = -np.sum(probs * np.log2(probs + 1e-10))
+            wrong_entropies.append(ent)
+
+    if wrong_entropies:
+        return float(np.mean(wrong_entropies)), float(np.std(wrong_entropies))
+    return 0.0, 0.0
+
+
+def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray,
+                      y_pred_probs_orig: np.ndarray = None) -> dict:
     """Calculate comprehensive attribution metrics using individual functions.
 
     Args:
         y_true: array of true labels
         y_pred_probs: array of prediction probabilities
+        y_pred_probs_orig: original probabilities for computing KL divergence (optional)
 
     Returns:
         All metrics with their values
@@ -272,13 +319,21 @@ def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray) -> dict:
     metrics['wasserstein'], metrics['wasserstein_std'] = compute_wasserstein(
         y_pred_probs)
 
+    # wrong classification entropy
+    metrics['wrong_entropy'], metrics[
+        'wrong_entropy_std'] = compute_wrong_classification_entropy(
+        y_true, y_pred_probs)
+
+    # KL divergence (only if original probabilities are provided)
+    if y_pred_probs_orig is not None:
+        metrics['kl_divergence'] = compute_kl_divergence(y_pred_probs_orig,
+                                                         y_pred_probs)
+
     return metrics
 
 
 def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
-    """
-    Calculate defense effectiveness metrics by comparing pre/post metrics and measuring
-    progress toward ideal conditions.
+    """Calculate defense effectiveness metrics by comparing pre/post metrics.
 
     Args:
         pre_metrics: metrics before defense
@@ -288,22 +343,21 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
         Effectiveness metrics including both absolute changes and progress toward ideals
     """
     effectiveness = {}
-    n_classes = len(
-        pre_metrics.get('true_class_probs', [1]))  # fallback to 1 if not available
+    n_classes = len(pre_metrics.get('true_class_probs', [1]))  # fallback to 1
 
-    # ideal conditions for each metric
+    # ideal conditions
     ideals = {
         'accuracy': 1 / n_classes,  # random guessing
-        'entropy': np.log2(n_classes),  # fully uniform distribution entropy
+        'entropy': np.log2(n_classes),  # uniform distribution entropy
         'gini': 0.0,  # perfectly equal distribution
         'tvd': 0.0,  # no deviation from uniform
         'mrr': 1 / n_classes,  # random ranking
         'wasserstein': 1.0,  # maximum redistribution
+        'wrong_entropy': np.log2(n_classes),  # maximum confusion when wrong
     }
 
     # 1. accuracy and F1 changes
     for k in [1, 5]:
-        # absolute changes
         effectiveness[f'accuracy@{k}_abs_change'] = float(
             post_metrics[f'accuracy@{k}'] - pre_metrics[f'accuracy@{k}']
         )
@@ -311,7 +365,7 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
             post_metrics[f'f1@{k}'] - pre_metrics[f'f1@{k}']
         )
 
-        # progress toward random guessing (ideal)
+        # progress toward random guessing
         pre_acc_gap = abs(pre_metrics[f'accuracy@{k}'] - ideals['accuracy'])
         post_acc_gap = abs(post_metrics[f'accuracy@{k}'] - ideals['accuracy'])
         effectiveness[f'accuracy@{k}_ideal_progress'] = float(
@@ -323,9 +377,8 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
         pre_metrics['true_class_confidence'] - post_metrics['true_class_confidence']
     )
 
-    # 3. distribution metrics - progress toward ideal conditions
-
-    # entropy (toward 1.0 - perfect uniformity)
+    # 3. distribution metrics
+    # entropy (toward maximum)
     pre_entropy_gap = abs(pre_metrics['entropy'] - ideals['entropy'])
     post_entropy_gap = abs(post_metrics['entropy'] - ideals['entropy'])
     effectiveness['entropy_abs_increase'] = float(
@@ -336,7 +389,7 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
                     pre_entropy_gap - post_entropy_gap) / pre_entropy_gap if pre_entropy_gap > 0 else 0.0
     )
 
-    # Gini (toward 0.0 - perfect equality)
+    # Gini (toward 0.0)
     pre_gini_gap = abs(pre_metrics['gini'] - ideals['gini'])
     post_gini_gap = abs(post_metrics['gini'] - ideals['gini'])
     effectiveness['gini_abs_reduction'] = float(
@@ -346,7 +399,7 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
         (pre_gini_gap - post_gini_gap) / pre_gini_gap if pre_gini_gap > 0 else 0.0
     )
 
-    # TVD (toward 0.0 - no deviation from uniform)
+    # TVD (toward 0.0)
     pre_tvd_gap = abs(pre_metrics['tvd'] - ideals['tvd'])
     post_tvd_gap = abs(post_metrics['tvd'] - ideals['tvd'])
     effectiveness['tvd_abs_reduction'] = float(
@@ -376,6 +429,20 @@ def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
     effectiveness['wasserstein_ideal_progress'] = float(
         (pre_wass_gap - post_wass_gap) / pre_wass_gap if pre_wass_gap > 0 else 0.0
     )
+
+    # 5. Wrong classification entropy
+    pre_wrong_gap = abs(pre_metrics['wrong_entropy'] - ideals['wrong_entropy'])
+    post_wrong_gap = abs(post_metrics['wrong_entropy'] - ideals['wrong_entropy'])
+    effectiveness['wrong_entropy_abs_change'] = float(
+        post_metrics['wrong_entropy'] - pre_metrics['wrong_entropy']
+    )
+    effectiveness['wrong_entropy_ideal_progress'] = float(
+        (pre_wrong_gap - post_wrong_gap) / pre_wrong_gap if pre_wrong_gap > 0 else 0.0
+    )
+
+    # 6. KL divergence (transformed only)
+    if 'kl_divergence' in post_metrics:
+        effectiveness['kl_divergence'] = float(post_metrics['kl_divergence'])
 
     return effectiveness
 
@@ -533,7 +600,8 @@ class DefenseEvaluator:
                 trans_preds = predictor.predict_proba(transformed_texts)
 
                 original_metrics = calculate_metrics(test_labels, orig_preds)
-                transformed_metrics = calculate_metrics(test_labels, trans_preds)
+                transformed_metrics = calculate_metrics(test_labels, trans_preds,
+                                                        orig_preds)  # pass original probs for KL
                 effectiveness = defense_effectiveness(original_metrics,
                                                       transformed_metrics)
 
