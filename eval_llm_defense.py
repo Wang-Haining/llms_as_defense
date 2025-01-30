@@ -64,8 +64,8 @@ File Formats:
    the same structure as individual seed files.
 
 Usage:
-    python eval_llm_defense.py --model "google/gemma-2b-it"  # for all rqs
-    python eval_llm_defense.py --rq rq1.1_basic_paraphrase --model "google/gemma-2b-it"
+    python eval_llm_defense.py --model "google/gemma-2-9b-it"  # for all rqs
+    python eval_llm_defense.py --rq rq1.1_basic_paraphrase --model "google/gemma-2-9b-it"
 """
 
 
