@@ -27,9 +27,6 @@ for corpus in "${CORPORA[@]}"; do
         --corpus "$corpus" \
         --rq "$RQ" \
         --model "$MODEL" \
-        --provider "$PROVIDER"
-
-    if [ "$corpus" != "${CORPORA[-1]}" ]; then
-        sleep $SLEEP_TIME
-    fi
+        --provider "$PROVIDER" \
+        --num_seeds 5
 done
