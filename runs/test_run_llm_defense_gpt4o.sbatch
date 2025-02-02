@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_gpt4o
+#SBATCH --job-name=test_run_llm_defense_gpt_4o
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8

@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_claude_3.5_sonnet
+#SBATCH --job-name=test_run_llm_defense_sonnet_3.5
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
