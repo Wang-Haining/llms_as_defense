@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -68,6 +69,25 @@ class APIError(LLMError):
 class GenerationError(LLMError):
     """Raised when text generation fails."""
     pass
+
+
+class RateLimiter:
+    """Rate limiter for API requests"""
+    def __init__(self, rpm: int = 3):  # openai Tier 1 limit
+        self.min_interval = 60.0 / rpm  # minimum seconds between requests
+        self.last_request_time = 0.0
+        self.lock = asyncio.Lock()
+
+    async def wait(self):
+        """Wait if needed to maintain rate limit."""
+        async with self.lock:
+            now = time.time()
+            elapsed = now - self.last_request_time
+            if elapsed < self.min_interval:
+                wait_time = self.min_interval - elapsed
+                logger.info(f"Rate limit: waiting {wait_time:.1f}s before next request")
+                await asyncio.sleep(wait_time)
+            self.last_request_time = time.time()
 
 
 @dataclass
@@ -271,6 +291,9 @@ class ModelManager:
         self._api_key = self._get_api_key()
         self.tokenizer = None
         self.model = None
+        self.rate_limiter = None
+        if self._is_gpt4o_model():
+            self.rate_limiter = RateLimiter(rpm=3)
 
         if self.config.provider == "local":
             try:
@@ -285,6 +308,11 @@ class ModelManager:
                 )
 
         self.prompt_manager = PromptManager(config)
+
+    def _is_gpt4o_model(self) -> bool:
+        """Check if current model is GPT-4o."""
+        model_name = self.config.model_name.lower()
+        return self.config.provider == "openai" and ("gpt-4o" in model_name or "gpt4o" in model_name)
 
     async def _generate_with_provider(
             self,
@@ -446,6 +474,10 @@ class ModelManager:
             )
 
     async def _generate_with_openai(self, formatted_prompt: list) -> str:
+        """Generate with proper rate limiting for GPT-4o."""
+        if self.rate_limiter:
+            await self.rate_limiter.wait()
+
         client = AsyncOpenAI(api_key=self._api_key)
         try:
             resp = await client.chat.completions.create(
@@ -455,8 +487,10 @@ class ModelManager:
                 temperature=self.config.temperature
             )
             return resp.choices[0].message.content
-
         except Exception as e:
+            if "insufficient_quota" in str(e):
+                logger.error("Quota exceeded, waiting 60s before retry...")
+                await asyncio.sleep(60)
             raise APIError(f"OpenAI API error: {str(e)}")
 
     async def _generate_with_anthropic(self, prompt_data: dict) -> str:
