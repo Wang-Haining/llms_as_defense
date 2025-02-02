@@ -523,6 +523,7 @@ class ExperimentManager:
         self.config = config
         self.model_manager = model_manager
         self.output_dir = self._setup_output_dirs()
+        self.is_gpt4o = self._is_gpt4o_model()
 
     def _setup_output_dirs(self) -> Path:
         model_name = self.config.model_name.split('/')[-1].lower()
@@ -566,15 +567,60 @@ class ExperimentManager:
             logger.error(f"error processing text: {str(e)}")
             return None
 
+    def _is_gpt4o_model(self) -> bool:
+        """Check if current model is GPT-4 and needs special handling."""
+        model_name = self.config.model_name.lower()
+        return self.config.provider == "openai" and ("gpt-4o" in model_name or "gpt4o" in model_name)
+
+    async def _generate_gpt4o_rewrites(
+            self,
+            texts: List[str],
+            instructions: Dict[str, str]
+    ) -> Dict:
+        """Special handling for GPT-4 to respect Tier 1 rate limits."""
+        selected_seeds = FIXED_SEEDS[:5]  # Always use 5 seeds
+        all_results = []
+
+        for seed_idx, seed in enumerate(selected_seeds):
+            random.seed(seed)
+            transformations = []
+
+            # process texts sequentially for this seed
+            for text_idx, text in enumerate(texts):
+                try:
+                    result = await self._process_single_text(text, instructions, seed)
+                    if result:
+                        transformations.append(result)
+                        # save intermediate results after each successful transformation
+                        if transformations:
+                            self._save_seed_results(seed, transformations)
+
+                    logger.info(
+                        f"Seed {seed_idx + 1}/5, Text {text_idx + 1}/{len(texts)} processed")
+
+                except Exception as e:
+                    logger.error(f"Error processing text with seed {seed}: {str(e)}")
+                    continue
+
+            if transformations:
+                all_results.append({
+                    "seed": seed,
+                    "transformations": transformations
+                })
+                logger.info(
+                    f"Completed seed {seed_idx + 1}/5 with {len(transformations)} successful transformations")
+
+        return {"all_runs": [r for r in all_results if r["transformations"]]}
+
     async def generate_rewrites(
         self,
         texts: List[str],
         instructions: Dict[str, str]
     ) -> Dict:
-        """
-        generate rewritten versions of input texts using LLM transformations
-        we run concurrency = num_seeds, each concurrency job uses a unique seed
-        """
+        """Generate rewritten versions of input texts using LLM transformations."""
+        if self.is_gpt4o:
+            logger.info("Using sequential processing for GPT-4 model")
+            return await self._generate_gpt4o_rewrites(texts, instructions)
         selected_seeds = FIXED_SEEDS[: self.config.num_seeds]
 
         async def process_seed(s_idx: int) -> Dict:
