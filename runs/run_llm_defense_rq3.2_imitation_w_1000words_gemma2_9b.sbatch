@@ -20,7 +20,7 @@ MODEL="google/gemma-2-9b-it"
 RQ="rq3.2_imitation_w_1000words"
 PROVIDER="local"
 SLEEP_TIME=30
-CORPORA=("ebg" "rj" "lcmc")
+CORPORA=("ebg" "rj")
 
 for corpus in "${CORPORA[@]}"; do
     CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \

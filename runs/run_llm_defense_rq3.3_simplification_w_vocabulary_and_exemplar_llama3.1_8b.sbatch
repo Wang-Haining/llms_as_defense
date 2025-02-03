@@ -20,7 +20,7 @@ MODEL="meta-llama/Llama-3.1-8B-Instruct"
 RQ="rq3.3_simplification_w_vocabulary_and_exemplar"
 PROVIDER="local"
 SLEEP_TIME=30
-CORPORA=("ebg" "rj" "lcmc")
+CORPORA=("ebg" "rj")
 
 for corpus in "${CORPORA[@]}"; do
     CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
