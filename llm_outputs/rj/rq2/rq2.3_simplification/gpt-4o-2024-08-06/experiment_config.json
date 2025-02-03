@@ -1,0 +1,20 @@
+{
+  "corpus": "rj",
+  "research_question": "rq2",
+  "sub_question": "rq2.3_simplification",
+  "num_seeds": 5,
+  "model": {
+    "name": "gpt-4o-2024-08-06",
+    "provider": "openai",
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "generation_constants": {
+    "min_words": 50,
+    "max_retries": 50,
+    "rewrite_tags": [
+      "[REWRITE]",
+      "[/REWRITE]"
+    ]
+  }
+}
