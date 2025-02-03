@@ -606,45 +606,6 @@ class ExperimentManager:
         model_name = self.config.model_name.lower()
         return self.config.provider == "openai" and ("gpt-4o" in model_name or "gpt4o" in model_name)
 
-    # async def _generate_gpt4o_rewrites(
-    #         self,
-    #         texts: List[str],
-    #         instructions: Dict[str, str]
-    # ) -> Dict:
-    #     """Special handling for GPT-4 to respect Tier 1 rate limits."""
-    #     selected_seeds = FIXED_SEEDS[:5]  # Always use 5 seeds
-    #     all_results = []
-    #
-    #     for seed_idx, seed in enumerate(selected_seeds):
-    #         random.seed(seed)
-    #         transformations = []
-    #
-    #         # process texts sequentially for this seed
-    #         for text_idx, text in enumerate(texts):
-    #             try:
-    #                 result = await self._process_single_text(text, instructions, seed)
-    #                 if result:
-    #                     transformations.append(result)
-    #                     # save intermediate results after each successful transformation
-    #                     if transformations:
-    #                         self._save_seed_results(seed, transformations)
-    #
-    #                 logger.info(
-    #                     f"Seed {seed_idx + 1}/5, Text {text_idx + 1}/{len(texts)} processed")
-    #
-    #             except Exception as e:
-    #                 logger.error(f"Error processing text with seed {seed}: {str(e)}")
-    #                 continue
-    #
-    #         if transformations:
-    #             all_results.append({
-    #                 "seed": seed,
-    #                 "transformations": transformations
-    #             })
-    #             logger.info(
-    #                 f"Completed seed {seed_idx + 1}/5 with {len(transformations)} successful transformations")
-    #
-    #     return {"all_runs": [r for r in all_results if r["transformations"]]}
     async def _generate_gpt4o_rewrites(self, texts: List[str],
                                        instructions: Dict[str, str]) -> Dict:
         selected_seeds = FIXED_SEEDS[:5]  # Always use 5 seeds
