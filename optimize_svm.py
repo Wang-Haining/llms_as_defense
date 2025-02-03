@@ -135,6 +135,18 @@ def optimize_svm_for_corpus(
 
     logger.info(f"features extracted - Train: {X_train.shape}, Test: {X_test.shape}")
 
+    # --- BEGIN: Compute and log effective gamma ---
+    # Create the preprocessing part of the pipeline
+    pipeline = create_svm_pipeline()
+    # Transform the training data using the normalizer and scaler
+    X_train_transformed = pipeline[:-1].fit_transform(X_train)
+    n_features = X_train_transformed.shape[1]
+    variance = X_train_transformed.var()
+    effective_gamma = 1 / (n_features * variance)
+    logger.info(f"Effective gamma (computed manually): {effective_gamma:.6f}")
+    # Optionally, add the effective gamma to the results later
+    # --- END: Compute and log effective gamma ---
+
     # check for zero features
     zero_features_train = np.sum(X_train.sum(axis=0) == 0)
     zero_features_test = np.sum(X_test.sum(axis=0) == 0)
@@ -150,7 +162,7 @@ def optimize_svm_for_corpus(
     pipeline.fit(X_train, train_labels)
     test_score = pipeline.score(X_test, test_labels)
 
-    # save results
+    # save results, including the effective gamma value if desired
     results = {
         "corpus": corpus_name,
         "best_parameters": best_params,
@@ -162,6 +174,7 @@ def optimize_svm_for_corpus(
         "feature_dims": X_train.shape[1],
         "zero_features_train": int(zero_features_train),
         "zero_features_test": int(zero_features_test),
+        "effective_gamma": effective_gamma  # Added effective gamma to results
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -222,6 +235,7 @@ def main():
         logger.info(f"training samples: {results['n_train_samples']}")
         logger.info(f"test samples: {results['n_test_samples']}")
         logger.info(f"feature dimensions: {results['feature_dims']}")
+        logger.info(f"Effective gamma: {results['effective_gamma']:.6f}")
 
 
 if __name__ == "__main__":
@@ -239,6 +253,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main()
+
 
 # ==================================================
 # OPTIMIZATION SUMMARY
