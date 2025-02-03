@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq1.2_backtranslation_via_zh_claude_3.5
+#SBATCH --job-name=run_llm_defense_rq1.2_backtranslation_via_zh_claude3.5
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8

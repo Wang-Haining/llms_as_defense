@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq1.2_backtranslation_via_zh_gpt_4o
+#SBATCH --job-name=run_llm_defense_rq1.2_backtranslation_via_de_gpt4o
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
@@ -17,7 +17,7 @@ source ~/.bashrc
 . .venv/bin/activate
 
 MODEL="gpt-4o-2024-08-06"
-RQ="rq1.2_backtranslation_via_zh"
+RQ="rq1.2_backtranslation_via_de"
 PROVIDER="openai"
 SLEEP_TIME=30
 CORPORA=("ebg" "rj")

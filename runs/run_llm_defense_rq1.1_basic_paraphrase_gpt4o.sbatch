@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq1.1_basic_paraphrase_claude_3.5
+#SBATCH --job-name=run_llm_defense_rq1.1_basic_paraphrase_gpt4o
 #SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
@@ -16,9 +16,9 @@ module load CUDA/12.2.0
 source ~/.bashrc
 . .venv/bin/activate
 
-MODEL="claude-3-5-sonnet-20241022"
+MODEL="gpt-4o-2024-08-06"
 RQ="rq1.1_basic_paraphrase"
-PROVIDER="anthropic"
+PROVIDER="openai"
 SLEEP_TIME=30
 CORPORA=("ebg" "rj")
 
@@ -27,9 +27,6 @@ for corpus in "${CORPORA[@]}"; do
         --corpus "$corpus" \
         --rq "$RQ" \
         --model "$MODEL" \
-        --provider "$PROVIDER"
-
-    if [ "$corpus" != "${CORPORA[-1]}" ]; then
-        sleep $SLEEP_TIME
-    fi
+        --provider "$PROVIDER" \
+        --num_seeds 5
 done
