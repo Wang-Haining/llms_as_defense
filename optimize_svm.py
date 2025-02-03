@@ -1,4 +1,10 @@
-import json
+"""
+This module optimizes polynomial SVM parameters for different corpora using
+writeprints-static features. It performs preprocessing via normalization and scaling,
+conducts grid search to determine the best hyperparameters, computes the effective gamma
+value for SVC with gamma="scale", and logs the results.
+"""
+
 import json
 import logging
 from pathlib import Path
@@ -255,30 +261,34 @@ if __name__ == "__main__":
     main()
 
 
+
+
 # ==================================================
 # OPTIMIZATION SUMMARY
 # ==================================================
 # RJ corpus:
-# 2025-01-27 10:28:46,003 - INFO - best parameters:
-# 2025-01-27 10:28:46,003 - INFO -   svm__C: 0.0001
-# 2025-01-27 10:28:46,003 - INFO -   svm__coef0: 100.0
-# 2025-01-27 10:28:46,003 - INFO -   svm__degree: 3
-# 2025-01-27 10:28:46,003 - INFO - CV accuracy: 0.823
-# 2025-01-27 10:28:46,003 - INFO - test accuracy: 0.286
-# 2025-01-27 10:28:46,003 - INFO - number of authors: 21
-# 2025-01-27 10:28:46,003 - INFO - training samples: 254
-# 2025-01-27 10:28:46,003 - INFO - test samples: 21
-# 2025-01-27 10:28:46,003 - INFO - feature dimensions: 552
-# 2025-01-27 10:28:46,003 - INFO -
+# 2025-02-03 10:21:05,171 - INFO - best parameters:
+# 2025-02-03 10:21:05,171 - INFO -   svm__C: 0.0001
+# 2025-02-03 10:21:05,171 - INFO -   svm__coef0: 100.0
+# 2025-02-03 10:21:05,171 - INFO -   svm__degree: 3
+# 2025-02-03 10:21:05,171 - INFO - CV accuracy: 0.823
+# 2025-02-03 10:21:05,171 - INFO - test accuracy: 0.286
+# 2025-02-03 10:21:05,171 - INFO - number of authors: 21
+# 2025-02-03 10:21:05,171 - INFO - training samples: 254
+# 2025-02-03 10:21:05,171 - INFO - test samples: 21
+# 2025-02-03 10:21:05,171 - INFO - feature dimensions: 552
+# 2025-02-03 10:21:05,171 - INFO - Effective gamma: 0.002193
+# 2025-02-03 10:21:05,171 - INFO -
 # EBG corpus:
-# 2025-01-27 10:28:46,003 - INFO - best parameters:
-# 2025-01-27 10:28:46,003 - INFO -   svm__C: 0.01
-# 2025-01-27 10:28:46,003 - INFO -   svm__coef0: 100.0
-# 2025-01-27 10:28:46,003 - INFO -   svm__degree: 2
-# 2025-01-27 10:28:46,003 - INFO - CV accuracy: 0.809
-# 2025-01-27 10:28:46,003 - INFO - test accuracy: 0.689
-# 2025-01-27 10:28:46,003 - INFO - number of authors: 45
-# 2025-01-27 10:28:46,003 - INFO - training samples: 654
-# 2025-01-27 10:28:46,003 - INFO - test samples: 45
-# 2025-01-27 10:28:46,003 - INFO - feature dimensions: 552
+# 2025-02-03 10:21:05,171 - INFO - best parameters:
+# 2025-02-03 10:21:05,171 - INFO -   svm__C: 0.01
+# 2025-02-03 10:21:05,171 - INFO -   svm__coef0: 100.0
+# 2025-02-03 10:21:05,171 - INFO -   svm__degree: 2
+# 2025-02-03 10:21:05,171 - INFO - CV accuracy: 0.809
+# 2025-02-03 10:21:05,171 - INFO - test accuracy: 0.689
+# 2025-02-03 10:21:05,171 - INFO - number of authors: 45
+# 2025-02-03 10:21:05,171 - INFO - training samples: 654
+# 2025-02-03 10:21:05,171 - INFO - test samples: 45
+# 2025-02-03 10:21:05,171 - INFO - feature dimensions: 552
+# 2025-02-03 10:21:05,171 - INFO - Effective gamma: 0.002024
 # ==================================================
