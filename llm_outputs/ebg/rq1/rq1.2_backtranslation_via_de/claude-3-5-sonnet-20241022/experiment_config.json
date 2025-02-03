@@ -1,0 +1,20 @@
+{
+  "corpus": "ebg",
+  "research_question": "rq1",
+  "sub_question": "rq1.2_backtranslation_via_de",
+  "num_seeds": 5,
+  "model": {
+    "name": "claude-3-5-sonnet-20241022",
+    "provider": "anthropic",
+    "temperature": 0.7,
+    "max_tokens": 4096
+  },
+  "generation_constants": {
+    "min_words": 50,
+    "max_retries": 50,
+    "rewrite_tags": [
+      "[REWRITE]",
+      "[/REWRITE]"
+    ]
+  }
+}
