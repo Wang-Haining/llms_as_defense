@@ -1,6 +1,6 @@
 #!/bin/sh
 #SBATCH --job-name=run_llm_defense_rq1.1_basic_paraphrase_gpt_4o
-##SBATCH --account=group-jasonclark
+#SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
