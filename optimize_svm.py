@@ -3,6 +3,9 @@ This module optimizes polynomial SVM parameters for different corpora using
 writeprints-static features. It performs preprocessing via normalization and scaling,
 conducts grid search to determine the best hyperparameters, computes the effective gamma
 value for SVC with gamma="scale", and logs the results.
+
+Usage:
+    python optimize_svm.py
 """
 
 import json
