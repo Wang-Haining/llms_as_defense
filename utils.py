@@ -9,7 +9,6 @@ __license__ = 'OBSD'
 import json
 import os
 import pickle
-import random
 import re
 from pathlib import Path
 from typing import List, Tuple
