@@ -20,7 +20,9 @@ Usage:
 
 import argparse
 import logging
+import shutil
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import wandb
@@ -64,7 +66,12 @@ def train_corpus(
         training_args: dict,
         logger: logging.Logger
 ) -> None:
-    """Train RoBERTa with multiple seeds on a specific corpus."""
+    """
+    Train RoBERTa with multiple seeds on a specific corpus and reserve only the best checkpoint.
+
+    After all seeds have been run, the checkpoint with the lowest validation loss is copied to
+    the canonical folder: threat_models/{corpus}/no_protection/roberta/model.
+    """
     logger.info(f"Training on corpus: {corpus}")
 
     # load data (using no_protection for both training and testing)
@@ -77,9 +84,15 @@ def train_corpus(
         train_text, train_labels
     )
 
+    # track results across seeds; each entry is a tuple: (seed, results_dict)
+    results_list = []
+
     # train with multiple seeds
     seeds = FIXED_SEEDS[:num_seeds]
     for seed in seeds:
+        # To avoid overwriting checkpoints, append seed to the corpus name for the run.
+        corpus_for_run = f"{corpus}_seed_{seed}"
+
         # initialize wandb for this run
         run = wandb.init(
             project=PROJECT_NAME,
@@ -106,26 +119,65 @@ def train_corpus(
                 val_labels=val_labels,
                 test_text=test_text,
                 test_labels=test_labels,
-                corpus=corpus,
+                corpus=corpus_for_run,
                 seed=seed
             )
 
-            # log final metrics to wandb
+            # Log final metrics to wandb for this seed
             wandb.log({
                 "final_val_accuracy": results['val_metrics']['accuracy'],
-                "final_test_accuracy": results['test_metrics']['accuracy']
+                "final_test_accuracy": results['test_metrics']['accuracy'],
+                "final_val_loss": results['val_metrics']['loss'],
+                "final_test_loss": results['test_metrics']['loss'],
             })
 
             logger.info(
                 f"Completed training for {corpus} seed {seed}: "
+                f"val_loss={results['val_metrics']['loss']:.4f}, "
                 f"val_acc={results['val_metrics']['accuracy']:.4f}, "
+                f"test_loss={results['test_metrics']['loss']:.4f}, "
                 f"test_acc={results['test_metrics']['accuracy']:.4f}"
             )
+
+            # Save the results for later comparison
+            results_list.append((seed, results))
         except Exception as e:
             logger.error(f"Error training seed {seed}: {str(e)}")
         finally:
-            # ensure wandb run is finished properly
             run.finish()
+
+    # pick the overall best checkpoint across seeds (lowest validation loss)
+    if results_list:
+        best_seed, best_result = min(results_list, key=lambda x: x[1]['val_metrics']['loss'])
+        logger.info(
+            f"Best checkpoint for corpus {corpus} is from seed {best_seed} with "
+            f"val_loss {best_result['val_metrics']['loss']:.4f}, "
+            f"val_acc {best_result['val_metrics']['accuracy']:.4f}, "
+            f"test_loss {best_result['test_metrics']['loss']:.4f}, "
+            f"test_acc {best_result['test_metrics']['accuracy']:.4f}. "
+            f"Model saved at: {best_result['model_path']}"
+        )
+        wandb.run.summary.update({
+            "best_seed": best_seed,
+            "best_val_loss": best_result['val_metrics']['loss'],
+            "best_val_accuracy": best_result['val_metrics']['accuracy'],
+            "best_test_loss": best_result['test_metrics']['loss'],
+            "best_test_accuracy": best_result['test_metrics']['accuracy']
+        })
+
+        # copy best checkpoint to canonical folder
+        canonical_model_dir = Path("threat_models") / corpus / "no_protection" / "roberta" / "model"
+        source_model_dir = Path(best_result['model_path'])
+        logger.info(f"Copying best model from {source_model_dir} to canonical location {canonical_model_dir}")
+        # remove canonical folder if it exists to avoid copytree errors.
+        if canonical_model_dir.exists():
+            shutil.rmtree(canonical_model_dir)
+        shutil.copytree(source_model_dir, canonical_model_dir)
+        logger.info(f"Best model is now available at the canonical location: {canonical_model_dir}")
+        wandb.run.summary.update({"canonical_model_path": str(canonical_model_dir)})
+
+    else:
+        logger.warning(f"No successful training runs for corpus {corpus}.")
 
 
 def main(args):
