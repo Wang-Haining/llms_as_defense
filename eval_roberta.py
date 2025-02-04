@@ -1,159 +1,167 @@
 """
-Evaluate RoBERTa-base's performance as an authorship attribution model across corpora
-and tasks.
+Evaluate RoBERTa-based authorship attribution models.
 
-Usage:
-    # Run specific corpus and task
-    python eval_roberta.py --corpus rj --task no_protection
+This script loads the best saved RoBERTa models (saved as Hugging Face checkpoints)
+for each specified corpus and computes the validation and test accuracy and loss.
+It tokenizes input texts, performs inference on the validation and test sets,
+and prints out the resulting metrics.
 
-    # Run all tasks for a specific corpus
-    python eval_roberta.py --corpus rj
+Usage Examples:
+    # Evaluate models for a specific corpus (e.g., rj)
+    python evaluate_roberta.py --corpus rj
 
-    # Run everything (default)
-    python eval_roberta.py
+    # Evaluate models for all corpora
+    python evaluate_roberta.py
 """
-
 import argparse
 import logging
+import os
 
-import wandb
-from utils import load_corpus
+import numpy as np
+import torch
+from sklearn.metrics import accuracy_score, log_loss
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from roberta import RobertaBest
+from utils import load_corpus, CORPORA
 
 # setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# define valid scenarios
-CORPUS_TASK_MAP = {
-    'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
-    'ebg': ['no_protection', 'imitation', 'obfuscation'],
-    'lcmc': ['no_protection']
-}
+
+def load_model(model_dir):
+    """
+    Load the saved model and tokenizer from the specified directory.
+
+    Args:
+        model_dir (str): Path to the saved model directory.
+
+    Returns:
+        model: The loaded Hugging Face model.
+        tokenizer: The loaded Hugging Face tokenizer.
+    """
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    return model, tokenizer
 
 
-def evaluate_corpus_task(
-        model: RobertaBest,
-        corpus: str,
-        task: str,
-        logger: logging.Logger
-) -> None:
-    """Evaluate RoBERTa on a specific corpus and task."""
-    logger.info(f"Evaluating {corpus}-{task}")
+def create_val_split(train_text, train_labels):
+    """
+    Create a validation set by taking the first sample from each class.
 
-    # load data
-    train_text, train_labels, test_text, test_labels = load_corpus(corpus, task)
+    Args:
+        train_text (list): List of training texts.
+        train_labels (list or np.ndarray): Corresponding training labels.
 
-    # train and evaluate
-    results = model.train_and_evaluate(
-        train_text=train_text,
-        train_labels=train_labels,
-        test_text=test_text,
-        test_labels=test_labels,
-        corpus=corpus,
-        task=task
+    Returns:
+        new_train_text, new_train_labels, val_text, val_labels
+    """
+    label_to_idx = {}
+    for i, label in enumerate(train_labels):
+        if label not in label_to_idx:
+            label_to_idx[label] = i
+    val_indices = list(label_to_idx.values())
+    train_indices = [i for i in range(len(train_labels)) if i not in val_indices]
+
+    val_text = [train_text[i] for i in val_indices]
+    val_labels = np.array([train_labels[i] for i in val_indices])
+    new_train_text = [train_text[i] for i in train_indices]
+    new_train_labels = np.array([train_labels[i] for i in train_indices])
+    return new_train_text, new_train_labels, val_text, val_labels
+
+
+def tokenize_texts(tokenizer, texts, max_length=512):
+    """
+    Tokenize texts using the provided tokenizer.
+
+    Args:
+        tokenizer: Hugging Face tokenizer.
+        texts (list): List of text strings.
+        max_length (int): Maximum token length.
+
+    Returns:
+        Dictionary with tokenized inputs.
+    """
+    encoding = tokenizer(
+        texts,
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="pt"
     )
+    return encoding
 
-    logger.info(
-        f"Best model for {corpus}-{task}: "
-        f"seed={results['best_seed']}, "
-        f"fold={results['best_fold']}, "
-        f"val_acc={results['best_val_metrics']['accuracy']:.4f}"
-    )
+
+def evaluate_model(model, tokenizer, texts, true_labels, device):
+    """
+    Make predictions with the model and compute accuracy and cross-entropy loss.
+
+    Args:
+        model: The loaded model.
+        tokenizer: The loaded tokenizer.
+        texts (list): List of text samples.
+        true_labels (array-like): True labels.
+        device: Device on which to run inference (cpu or cuda).
+
+    Returns:
+        accuracy, loss: Tuple containing the accuracy and cross-entropy loss.
+    """
+    model.eval()
+    encoding = tokenize_texts(tokenizer, texts)
+    input_ids = encoding["input_ids"].to(device)
+    attention_mask = encoding["attention_mask"].to(device)
+
+    with torch.no_grad():
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        probabilities = torch.softmax(logits, dim=1).cpu().numpy()
+
+    pred_labels = np.argmax(probabilities, axis=1)
+    accuracy = accuracy_score(true_labels, pred_labels)
+    loss = log_loss(true_labels, probabilities)
+    return accuracy, loss
 
 
 def main(args):
-    # initialize wandb
-    # wandb.init(project="LLM as Defense")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # initialize model with training params
-    model = RobertaBest(
-        output_dir=args.output_dir,
-        save_path=args.save_path,
-        training_args={
-            'learning_rate': args.learning_rate,
-            'batch_size': args.batch_size,
-            'num_epochs': args.num_epochs,
-            'warmup_steps': args.warmup_steps
-        }
-    )
+    corpora = [args.corpus] if args.corpus else CORPORA
 
-    # determine what to evaluate
-    if args.corpus:
-        if args.corpus not in CORPUS_TASK_MAP:
-            raise ValueError(f"Invalid corpus: {args.corpus}")
-        corpora = [args.corpus]
-    else:
-        corpora = list(CORPUS_TASK_MAP.keys())
-
-    # evaluate specified scenarios
     for corpus in corpora:
-        logger.info(f"Processing corpus: {corpus}")
+        logger.info(f"Evaluating model for corpus: {corpus}")
 
-        if args.task:
-            if args.task not in CORPUS_TASK_MAP[corpus]:
-                logger.warning(f"Task {args.task} not available for corpus {corpus}, skipping")
-                continue
-            tasks = [args.task]
-        else:
-            tasks = CORPUS_TASK_MAP[corpus]
+        # expected directory structure: threat_models/{corpus}/no_protection/roberta/model
+        model_dir = os.path.join("threat_models", corpus, "no_protection", "roberta", "model")
+        if not os.path.exists(model_dir):
+            logger.error(f"Model directory {model_dir} does not exist. Skipping {corpus}.")
+            continue
 
-        for task in tasks:
-            try:
-                evaluate_corpus_task(model, corpus, task, logger)
-            except Exception as e:
-                logger.error(f"Error processing {corpus}-{task}: {str(e)}")
-                continue
+        model, tokenizer = load_model(model_dir)
+        model.to(device)
+        logger.info(f"Loaded model from {model_dir}")
 
-    wandb.finish()
+        # load data (using the no_protection dataset)
+        train_text, train_labels, test_text, test_labels = load_corpus(corpus, "no_protection")
+
+        # create validation split (first sample from each class)
+        _, _, val_text, val_labels = create_val_split(train_text, train_labels)
+
+        # evaluate on validation set
+        val_accuracy, val_loss = evaluate_model(model, tokenizer, val_text, val_labels, device)
+        # evaluate on test set
+        test_accuracy, test_loss = evaluate_model(model, tokenizer, test_text, test_labels, device)
+
+        # Print out the results
+        print(f"Corpus: {corpus}")
+        print(f"Validation Accuracy: {val_accuracy:.4f}, Validation Loss: {val_loss:.4f}")
+        print(f"Test Accuracy: {test_accuracy:.4f}, Test Loss: {test_loss:.4f}")
+        logger.info(f"Corpus: {corpus}")
+        logger.info(f"Validation Accuracy: {val_accuracy:.4f}, Validation Loss: {val_loss:.4f}")
+        logger.info(f"Test Accuracy: {test_accuracy:.4f}, Test Loss: {test_loss:.4f}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Evaluate RoBERTa across different corpora and scenarios"
-    )
-    # corpus and task selection
-    parser.add_argument(
-        "--corpus",
-        type=str,
-        choices=['rj', 'ebg', 'lcmc'],
-        help="Specific corpus to evaluate (default: all)"
-    )
-    parser.add_argument(
-        "--task",
-        type=str,
-        help="Specific task to evaluate (default: all tasks for chosen corpus)"
-    )
-
-    # path arguments
-    parser.add_argument(
-        "--save_path",
-        type=str,
-        default="baselines",
-        help="Subdirectory under results for saving"
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="results",
-        help="Base directory for results"
-    )
-
-    # training arguments
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--warmup_steps", type=int, default=20)
-
+    parser = argparse.ArgumentParser(description="Evaluate RoBERTa-based authorship attribution models")
+    parser.add_argument("--corpus", type=str, choices=CORPORA, help="Specify a corpus to evaluate (default: all corpora)")
     args = parser.parse_args()
-
-    # validate task if provided
-    if args.task and args.corpus and args.task not in CORPUS_TASK_MAP[args.corpus]:
-        parser.error(f"Task '{args.task}' is not valid for corpus '{args.corpus}'. "
-                    f"Valid tasks are: {CORPUS_TASK_MAP[args.corpus]}")
-
     main(args)
