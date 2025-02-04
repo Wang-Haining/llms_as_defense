@@ -38,6 +38,10 @@ __license__ = 'OBSD'
 PROJECT_NAME = 'LLM as Defense'
 
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 class CommonDataset(torch.utils.data.Dataset):
     def __init__(self, encodings, labels):
         self.encodings = encodings
