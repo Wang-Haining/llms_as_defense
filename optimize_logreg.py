@@ -1,3 +1,13 @@
+"""
+This module optimizes logistic regression parameters for different corpora using
+koppel512 features. It performs preprocessing via normalization and scaling,
+conducts grid search to determine the best hyperparameters, and logs the results.
+
+Usage:
+    python optimize_logreg.py
+"""
+
+
 import json
 import logging
 from pathlib import Path
