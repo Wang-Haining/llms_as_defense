@@ -26,8 +26,9 @@ from pathlib import Path
 
 import numpy as np
 import wandb
-from utils import load_corpus, CORPORA, FIXED_SEEDS
+
 from roberta import RobertaBest
+from utils import CORPORA, FIXED_SEEDS, load_corpus
 
 # setup logging
 logging.basicConfig(
@@ -89,100 +90,106 @@ def train_corpus(
 
     # train with multiple seeds
     seeds = FIXED_SEEDS[:num_seeds]
-    for seed in seeds:
-        # to avoid overwriting checkpoints, append seed to the corpus name for the run.
-        corpus_for_run = f"{corpus}_seed_{seed}"
 
-        # initialize wandb for this run
-        run = wandb.init(
+    # initialize wandb run for the overall training process
+    with wandb.init(
             project=PROJECT_NAME,
             group=f"{corpus}_roberta",
-            name=f"roberta_{corpus}_seed_{seed}",
+            name=f"roberta_{corpus}_overall",
             config={
                 "model_type": "roberta",
                 "model_name": "roberta-base",
                 "corpus": corpus,
-                "seed": seed,
+                "seeds": seeds,
                 "n_authors": len(np.unique(train_labels)),
                 **training_args
-            },
-            reinit=True  # allow multiple runs in same process
-        )
+            }
+    ) as overall_run:
+        for seed in seeds:
+            # to avoid overwriting checkpoints, append seed to the corpus name for the run
+            corpus_for_run = f"{corpus}_seed_{seed}"
+            logger.info(f"Training with seed: {seed}")
 
-        logger.info(f"Training with seed: {seed}")
+            try:
+                results = model.train_and_evaluate(
+                    train_text=train_text,
+                    train_labels=train_labels,
+                    val_text=val_text,
+                    val_labels=val_labels,
+                    test_text=test_text,
+                    test_labels=test_labels,
+                    corpus=corpus_for_run,
+                    seed=seed
+                )
 
-        try:
-            results = model.train_and_evaluate(
-                train_text=train_text,
-                train_labels=train_labels,
-                val_text=val_text,
-                val_labels=val_labels,
-                test_text=test_text,
-                test_labels=test_labels,
-                corpus=corpus_for_run,
-                seed=seed
+                # log metrics for this seed
+                overall_run.log({
+                    f"seed_{seed}/val_accuracy": results['val_metrics']['accuracy'],
+                    f"seed_{seed}/test_accuracy": results['test_metrics']['accuracy'],
+                    f"seed_{seed}/val_loss": results['val_metrics']['loss'],
+                    f"seed_{seed}/test_loss": results['test_metrics']['loss'],
+                })
+
+                logger.info(
+                    f"Completed training for {corpus} seed {seed}: "
+                    f"val_loss={results['val_metrics']['loss']:.4f}, "
+                    f"val_acc={results['val_metrics']['accuracy']:.4f}, "
+                    f"test_loss={results['test_metrics']['loss']:.4f}, "
+                    f"test_acc={results['test_metrics']['accuracy']:.4f}"
+                )
+
+                # save the results for later comparison
+                results_list.append((seed, results))
+
+            except Exception as e:
+                logger.error(f"Error training seed {seed}: {str(e)}")
+
+        # pick the overall best checkpoint across seeds (lowest validation loss)
+        if results_list:
+            best_seed, best_result = min(results_list,
+                                         key=lambda x: x[1]['val_metrics']['loss'])
+            logger.info(
+                f"Best checkpoint for corpus {corpus} is from seed {best_seed} with "
+                f"val_loss {best_result['val_metrics']['loss']:.4f}, "
+                f"val_acc {best_result['val_metrics']['accuracy']:.4f}, "
+                f"test_loss {best_result['test_metrics']['loss']:.4f}, "
+                f"test_acc {best_result['test_metrics']['accuracy']:.4f}"
             )
 
-            # log final metrics to wandb for this seed
-            wandb.log({
-                "final_val_accuracy": results['val_metrics']['accuracy'],
-                "final_test_accuracy": results['test_metrics']['accuracy'],
-                "final_val_loss": results['val_metrics']['loss'],
-                "final_test_loss": results['test_metrics']['loss'],
+            # log best results to wandb
+            overall_run.summary.update({
+                "best_seed": best_seed,
+                "best_val_loss": best_result['val_metrics']['loss'],
+                "best_val_accuracy": best_result['val_metrics']['accuracy'],
+                "best_test_loss": best_result['test_metrics']['loss'],
+                "best_test_accuracy": best_result['test_metrics']['accuracy']
             })
 
+            # copy the best checkpoint to canonical folder
+            canonical_model_dir = Path(
+                "threat_models") / corpus / "no_protection" / "roberta" / "model"
+            source_model_dir = Path(best_result['model_path'])
             logger.info(
-                f"Completed training for {corpus} seed {seed}: "
-                f"val_loss={results['val_metrics']['loss']:.4f}, "
-                f"val_acc={results['val_metrics']['accuracy']:.4f}, "
-                f"test_loss={results['test_metrics']['loss']:.4f}, "
-                f"test_acc={results['test_metrics']['accuracy']:.4f}"
-            )
+                f"Copying best model from {source_model_dir} to canonical location {canonical_model_dir}")
 
-            # Save the results for later comparison
-            results_list.append((seed, results))
-        except Exception as e:
-            logger.error(f"Error training seed {seed}: {str(e)}")
-        finally:
-            run.finish()
+            # remove canonical folder if it exists to avoid copytree errors
+            if canonical_model_dir.exists():
+                shutil.rmtree(canonical_model_dir)
+            shutil.copytree(source_model_dir, canonical_model_dir)
 
-    # pick the overall best checkpoint across seeds (lowest validation loss)
-    if results_list:
-        best_seed, best_result = min(results_list, key=lambda x: x[1]['val_metrics']['loss'])
-        logger.info(
-            f"Best checkpoint for corpus {corpus} is from seed {best_seed} with "
-            f"val_loss {best_result['val_metrics']['loss']:.4f}, "
-            f"val_acc {best_result['val_metrics']['accuracy']:.4f}, "
-            f"test_loss {best_result['test_metrics']['loss']:.4f}, "
-            f"test_acc {best_result['test_metrics']['accuracy']:.4f}. "
-            f"Model saved at: {best_result['model_path']}"
-        )
-        wandb.run.summary.update({
-            "best_seed": best_seed,
-            "best_val_loss": best_result['val_metrics']['loss'],
-            "best_val_accuracy": best_result['val_metrics']['accuracy'],
-            "best_test_loss": best_result['test_metrics']['loss'],
-            "best_test_accuracy": best_result['test_metrics']['accuracy']
-        })
+            logger.info(
+                f"Best model is now available at the canonical location: {canonical_model_dir}")
+            overall_run.summary.update(
+                {"canonical_model_path": str(canonical_model_dir)})
 
-        # copy best checkpoint to canonical folder
-        canonical_model_dir = Path("threat_models") / corpus / "no_protection" / "roberta" / "model"
-        source_model_dir = Path(best_result['model_path'])
-        logger.info(f"Copying best model from {source_model_dir} to canonical location {canonical_model_dir}")
-        # remove canonical folder if it exists to avoid copytree errors.
-        if canonical_model_dir.exists():
-            shutil.rmtree(canonical_model_dir)
-        shutil.copytree(source_model_dir, canonical_model_dir)
-        logger.info(f"Best model is now available at the canonical location: {canonical_model_dir}")
-        wandb.run.summary.update({"canonical_model_path": str(canonical_model_dir)})
+            # print out the best checkpoint info wrapped with #####
+            print("#" * 80)
+            print(
+                f"Best checkpoint is from seed {best_seed} and saved at {canonical_model_dir}")
+            print("#" * 80)
 
-        # print out the best checkpoint info wrapped with #####
-        print("#"*80)
-        print(f"Best checkpoint is from seed {best_seed} and saved at {canonical_model_dir}")
-        print("#"*80)
-
-    else:
-        logger.warning(f"No successful training runs for corpus {corpus}.")
+        else:
+            logger.warning(f"No successful training runs for corpus {corpus}.")
 
 
 def main(args):
