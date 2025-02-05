@@ -90,7 +90,7 @@ def train_corpus(
     # train with multiple seeds
     seeds = FIXED_SEEDS[:num_seeds]
     for seed in seeds:
-        # To avoid overwriting checkpoints, append seed to the corpus name for the run.
+        # to avoid overwriting checkpoints, append seed to the corpus name for the run.
         corpus_for_run = f"{corpus}_seed_{seed}"
 
         # initialize wandb for this run
@@ -123,7 +123,7 @@ def train_corpus(
                 seed=seed
             )
 
-            # Log final metrics to wandb for this seed
+            # log final metrics to wandb for this seed
             wandb.log({
                 "final_val_accuracy": results['val_metrics']['accuracy'],
                 "final_test_accuracy": results['test_metrics']['accuracy'],
@@ -176,6 +176,11 @@ def train_corpus(
         logger.info(f"Best model is now available at the canonical location: {canonical_model_dir}")
         wandb.run.summary.update({"canonical_model_path": str(canonical_model_dir)})
 
+        # print out the best checkpoint info wrapped with #####
+        print("#"*80)
+        print(f"Best checkpoint is from seed {best_seed} and saved at {canonical_model_dir}")
+        print("#"*80)
+
     else:
         logger.warning(f"No successful training runs for corpus {corpus}.")
 
@@ -196,17 +201,13 @@ def main(args):
 
     # train on each corpus
     for corpus in corpora:
-        try:
-            train_corpus(
-                model=model,
-                corpus=corpus,
-                num_seeds=args.num_seeds,
-                training_args=training_args,
-                logger=logger
-            )
-        except Exception as e:
-            logger.error(f"Error processing {corpus}: {str(e)}")
-            continue
+        train_corpus(
+            model=model,
+            corpus=corpus,
+            num_seeds=args.num_seeds,
+            training_args=training_args,
+            logger=logger
+        )
 
 
 if __name__ == "__main__":

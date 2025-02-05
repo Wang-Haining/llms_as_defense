@@ -116,6 +116,7 @@ class RobertaBest:
             test_text: test texts from no_protection dataset
             test_labels: test labels
             corpus: corpus name (e.g., 'rj', 'ebg')
+            seed: random seed for reproducibility
 
         Returns:
             Dict with model path and metrics
@@ -128,26 +129,6 @@ class RobertaBest:
         torch.manual_seed(seed)
         np.random.seed(seed)
         torch.cuda.manual_seed_all(seed)
-
-        # start wandb run
-        wandb.init(
-            project=PROJECT_NAME,
-            group=f"{corpus}_no_protection_roberta",  # group runs by corpus and task
-            name=f"roberta_{corpus}_no_protection_seed_{seed}",
-            tags=[corpus, "roberta", self.model_name, "no_protection"],
-            config={
-                "seed": seed,
-                "model_type": "roberta",
-                "model_name": self.model_name,
-                "corpus": corpus,
-                "task": "no_protection",
-                "n_authors": len(np.unique(train_labels)),
-                "learning_rate": self.training_args.get("learning_rate", 3e-5),
-                "batch_size": self.training_args.get("batch_size", 32),
-                "num_epochs": self.training_args.get("num_epochs", 100),
-                "warmup_steps": self.training_args.get("warmup_steps", 20),
-            },
-        )
 
         # tokenize all datasets
         train_encodings = self.tokenizer(
@@ -263,8 +244,6 @@ class RobertaBest:
         if checkpoint_dir.exists():
             import shutil
             shutil.rmtree(checkpoint_dir)
-
-        wandb.finish()
 
         return {
             "model_path": str(model_dir),
