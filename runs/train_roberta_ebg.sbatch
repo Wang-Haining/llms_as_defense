@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=train_roberta
+#SBATCH --job-name=train_roberta_ebg
 ##SBATCH --account=group-jasonclark
 #SBATCH --partition=gpuunsafe
 #SBATCH --gres=gpu:a40:1
@@ -16,4 +16,4 @@ module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 . .venv/bin/activate
 
-CUDA_VISIBLE_DEVICES=0 python -m train_roberta
+CUDA_VISIBLE_DEVICES=0 python -m train_roberta --corpus ebg
