@@ -6,7 +6,7 @@ Key metrics:
 - SacreBLEU: Language-agnostic BLEU implementation
 - METEOR: Metric incorporating synonyms and paraphrases
 - BERTScore: Contextual semantic similarity using BERT
-
+- SBERT: Paragraph-level semantic similarity using Sentence-BERT
 """
 
 import logging
@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 import nltk
 import numpy as np
 import torch
-from bert_score import BERTScorer
+from bert_score import score as bert_score
 from nltk.tokenize import word_tokenize
 from nltk.translate.meteor_score import meteor_score
 from sacrebleu.metrics import BLEU
@@ -36,33 +36,6 @@ try:
     nltk.download('wordnet', quiet=True)
 except Exception as e:
     logger.warning(f"Failed to download NLTK data: {e}")
-
-# init sbert
-try:
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    sbert_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2').to(device)
-    logger.info(f"Initialized SBERT model successfully on {device}")
-except Exception as e:
-    logger.error(f"Failed to initialize SBERT model: {e}")
-    sbert_model = None
-
-# init bertscore
-try:
-    bert_scorer = BERTScorer(
-        model_type="microsoft/deberta-xlarge-mnli",
-        num_layers=None,
-        batch_size=32,
-        nthreads=4,
-        all_layers=False,
-        idf=False,
-        device=device,
-        rescale_with_baseline=True,
-        lang="en"
-    )
-    logger.info(f"Initialized BERTScore model successfully on {device}")
-except Exception as e:
-    logger.error(f"Failed to initialize BERTScore model: {e}")
-    bert_scorer = None
 
 
 def get_ngrams(text: str, n: int) -> Set[Tuple[str, ...]]:
@@ -218,22 +191,19 @@ def compute_bertscore(
     Returns:
         Dictionary with precision, recall and F1 statistics
     """
-    if bert_scorer is None:
-        logger.error("BERTScore model not initialized, skipping computation")
-        return {}
-
     try:
-        with torch.no_grad():
-            precision_scores, recall_scores, f1_scores = bert_scorer.score(
-                candidate_texts,
-                reference_texts,
-                batch_size=batch_size
-            )
+        precision_scores, recall_scores, f1_scores = bert_score(
+            candidate_texts,
+            reference_texts,
+            model_type="microsoft/deberta-xlarge-mnli",
+            batch_size=batch_size,
+            device='cuda:0' if torch.cuda.is_available() else 'cpu'
+        )
 
-            # convert tensors to numpy
-            precision_scores = precision_scores.cpu().numpy()
-            recall_scores = recall_scores.cpu().numpy()
-            f1_scores = f1_scores.cpu().numpy()
+        # convert tensors to numpy
+        precision_scores = precision_scores.cpu().numpy()
+        recall_scores = recall_scores.cpu().numpy()
+        f1_scores = f1_scores.cpu().numpy()
 
         return {
             'bertscore_precision_avg': float(np.mean(precision_scores)),
@@ -276,20 +246,20 @@ def compute_sbert(
     Returns:
         Dictionary with similarity statistics including mean/std and individual scores
     """
-    if sbert_model is None:
-        logger.error("SBERT model not initialized, skipping similarity computation")
-        return {}
-
     try:
-        # encode texts in batches
+        # initialize SBERT for this computation
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2').to(device)
+
+        # compute embeddings
         with torch.no_grad():
-            ref_embeddings = sbert_model.encode(
+            ref_embeddings = model.encode(
                 reference_texts,
                 batch_size=batch_size,
                 convert_to_tensor=True,
                 show_progress_bar=False
             )
-            cand_embeddings = sbert_model.encode(
+            cand_embeddings = model.encode(
                 candidate_texts,
                 batch_size=batch_size,
                 convert_to_tensor=True,
