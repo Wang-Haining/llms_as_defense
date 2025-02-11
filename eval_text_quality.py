@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 import nltk
 import numpy as np
 import torch
-from bert_score import score as bert_score
+from bert_score import BERTScorer
 from nltk.tokenize import word_tokenize
 from nltk.translate.meteor_score import meteor_score
 from sacrebleu.metrics import BLEU
@@ -36,6 +36,33 @@ try:
     nltk.download('wordnet', quiet=True)
 except Exception as e:
     logger.warning(f"Failed to download NLTK data: {e}")
+
+# init sbert
+try:
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    sbert_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2').to(device)
+    logger.info(f"Initialized SBERT model successfully on {device}")
+except Exception as e:
+    logger.error(f"Failed to initialize SBERT model: {e}")
+    sbert_model = None
+
+# init bertscore
+try:
+    bert_scorer = BERTScorer(
+        model_type="microsoft/deberta-xlarge-mnli",
+        num_layers=None,
+        batch_size=32,
+        nthreads=4,
+        all_layers=False,
+        idf=False,
+        device=device,
+        rescale_with_baseline=True,
+        lang="en"
+    )
+    logger.info(f"Initialized BERTScore model successfully on {device}")
+except Exception as e:
+    logger.error(f"Failed to initialize BERTScore model: {e}")
+    bert_scorer = None
 
 
 def get_ngrams(text: str, n: int) -> Set[Tuple[str, ...]]:
@@ -178,65 +205,56 @@ def compute_meteor(
 def compute_bertscore(
         candidate_texts: List[str],
         reference_texts: List[str],
-        model_type: str = "bert-large-uncased",
-        num_layers: int = 18,
-        batch_size: int = 32,
-        device: Optional[str] = None
+        batch_size: int = 32
 ) -> Dict[str, Union[float, List[float]]]:
     """
     Compute BERTScore measuring semantic similarity using contextual embeddings.
-    Uses BERT-large-uncased layer 18 by default as in the original paper.
-    Automatically selects first available GPU or falls back to CPU.
 
     Args:
         candidate_texts: Generated/paraphrased texts
         reference_texts: Original reference texts
-        model_type: BERT model variant (default: bert-large-uncased)
-        num_layers: Which layer to use for embeddings (default: 18)
         batch_size: Inference batch size
-        device: Computation device (default: auto-detect first GPU or fall back to CPU)
 
     Returns:
         Dictionary with precision, recall and F1 statistics
     """
-    # auto-detect device if not specified
-    if device is None:
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-        if device == 'cpu':
-            logger.warning("No GPU detected, falling back to CPU for BERTScore computation")
-        else:
-            logger.info(f"Using {device} for BERTScore computation")
+    if bert_scorer is None:
+        logger.error("BERTScore model not initialized, skipping computation")
+        return {}
 
-    precision_scores, recall_scores, f1_scores = bert_score(
-        candidate_texts,
-        reference_texts,
-        model_type=model_type,
-        num_layers=num_layers,
-        batch_size=batch_size,
-        device=device
-    )
+    try:
+        with torch.no_grad():
+            precision_scores, recall_scores, f1_scores = bert_scorer.score(
+                candidate_texts,
+                reference_texts,
+                batch_size=batch_size
+            )
 
-    # convert tensors to numpy
-    precision_scores = precision_scores.cpu().numpy()
-    recall_scores = recall_scores.cpu().numpy()
-    f1_scores = f1_scores.cpu().numpy()
+            # convert tensors to numpy
+            precision_scores = precision_scores.cpu().numpy()
+            recall_scores = recall_scores.cpu().numpy()
+            f1_scores = f1_scores.cpu().numpy()
 
-    return {
-        'bertscore_precision_avg': float(np.mean(precision_scores)),
-        'bertscore_precision_std': float(np.std(precision_scores)),
-        'bertscore_recall_avg': float(np.mean(recall_scores)),
-        'bertscore_recall_std': float(np.std(recall_scores)),
-        'bertscore_f1_avg': float(np.mean(f1_scores)),
-        'bertscore_f1_std': float(np.std(f1_scores)),
-        'bertscore_individual': [
-            {
-                'precision': float(prec),
-                'recall': float(rec),
-                'f1': float(f1)
-            }
-            for prec, rec, f1 in zip(precision_scores, recall_scores, f1_scores)
-        ]
-    }
+        return {
+            'bertscore_precision_avg': float(np.mean(precision_scores)),
+            'bertscore_precision_std': float(np.std(precision_scores)),
+            'bertscore_recall_avg': float(np.mean(recall_scores)),
+            'bertscore_recall_std': float(np.std(recall_scores)),
+            'bertscore_f1_avg': float(np.mean(f1_scores)),
+            'bertscore_f1_std': float(np.std(f1_scores)),
+            'bertscore_individual': [
+                {
+                    'precision': float(prec),
+                    'recall': float(rec),
+                    'f1': float(f1)
+                }
+                for prec, rec, f1 in zip(precision_scores, recall_scores, f1_scores)
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Error computing BERTScores: {e}")
+        return {}
 
 
 def compute_sbert(
@@ -264,8 +282,23 @@ def compute_sbert(
 
     try:
         # encode texts in batches
-        ref_embeddings = sbert_model.encode(reference_texts, batch_size=batch_size)
-        cand_embeddings = sbert_model.encode(candidate_texts, batch_size=batch_size)
+        with torch.no_grad():
+            ref_embeddings = sbert_model.encode(
+                reference_texts,
+                batch_size=batch_size,
+                convert_to_tensor=True,
+                show_progress_bar=False
+            )
+            cand_embeddings = sbert_model.encode(
+                candidate_texts,
+                batch_size=batch_size,
+                convert_to_tensor=True,
+                show_progress_bar=False
+            )
+
+            # Move to CPU for sklearn cosine similarity
+            ref_embeddings = ref_embeddings.cpu().numpy()
+            cand_embeddings = cand_embeddings.cpu().numpy()
 
         # compute cosine similarities
         similarities = [
