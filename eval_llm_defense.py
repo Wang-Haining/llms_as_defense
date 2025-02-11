@@ -635,7 +635,7 @@ class DefenseEvaluator:
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
-                    metrics=['pinc', 'bleu', 'meteor', 'bertscore']
+                    metrics=['pinc', 'bleu', 'meteor', 'bertscore', 'sbert']
                 )
 
                 seed_results[model_type] = {
@@ -782,6 +782,7 @@ class DefenseEvaluator:
                 logger.info(f"  BLEU: {qual['bleu']['bleu']:.4f}")
                 logger.info(f"  METEOR: {qual['meteor']['meteor_avg']:.4f}")
                 logger.info(f"  BERTScore: {qual['bertscore']['bertscore_f1_avg']:.4f}")
+                logger.info(f"  SBERT: {qual['sbert']['sbert_similarity_avg']:.4f}")
 
     def main_loop(self, args):
         """
