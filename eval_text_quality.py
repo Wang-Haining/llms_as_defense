@@ -20,6 +20,8 @@ from bert_score import score as bert_score
 from nltk.tokenize import word_tokenize
 from nltk.translate.meteor_score import meteor_score
 from sacrebleu.metrics import BLEU
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # configure logging
 logging.basicConfig(
@@ -237,6 +239,54 @@ def compute_bertscore(
     }
 
 
+def compute_sbert(
+        candidate_texts: List[str],
+        reference_texts: List[str],
+        batch_size: int = 32
+) -> Dict[str, Union[float, List[float]]]:
+    """
+    Compute SBERT similarity scores for paragraph-level semantic similarity.
+
+    Uses the all-mpnet-base-v2 model which is fine-tuned on 1B sentence pairs
+    specifically for semantic similarity tasks.
+
+    Args:
+        candidate_texts: Generated/paraphrased texts
+        reference_texts: Original reference texts
+        batch_size: Batch size for encoding
+
+    Returns:
+        Dictionary with similarity statistics including mean/std and individual scores
+    """
+    if sbert_model is None:
+        logger.error("SBERT model not initialized, skipping similarity computation")
+        return {}
+
+    try:
+        # encode texts in batches
+        ref_embeddings = sbert_model.encode(reference_texts, batch_size=batch_size)
+        cand_embeddings = sbert_model.encode(candidate_texts, batch_size=batch_size)
+
+        # compute cosine similarities
+        similarities = [
+            float(cosine_similarity(
+                ref_emb.reshape(1, -1),
+                cand_emb.reshape(1, -1)
+            )[0, 0])
+            for ref_emb, cand_emb in zip(ref_embeddings, cand_embeddings)
+        ]
+
+        return {
+            'sbert_similarity_avg': float(np.mean(similarities)),
+            'sbert_similarity_std': float(np.std(similarities)),
+            'sbert_similarity_scores': similarities
+        }
+
+    except Exception as e:
+        logger.error(f"Error computing SBERT similarities: {e}")
+        return {}
+
+
 def evaluate_quality(
         candidate_texts: List[str],
         reference_texts: List[str],
@@ -255,12 +305,13 @@ def evaluate_quality(
             - 'bleu': BLEU score
             - 'meteor': METEOR score
             - 'bertscore': BERTScore
+            - 'sbert': SBERT similarity
 
     Returns:
         Dictionary with results for each requested metric
     """
     if metrics is None:
-        metrics = ['pinc', 'bleu', 'meteor', 'bertscore']
+        metrics = ['pinc', 'bleu', 'meteor', 'bertscore', 'sbert']
 
     if not source_texts:
         source_texts = reference_texts
@@ -279,29 +330,7 @@ def evaluate_quality(
     if 'bertscore' in metrics:
         results['bertscore'] = compute_bertscore(candidate_texts, reference_texts)
 
+    if 'sbert' in metrics:
+        results['sbert'] = compute_sbert(candidate_texts, reference_texts)
+
     return results
-
-
-# if __name__ == "__main__":
-#     # example usage
-#     sources = [
-#         "The quick brown fox jumps over the lazy dog.",
-#         "The cat sat on the mat."
-#     ]
-#
-#     candidates = [
-#         "A swift brown fox leaps across a lazy dog.",
-#         "A feline rests on the carpet."
-#     ]
-#
-#     # evaluate with all metrics
-#     results = evaluate_quality(candidates, sources)
-#
-#     # print results
-#     for metric, scores in results.items():
-#         print(f"\n{metric.upper()} Scores:")
-#         for k, v in scores.items():
-#             if isinstance(v, (float, int)):
-#                 print(f"{k}: {v:.4f}")
-#             elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], (float, int)):
-#                 print(f"{k}: {np.mean(v):.4f} ± {np.std(v):.4f}")
