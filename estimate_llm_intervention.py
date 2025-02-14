@@ -25,7 +25,7 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-from IPython.display import HTML
+# from IPython.display import HTML
 from tqdm import tqdm
 
 # define the expected direction for each metric
@@ -260,20 +260,20 @@ def print_defense_stats(
             stats.print_summary()
 
 
-def display_copyable(df: pd.DataFrame) -> HTML:
-    """display dataframe in a copyable format with a copy button"""
-    csv_string = df.to_csv(index=False, sep='\t')
-    return HTML(f"""
-    <textarea id="copyable_text" style="width: 100%; height: 200px;">{csv_string}</textarea>
-    <button onclick="copyText()">Copy to Clipboard</button>
-    <script>
-    function copyText() {{
-        var copyText = document.getElementById("copyable_text");
-        copyText.select();
-        document.execCommand("copy");
-    }}
-    </script>
-    """)
+# def display_copyable(df: pd.DataFrame) -> HTML:
+#     """display dataframe in a copyable format with a copy button"""
+#     csv_string = df.to_csv(index=False, sep='\t')
+#     return HTML(f"""
+#     <textarea id="copyable_text" style="width: 100%; height: 200px;">{csv_string}</textarea>
+#     <button onclick="copyText()">Copy to Clipboard</button>
+#     <script>
+#     function copyText() {{
+#         var copyText = document.getElementById("copyable_text");
+#         copyText.select();
+#         document.execCommand("copy");
+#     }}
+#     </script>
+#     """)
 
 
 def get_defense_tables(
