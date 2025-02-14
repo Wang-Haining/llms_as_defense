@@ -379,15 +379,15 @@ def get_defense_tables(
                     # determine display name for model
                     model_dir_name = model_dir.name.lower()
                     if 'llama' in model_dir_name:
-                        model_name = 'Llama 3.1'
+                        model_name = 'Llama-3.1'
                     elif 'gemma' in model_dir_name:
-                        model_name = 'Gemma 2'
+                        model_name = 'Gemma-2'
                     elif 'ministral' in model_dir_name:
                         model_name = 'Ministral'
                     elif 'sonnet' in model_dir_name:
-                        model_name = 'Sonnet 3.5'
+                        model_name = 'Claude-3.5'
                     elif 'gpt' in model_dir_name:
-                        model_name = 'GPT4o'
+                        model_name = 'GPT-4o'
                     else:
                         model_name = model_dir.name
                     eval_file = model_dir / "evaluation.json"
@@ -498,7 +498,6 @@ def get_defense_tables_with_stats(
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
         brevity: bool = False,
-        show_std_with_significance: bool = False
 ) -> Union[pd.DataFrame, Tuple[
     pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[
         str, DefenseStats]]]:
