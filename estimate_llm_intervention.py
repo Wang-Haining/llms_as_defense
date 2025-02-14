@@ -1,5 +1,5 @@
 """
-defense evaluation script that performs bayesian analysis comparing pre/post defense
+Defense evaluation script that performs bayesian analysis comparing pre/post defense
 performance across different metrics, corpora, and threat models
 
 expected directory structure:
