@@ -446,20 +446,18 @@ def get_defense_tables_with_stats(
         corpora: Optional[List[str]] = None,
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
-) -> Union[pd.DataFrame, Tuple[
-    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[
-        str, DefenseStats]]]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, DefenseStats]]:
     """
-    Generate defense analysis tables with bayesian credible intervals and additional
-    dataframes for absolute and relative changes (with 95% hdi) computed from bayesian estimates
-    progress bars are added to track processing
+    Generate defense analysis tables with bayesian credible intervals (95% HDI) and additional
+    dataframes for absolute and relative changes computed from bayesian estimates.
+    Progress bars are added to track processing.
 
-    returns a tuple of:
+    Returns a tuple of:
       - post_df: formatted post-intervention values (using bayesian estimates)
-      - abs_imp_df: original absolute improvements computed from raw data
-      - rel_imp_df: original relative improvements computed from raw data
-      - abs_change_df: absolute change (bayesian estimate) = post_mean - pre_value, with its 95% hdi
-      - rel_change_df: relative change (bayesian estimate) in percent, with its 95% hdi
+      - abs_imp_df: original absolute improvements computed from raw data (point estimates only)
+      - rel_imp_df: original relative improvements computed from raw data (point estimates only)
+      - abs_change_df: absolute change (bayesian estimate) = post_mean - pre_value, with its 95% HDI
+      - rel_change_df: relative change (bayesian estimate) in percent, with its 95% HDI
       - stats_dict: dictionary mapping (corpus, threat_model, defense_model) to DefenseStats objects
     """
     if corpora is None:
@@ -488,8 +486,7 @@ def get_defense_tables_with_stats(
     rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
 
     # get the basic tables from previous function
-    post_df, abs_imp_df, rel_imp_df = get_defense_tables(base_dir, rq, corpora,
-                                                         threat_models, mode)
+    post_df, abs_imp_df, rel_imp_df = get_defense_tables(base_dir, rq, corpora, threat_models, mode)
 
     # prepare additional dataframes for bayesian change estimates
     abs_change_rows = []
@@ -545,14 +542,14 @@ def get_defense_tables_with_stats(
                         score = quality.get(qm, {}).get(key)
                         if score is not None:
                             quality_scores[qm].append(float(score))
-                # process effectiveness metrics
+                # process effectiveness metrics using bayesian estimates
                 for metric_key, display_name in metrics_map.items():
                     orig_vals = orig_metrics[metric_key]
                     post_vals = post_metrics[metric_key]
                     if orig_vals and post_vals:
                         stats.add_estimate(metric_key, 'effectiveness',
                                            np.mean(orig_vals), post_vals, display_name)
-                # process quality metrics
+                # process quality metrics using bayesian estimates
                 for qm, (key, display_name) in quality_metrics.items():
                     values = quality_scores[qm]
                     if values:
@@ -561,63 +558,54 @@ def get_defense_tables_with_stats(
                 stats_dict[(corpus, threat_model_name, model_name)] = stats
 
                 # for each metric in the DefenseStats, compute bayesian change estimates
-                base_row = {'Corpus': corpus.upper(), 'Threat Model': threat_model_name,
-                            'Defense Model': model_name}
-                abs_row = base_row.copy()
-                rel_row = base_row.copy()
-                # process effectiveness
+                base_row_abs = {'Corpus': corpus.upper(), 'Threat Model': threat_model_name,
+                                'Defense Model': model_name}
+                base_row_rel = base_row_abs.copy()
+                # for each effectiveness metric:
                 for metric_key, display_name in metrics_map.items():
                     if metric_key in stats.effectiveness_estimates:
                         br = stats.effectiveness_estimates[metric_key]
                         abs_change = br.post_mean - br.pre_value
-                        abs_ci_lower = br.ci_lower - br.pre_value
-                        abs_ci_upper = br.ci_upper - br.pre_value
-                        # for relative change, if effectiveness then use baseline as pre_value
-                        rel_change = (abs_change / br.pre_value * 100) if br.pre_value != 0 else np.nan
-                        rel_ci_lower = (abs_ci_lower / br.pre_value * 100) if br.pre_value != 0 else np.nan
-                        rel_ci_upper = (abs_ci_upper / br.pre_value * 100) if br.pre_value != 0 else np.nan
-                        abs_row[display_name] = format_estimate_with_hdi(
-                            abs_change, ci_lower=abs_ci_lower,
-                            ci_upper=abs_ci_upper)
-                        rel_row[display_name] = format_estimate_with_hdi(
-                            rel_change, ci_lower=rel_ci_lower,
-                            ci_upper=rel_ci_upper) + "%"
+                        # HDI for the change is computed as the difference between the bayesian HDI and the baseline:
+                        abs_hdi = f"[{(br.ci_lower - br.pre_value):.3f}, {(br.ci_upper - br.pre_value):.3f}]"
+                        base_row_abs[display_name] = f"{abs_change:.3f} {abs_hdi}"
+                        # For relative change, express in percent:
+                        if br.pre_value != 0:
+                            rel_change = (abs_change / br.pre_value * 100)
+                            rel_hdi = f"[{(br.ci_lower - br.pre_value)/br.pre_value*100:.3f}, {(br.ci_upper - br.pre_value)/br.pre_value*100:.3f}]"
+                        else:
+                            rel_change, rel_hdi = np.nan, "[-, -]"
+                        base_row_rel[display_name] = f"{rel_change:.3f}% {rel_hdi}"
                     else:
-                        abs_row[display_name] = '-'
-                        rel_row[display_name] = '-'
-                # process quality metrics
+                        base_row_abs[display_name] = '-'
+                        base_row_rel[display_name] = '-'
+                # for each quality metric:
                 for qm, (key, display_name) in quality_metrics.items():
                     if qm in stats.quality_estimates:
                         br = stats.quality_estimates[qm]
-                        # for quality, baseline is 1 for most metrics (0 for pinc)
                         base_val = 0.0 if qm == 'pinc' else 1.0
                         abs_change = br.post_mean - base_val
-                        abs_ci_lower = br.ci_lower - base_val
-                        abs_ci_upper = br.ci_upper - base_val
-                        if base_val == 1.0:
-                            rel_change = (abs_change / (1 - base_val) * 100) if (1 - base_val) != 0 else np.nan
-                            rel_ci_lower = (abs_ci_lower / (1 - base_val) * 100) if (1 - base_val) != 0 else np.nan
-                            rel_ci_upper = (abs_ci_upper / (1 - base_val) * 100) if (1 - base_val) != 0 else np.nan
+                        abs_hdi = f"[{(br.ci_lower - base_val):.3f}, {(br.ci_upper - base_val):.3f}]"
+                        base_row_abs[display_name] = f"{abs_change:.3f} {abs_hdi}"
+                        # For relative change:
+                        if base_val != 0:
+                            # For most quality metrics (with baseline 1), the relative change is computed with denominator (1 - base_val)
+                            denominator = (1 - base_val) if base_val == 1.0 else base_val
+                            rel_change = abs_change / denominator * 100
+                            rel_hdi = f"[{(br.ci_lower - base_val)/denominator*100:.3f}, {(br.ci_upper - base_val)/denominator*100:.3f}]"
                         else:
-                            rel_change = (abs_change / base_val * 100) if base_val != 0 else np.nan
-                            rel_ci_lower = (abs_ci_lower / base_val * 100) if base_val != 0 else np.nan
-                            rel_ci_upper = (abs_ci_upper / base_val * 100) if base_val != 0 else np.nan
-                        abs_row[display_name] = format_estimate_with_hdi(
-                            abs_change, ci_lower=abs_ci_lower,
-                            ci_upper=abs_ci_upper)
-                        rel_row[display_name] = format_estimate_with_hdi(
-                            rel_change, ci_lower=rel_ci_lower,
-                            ci_upper=rel_ci_upper) + "%"
+                            rel_change, rel_hdi = np.nan, "[-, -]"
+                        base_row_rel[display_name] = f"{rel_change:.3f}% {rel_hdi}"
                     else:
-                        abs_row[display_name] = '-'
-                        rel_row[display_name] = '-'
-                abs_change_rows.append(abs_row)
-                rel_change_rows.append(rel_row)
+                        base_row_abs[display_name] = '-'
+                        base_row_rel[display_name] = '-'
+                abs_change_rows.append(base_row_abs)
+                rel_change_rows.append(base_row_rel)
 
-    columns = ['Corpus', 'Threat Model', 'Defense Model'] + list(
-        metrics_map.values()) + [v[1] for v in quality_metrics.values()]
-    abs_change_df = pd.DataFrame(abs_change_rows, columns=columns)
-    rel_change_df = pd.DataFrame(rel_change_rows, columns=columns)
+    # define the columns: we keep the base identifying columns and one column per metric.
+    cols = ['Corpus', 'Threat Model', 'Defense Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
+    abs_change_df = pd.DataFrame(abs_change_rows, columns=cols)
+    rel_change_df = pd.DataFrame(rel_change_rows, columns=cols)
 
     return post_df, abs_imp_df, rel_imp_df, abs_change_df, rel_change_df, stats_dict
 
