@@ -584,7 +584,7 @@ def get_defense_tables_with_stats(
                         abs_change = br.post_mean - base_val
                         abs_hdi = f"[{(br.ci_lower - base_val):.3f}, {(br.ci_upper - base_val):.3f}]"
                         base_row_abs[display_name] = f"{abs_change:.3f} {abs_hdi}"
-                        # For quality metrics, compute relative change as (post_mean - baseline)*100
+                        # for quality metrics, compute relative change as (post_mean - baseline)*100
                         rel_change = (br.post_mean - base_val) * 100
                         rel_hdi = f"[{(br.ci_lower - base_val)*100:.3f}, {(br.ci_upper - base_val)*100:.3f}]"
                         base_row_rel[display_name] = f"{rel_change:.3f}% {rel_hdi}"
