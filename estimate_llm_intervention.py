@@ -11,7 +11,6 @@ defense_evaluation/
 │   │   │   │   ├── evaluation.json       # consolidated results
 │   │   │   │   └── seed_{seed}.json      # per-seed results
 │   │   │   └── {another_model}/
-│   │   └── rq{N}.{M+1}/
 │   └── rq{N+1}/
 └── {another_corpus}/
 """
@@ -566,10 +565,8 @@ def get_defense_tables_with_stats(
                     if metric_key in stats.effectiveness_estimates:
                         br = stats.effectiveness_estimates[metric_key]
                         abs_change = br.post_mean - br.pre_value
-                        # HDI for the change is computed as the difference between the bayesian HDI and the baseline:
                         abs_hdi = f"[{(br.ci_lower - br.pre_value):.3f}, {(br.ci_upper - br.pre_value):.3f}]"
                         base_row_abs[display_name] = f"{abs_change:.3f} {abs_hdi}"
-                        # For relative change, express in percent:
                         if br.pre_value != 0:
                             rel_change = (abs_change / br.pre_value * 100)
                             rel_hdi = f"[{(br.ci_lower - br.pre_value)/br.pre_value*100:.3f}, {(br.ci_upper - br.pre_value)/br.pre_value*100:.3f}]"
@@ -587,14 +584,9 @@ def get_defense_tables_with_stats(
                         abs_change = br.post_mean - base_val
                         abs_hdi = f"[{(br.ci_lower - base_val):.3f}, {(br.ci_upper - base_val):.3f}]"
                         base_row_abs[display_name] = f"{abs_change:.3f} {abs_hdi}"
-                        # For relative change:
-                        if base_val != 0:
-                            # For most quality metrics (with baseline 1), the relative change is computed with denominator (1 - base_val)
-                            denominator = (1 - base_val) if base_val == 1.0 else base_val
-                            rel_change = abs_change / denominator * 100
-                            rel_hdi = f"[{(br.ci_lower - base_val)/denominator*100:.3f}, {(br.ci_upper - base_val)/denominator*100:.3f}]"
-                        else:
-                            rel_change, rel_hdi = np.nan, "[-, -]"
+                        # For quality metrics, compute relative change as (post_mean - baseline)*100
+                        rel_change = (br.post_mean - base_val) * 100
+                        rel_hdi = f"[{(br.ci_lower - base_val)*100:.3f}, {(br.ci_upper - base_val)*100:.3f}]"
                         base_row_rel[display_name] = f"{rel_change:.3f}% {rel_hdi}"
                     else:
                         base_row_abs[display_name] = '-'
@@ -602,7 +594,6 @@ def get_defense_tables_with_stats(
                 abs_change_rows.append(base_row_abs)
                 rel_change_rows.append(base_row_rel)
 
-    # define the columns: we keep the base identifying columns and one column per metric.
     cols = ['Corpus', 'Threat Model', 'Defense Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
     abs_change_df = pd.DataFrame(abs_change_rows, columns=cols)
     rel_change_df = pd.DataFrame(rel_change_rows, columns=cols)
@@ -650,7 +641,6 @@ def main():
 
     args = parser.parse_args()
 
-    # call the heavy-lifting function that returns six dataframes
     (post_df, abs_imp_df, rel_imp_df, abs_change_df, rel_change_df, stats_dict) = get_defense_tables_with_stats(
         base_dir=args.base_dir,
         rq=args.rq,
@@ -659,7 +649,6 @@ def main():
         mode="post"
     )
 
-    # print the results to the console
     print("\npost-intervention results (bayesian estimates):")
     print(post_df)
     print("\nraw absolute improvements:")
@@ -671,11 +660,9 @@ def main():
     print("\nbayesian relative changes (in percent):")
     print(rel_change_df)
 
-    # create output folder if not exist
     output_folder = Path(args.output)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # use the research question identifier as base filename
     base_filename = args.rq
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_imp_df.to_csv(output_folder / f"{base_filename}_abs_imp.csv", index=False)
