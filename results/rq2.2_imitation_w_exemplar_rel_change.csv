@@ -1,0 +1,16 @@
+Corpus,Threat Model,Defense Model,Acc@1 ↓,Acc@5 ↓,True Class Conf ↓,Entropy ↑,BLEU ↑,METEOR ↑,PINC ↑,BERTScore ↑,SBERT ↑
+EBG,LogReg,Gemma 2,"-91.287 [-99.440, -74.703]%","-85.000 [-92.800, -75.051]%","-85.863 [-96.982, -70.331]%","-63.550 [-67.852, -61.985]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,LogReg,GPT4o,"-75.542 [-87.574, -60.626]%","-56.689 [-70.177, -43.018]%","-67.604 [-84.211, -48.648]%","-63.550 [-67.852, -61.985]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,LogReg,Sonnet 3.5,"-85.955 [-95.668, -75.282]%","-73.435 [-84.316, -62.020]%","-78.643 [-92.927, -61.718]%","-63.550 [-67.852, -61.985]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,LogReg,Ministral,-,-,-,-,-,-,-,-,-
+EBG,LogReg,Llama 3.1,"-92.692 [-99.580, -78.352]%","-85.815 [-93.342, -76.261]%","-86.513 [-97.015, -71.188]%","-63.550 [-67.852, -61.985]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,SVM,Gemma 2,"-89.914 [-97.076, -80.307]%","-80.971 [-90.140, -70.442]%","-73.706 [-92.993, -47.265]%","-77.561 [-80.209, -76.598]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,SVM,GPT4o,"-82.618 [-92.559, -71.939]%","-56.781 [-69.185, -44.063]%","-61.166 [-85.753, -32.931]%","-77.561 [-80.209, -76.598]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,SVM,Sonnet 3.5,"-89.073 [-96.987, -79.260]%","-73.381 [-84.177, -62.450]%","-69.253 [-90.312, -42.619]%","-77.561 [-80.209, -76.598]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,SVM,Ministral,-,-,-,-,-,-,-,-,-
+EBG,SVM,Llama 3.1,"-93.381 [-99.600, -77.054]%","-81.832 [-90.841, -72.051]%","-76.649 [-94.275, -53.367]%","-77.561 [-80.209, -76.598]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,RoBERTa,Gemma 2,"-94.599 [-99.788, -81.237]%","-83.782 [-92.114, -74.016]%","-94.066 [-99.110, -85.023]%","36.714 [20.579, 42.582]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,RoBERTa,GPT4o,"-53.781 [-66.278, -40.486]%","-26.955 [-39.374, -16.230]%","-56.300 [-69.390, -42.601]%","36.714 [20.579, 42.582]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,RoBERTa,Sonnet 3.5,"-79.091 [-88.609, -68.136]%","-55.896 [-67.829, -42.978]%","-80.012 [-89.729, -69.318]%","36.714 [20.579, 42.582]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
+EBG,RoBERTa,Ministral,-,-,-,-,-,-,-,-,-
+EBG,RoBERTa,Llama 3.1,"-94.881 [-99.896, -81.214]%","-90.582 [-96.988, -82.108]%","-94.489 [-99.327, -85.960]%","36.714 [20.579, 42.582]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%","nan [nan, nan]%"
