@@ -21,12 +21,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
+import arviz as az
 import numpy as np
 import pandas as pd
-from IPython.display import HTML
-
 import pymc as pm
-import arviz as az
+from IPython.display import HTML
+from tqdm import tqdm
 
 # Define the expected direction for each metric.
 METRIC_DIRECTIONS = {
@@ -311,7 +311,6 @@ def display_copyable(df: pd.DataFrame) -> HTML:
     </script>
     """)
 
-
 def get_defense_tables(
     base_dir: str = "defense_evaluation",
     rq: str = "rq1.1_basic_paraphrase",
@@ -350,20 +349,22 @@ def get_defense_tables(
     if mode not in ["pre", "post"]:
         raise ValueError('mode must be one of ["pre", "post"]')
 
+    # Effectiveness metrics (run-level) remain unchanged.
     metrics_map = {
         'accuracy@1': 'Acc@1 ↓',
         'accuracy@5': 'Acc@5 ↓',
-        'true_class_confidence': 'True Label Conf ↓',
-        'wrong_entropy': 'Wrong Class Entropy ↑',
-        'mrr': 'MRR ↓',
-        'kl_divergence': 'KL Divergence ↑'
+        'true_class_confidence': 'True Class Conf ↓',
+        'entropy': 'Entropy ↑'
     }
 
+    # Quality metrics (sample-level) where higher is better.
+    # Note: For a text compared to itself, these metrics yield 1 except for PINC which gives 0.
     quality_metrics = {
-        'bleu': ('bleu', 'BLEU ↓'),
-        'meteor': ('meteor_avg', 'METEOR ↓'),
+        'bleu': ('bleu', 'BLEU ↑'),
+        'meteor': ('meteor_avg', 'METEOR ↑'),
         'pinc': ('pinc_overall_avg', 'PINC ↑'),
-        'bertscore': ('bertscore_f1_avg', 'BERTScore ↓')
+        'bertscore': ('bertscore_f1_avg', 'BERTScore ↑'),
+        'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
     rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
@@ -402,12 +403,12 @@ def get_defense_tables(
                         'Threat Model': threat_model_name
                     }
                     for metric_key, display_name in metrics_map.items():
-                        if metric_key != 'kl_divergence':
-                            value = metrics.get(metric_key)
-                            row[display_name] = format_value_with_significance(
-                                value, None, brevity, show_std=show_std_with_significance
-                            ) if value is not None else '-'
+                        value = metrics.get(metric_key)
+                        row[display_name] = format_value_with_significance(
+                            value, None, brevity, show_std=show_std_with_significance
+                        ) if value is not None else '-'
                     for _, (_, display_name) in quality_metrics.items():
+                        # For quality, baseline is 1 (except PINC, baseline 0) so pre-defense quality is 1.
                         row[display_name] = format_value_with_significance(
                             1.0, None, brevity, show_std=show_std_with_significance
                         )
@@ -415,7 +416,7 @@ def get_defense_tables(
                     break  # Only need one model's data
 
         columns = ['Corpus', 'Scenario', 'Threat Model'] + \
-                  [v for k, v in metrics_map.items() if k != 'kl_divergence'] + \
+                  [v for k, v in metrics_map.items()] + \
                   [v[1] for v in quality_metrics.values()]
         return pd.DataFrame(pre_rows, columns=columns)
 
@@ -465,14 +466,7 @@ def get_defense_tables(
                         if threat_model_key not in seed_results:
                             continue
                         metrics = seed_results[threat_model_key]['attribution']
-                        for metric_key in metrics_map.keys():
-                            if metric_key == 'kl_divergence':
-                                if 'kl_divergence' in metrics['transformed_metrics']:
-                                    post_metrics[metric_key].append(
-                                        float(metrics['transformed_metrics']['kl_divergence'])
-                                    )
-                                orig_metrics[metric_key].append(0.0)
-                                continue
+                        for metric_key, display_name in metrics_map.items():
                             orig_val = metrics['original_metrics'].get(metric_key)
                             post_val = metrics['transformed_metrics'].get(metric_key)
                             if orig_val is not None:
@@ -496,17 +490,6 @@ def get_defense_tables(
                     rel_imp_row = base_row.copy()
 
                     for metric_key, display_name in metrics_map.items():
-                        if metric_key == 'kl_divergence':
-                            if metric_key in post_metrics:
-                                post_mean = np.mean(post_metrics[metric_key])
-                                post_std = np.std(post_metrics[metric_key])
-                                post_row[display_name] = format_value_with_significance(
-                                    post_mean, post_std, brevity, show_std=show_std_with_significance
-                                )
-                                abs_imp_row[display_name] = '-'
-                                rel_imp_row[display_name] = '-'
-                            continue
-
                         orig_vals = orig_metrics[metric_key]
                         post_vals = post_metrics[metric_key]
                         if orig_vals and post_vals:
@@ -549,8 +532,9 @@ def get_defense_tables(
                             post_row[display_name] = format_value_with_significance(
                                 mean_val, std_val, brevity, show_std=show_std_with_significance
                             )
-                            abs_improvements = [v - 1.0 for v in values]
-                            rel_improvements = [(v - 1.0) * 100 for v in values]
+                            # For quality measures, the baseline is 1 (except for PINC, baseline 0)
+                            abs_improvements = [v - (0.0 if qm == 'pinc' else 1.0) for v in values]
+                            rel_improvements = [((v - (0.0 if qm == 'pinc' else 1.0)) * 100) for v in values]
                             abs_mean = np.mean(abs_improvements)
                             abs_std = np.std(abs_improvements)
                             abs_imp_row[display_name] = format_value_with_significance(
@@ -590,20 +574,7 @@ def get_defense_tables_with_stats(
 ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, DefenseStats]]]:
     """
     Generate defense analysis tables with Bayesian credible intervals.
-
-    Args:
-        base_dir: Base directory containing results.
-        rq: Research question to analyze.
-        corpora: List of corpora to analyze.
-        threat_models: Mapping of model types to display names.
-        mode: "pre" for baseline only, "post" for full analysis.
-        brevity: If True, remove leading zeros in output.
-        show_std_with_significance: If True, show std even with credible intervals.
-
-    Returns:
-        If mode=="pre": DataFrame with pre-defense values.
-        If mode=="post": Tuple of (post_values_df, absolute_improvements_df,
-                                    relative_improvements_df, stats_dict).
+    (Progress bars have been added to track progress.)
     """
     if corpora is None:
         corpora = ['ebg', 'rj']
@@ -618,20 +589,22 @@ def get_defense_tables_with_stats(
     if mode not in ["pre", "post"]:
         raise ValueError('mode must be one of ["pre", "post"]')
 
+    # Effectiveness metrics (run-level)
     metrics_map = {
         'accuracy@1': 'Acc@1 ↓',
         'accuracy@5': 'Acc@5 ↓',
-        'true_class_confidence': 'True Label Conf ↓',
-        'wrong_entropy': 'Wrong Class Entropy ↑',
-        'mrr': 'MRR ↓',
-        'kl_divergence': 'KL Divergence ↑'
+        'true_class_confidence': 'True Class Conf ↓',
+        'entropy': 'Entropy ↑'
     }
 
+    # Quality metrics (sample-level) with additional SBERT.
+    # For a text compared to itself, these quality measures yield 1 (except for PINC, which yields 0).
     quality_metrics = {
-        'bleu': ('bleu', 'BLEU ↓'),
-        'meteor': ('meteor_avg', 'METEOR ↓'),
-        'pinc': ('pinc_overall_avg', 'PINC ↓'),
-        'bertscore': ('bertscore_f1_avg', 'BERTScore ↓')
+        'bleu': ('bleu', 'BLEU ↑'),
+        'meteor': ('meteor_avg', 'METEOR ↑'),
+        'pinc': ('pinc_overall_avg', 'PINC ↑'),
+        'bertscore': ('bertscore_f1_avg', 'BERTScore ↑'),
+        'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
     rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
@@ -642,13 +615,15 @@ def get_defense_tables_with_stats(
 
     stats_dict = {}
 
-    for corpus in corpora:
+    # Loop over corpora with a progress bar.
+    for corpus in tqdm(corpora, desc="Processing corpora"):
         for threat_model_key, threat_model_name in threat_models.items():
             corpus_path = Path(base_dir) / corpus / rq_main / rq
             if not corpus_path.exists():
                 continue
 
-            for model_dir in corpus_path.glob("*"):
+            # Wrap the model directories loop in a progress bar.
+            for model_dir in tqdm(list(corpus_path.glob("*")), desc=f"Processing models for {corpus} {threat_model_name}", leave=False):
                 if not model_dir.is_dir():
                     continue
 
@@ -683,15 +658,8 @@ def get_defense_tables_with_stats(
                         continue
 
                     metrics = seed_results[threat_model_key]['attribution']
-                    for metric_key in metrics_map.keys():
-                        if metric_key == 'kl_divergence':
-                            if 'kl_divergence' in metrics['transformed_metrics']:
-                                post_metrics[metric_key].append(
-                                    float(metrics['transformed_metrics']['kl_divergence'])
-                                )
-                            orig_metrics[metric_key].append(0.0)
-                            continue
-
+                    # Process only the desired effectiveness metrics.
+                    for metric_key, display_name in metrics_map.items():
                         orig_val = metrics['original_metrics'].get(metric_key)
                         post_val = metrics['transformed_metrics'].get(metric_key)
                         if orig_val is not None:
@@ -725,7 +693,7 @@ def get_defense_tables_with_stats(
                         stats.add_estimate(
                             qm,
                             'quality',
-                            1.0,  # Baseline for quality metrics.
+                            1.0 if qm != 'pinc' else 0.0,  # Baseline: 1 for most, 0 for PINC.
                             values,
                             display_name
                         )
@@ -771,3 +739,4 @@ def get_defense_tables_with_stats(
                                     )
 
     return post_df, abs_imp_df, rel_imp_df, stats_dict
+
