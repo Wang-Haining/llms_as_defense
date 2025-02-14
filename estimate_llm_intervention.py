@@ -57,10 +57,8 @@ class BayesResult(NamedTuple):
 
 
 def estimate_beta_metric(post_values: List[float]) -> dict:
-    """
-    estimate beta distribution parameters with 95% hdi intervals for metrics
-    naturally bounded in [0,1]
-    """
+    """Estimate beta distribution parameters with 95% hdi intervals for metrics
+    naturally bounded in [0,1]"""
     # ensure values are strictly within (0, 1)
     epsilon = 1e-6
     post_values = np.clip(np.array(post_values), epsilon, 1 - epsilon)
@@ -100,8 +98,7 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
 
 def bayesian_estimate(metric_name: str, metric_type: str,
                       post_values: List[float], baseline: float) -> BayesResult:
-    """
-    use the beta estimation function for all metrics (except for entropy change,
+    """Use the beta estimation function for all metrics (except for entropy change,
     which should be normalized before calling this function)
 
     args:
@@ -130,7 +127,7 @@ def bayesian_estimate(metric_name: str, metric_type: str,
 
 
 class DefenseStats:
-    """container for defense evaluation bayesian estimates for each metric"""
+    """Container for defense evaluation bayesian estimates for each metric"""
 
     def __init__(self, corpus: str, threat_model: str, defense_model: str):
         self.corpus = corpus
@@ -143,7 +140,7 @@ class DefenseStats:
                      pre_value: float, post_values: List[float],
                      display_name: str) -> None:
         """
-        add bayesian estimate for a metric based on post_values
+        Add bayesian estimate for a metric based on post_values
         for effectiveness metrics, baseline is pre_value; for quality metrics,
         baseline is 1 for bleu/meteor/bertscore and 0 for pinc
         """
@@ -165,7 +162,6 @@ class DefenseStats:
         result = tests[metric_name]
         return format_estimate_with_hdi(
             result.post_mean,
-            brevity=False,
             ci_lower=result.ci_lower,
             ci_upper=result.ci_upper
         )
@@ -196,7 +192,7 @@ class DefenseStats:
 
 
 def get_scenario_name(rq: str) -> str:
-    """convert rq identifier to a readable scenario name"""
+    """Convert rq identifier to a readable scenario name"""
     parts = rq.split('_')
     if len(parts) > 1:
         return ' '.join(part.capitalize() for part in parts[1:])
@@ -205,36 +201,25 @@ def get_scenario_name(rq: str) -> str:
 
 def format_estimate_with_hdi(
         value: float,
-        brevity: bool = False,
         ci_lower: Optional[float] = None,
         ci_upper: Optional[float] = None
 ) -> str:
-    """format a value with its 95% hdi interval (ignoring std)
+    """Format a value with its 95% HDI interval (ignoring std).
 
-    if brevity is true, leading zeros are removed
+    Leading zeros are retained for clarity.
     """
-    if brevity:
-        val_str = f"{value:.3f}".lstrip('0')
-        val_str = val_str if val_str.startswith('.') else f"1{val_str}"
-    else:
-        val_str = f"{value:.3f}"
+    val_str = f"{value:.3f}"
 
     if ci_lower is not None and ci_upper is not None:
-        if brevity:
-            ci_lower_str = f"{ci_lower:.3f}".lstrip('0')
-            ci_upper_str = f"{ci_upper:.3f}".lstrip('0')
-            ci_lower_str = ci_lower_str if ci_lower_str.startswith('.') else f"1{ci_lower_str}"
-            ci_upper_str = ci_upper_str if ci_upper_str.startswith('.') else f"1{ci_upper_str}"
-        else:
-            ci_lower_str = f"{ci_lower:.3f}"
-            ci_upper_str = f"{ci_upper:.3f}"
+        ci_lower_str = f"{ci_lower:.3f}"
+        ci_upper_str = f"{ci_upper:.3f}"
         return f"{val_str} [{ci_lower_str}, {ci_upper_str}]"
 
     return val_str
 
 
 def calculate_effect_size(pre_value: float, post_values: List[float]) -> float:
-    """calculate glass's d effect size using post values"""
+    """Calculate glass's d effect size using post values"""
     post_mean = np.mean(post_values)
     post_std = np.std(post_values)
     if post_std == 0:
@@ -252,7 +237,7 @@ def print_defense_stats(
     threat_model: Optional[str] = None,
     defense_model: Optional[str] = None
 ) -> None:
-    """print bayesian summaries with optional filtering"""
+    """Print bayesian summaries with optional filtering"""
     for key, stats in stats_dict.items():
         if ((corpus is None or stats.corpus == corpus) and
             (threat_model is None or stats.threat_model == threat_model) and
@@ -282,10 +267,9 @@ def get_defense_tables(
         corpora: Optional[List[str]] = None,
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
-        brevity: bool = False,
 ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
     """
-    generate defense analysis tables
+    Generate defense analysis tables
 
     for pre mode, quality measures are set to their ideal (1 for most, 0 for pinc)
     for post mode, the output includes the post values for effectiveness and quality metrics
@@ -341,17 +325,16 @@ def get_defense_tables(
                     first_seed = seed_keys[0]
                     if threat_model_key not in results[first_seed]:
                         continue
-                    metrics = results[first_seed][threat_model_key]['attribution'][
-                        'original_metrics']
+                    metrics = results[first_seed][threat_model_key]['attribution']['original_metrics']
                     row = {'Corpus': corpus.upper(), 'Scenario': 'No protection',
                            'Threat Model': threat_model_name}
                     for metric_key, display_name in metrics_map.items():
                         value = metrics.get(metric_key)
-                        row[display_name] = format_estimate_with_hdi(value, brevity=brevity)
+                        row[display_name] = format_estimate_with_hdi(value)
                     for _, (_, display_name) in quality_metrics.items():
                         # pre-defense quality is ideal (1 for most, 0 for pinc)
                         baseline = 0.0 if _ == 'pinc' else 1.0
-                        row[display_name] = format_estimate_with_hdi(baseline, brevity=brevity)
+                        row[display_name] = format_estimate_with_hdi(baseline)
                     pre_rows.append(row)
                     break  # only need one model's data
         columns = ['Corpus', 'Scenario', 'Threat Model'] + list(
@@ -420,22 +403,14 @@ def get_defense_tables(
                         post_vals = post_metrics[metric_key]
                         if orig_vals and post_vals:
                             post_mean = np.mean(post_vals)
-                            post_row[display_name] = format_estimate_with_hdi(
-                                post_mean, brevity=brevity,
-                                ci_lower=np.mean(post_vals) - np.std(post_vals) * 1.96,
-                                ci_upper=np.mean(post_vals) + np.std(post_vals) * 1.96)
-                            # abs_imp is computed from raw differences (to be superseded by bayesian changes later)
+                            # Remove std-based CIs; simply show the point estimate
+                            post_row[display_name] = format_estimate_with_hdi(post_mean)
+                            # Compute raw improvements (absolute and relative) without CIs
                             abs_improvements = [p - o for o, p in zip(orig_vals, post_vals)]
                             rel_improvements = [((p - o) / o) * 100 if o != 0 else np.nan
                                                 for o, p in zip(orig_vals, post_vals)]
-                            abs_imp_row[display_name] = format_estimate_with_hdi(
-                                np.mean(abs_improvements), brevity=brevity,
-                                ci_lower=np.mean(abs_improvements) - np.std(abs_improvements) * 1.96,
-                                ci_upper=np.mean(abs_improvements) + np.std(abs_improvements) * 1.96)
-                            rel_imp_row[display_name] = format_estimate_with_hdi(
-                                np.mean(rel_improvements), brevity=brevity,
-                                ci_lower=np.mean(rel_improvements) - np.std(rel_improvements) * 1.96,
-                                ci_upper=np.mean(rel_improvements) + np.std(rel_improvements) * 1.96) + "%"
+                            abs_imp_row[display_name] = format_estimate_with_hdi(np.mean(abs_improvements))
+                            rel_imp_row[display_name] = format_estimate_with_hdi(np.mean(rel_improvements)) + "%"
                         else:
                             post_row[display_name] = '-'
                             abs_imp_row[display_name] = '-'
@@ -444,22 +419,13 @@ def get_defense_tables(
                         values = quality_scores[qm]
                         if values:
                             mean_val = np.mean(values)
-                            post_row[display_name] = format_estimate_with_hdi(
-                                mean_val, brevity=brevity,
-                                ci_lower=np.mean(values) - np.std(values) * 1.96,
-                                ci_upper=np.mean(values) + np.std(values) * 1.96)
+                            post_row[display_name] = format_estimate_with_hdi(mean_val)
                             # for quality measures, baseline is 1 (except pinc baseline 0)
                             base_val = 0.0 if qm == 'pinc' else 1.0
                             abs_improvements = [v - base_val for v in values]
                             rel_improvements = [((v - base_val) * 100) for v in values]
-                            abs_imp_row[display_name] = format_estimate_with_hdi(
-                                np.mean(abs_improvements), brevity=brevity,
-                                ci_lower=np.mean(abs_improvements) - np.std(abs_improvements) * 1.96,
-                                ci_upper=np.mean(abs_improvements) + np.std(abs_improvements) * 1.96)
-                            rel_imp_row[display_name] = format_estimate_with_hdi(
-                                np.mean(rel_improvements), brevity=brevity,
-                                ci_lower=np.mean(rel_improvements) - np.std(rel_improvements) * 1.96,
-                                ci_upper=np.mean(rel_improvements) + np.std(rel_improvements) * 1.96) + "%"
+                            abs_imp_row[display_name] = format_estimate_with_hdi(np.mean(abs_improvements))
+                            rel_imp_row[display_name] = format_estimate_with_hdi(np.mean(rel_improvements)) + "%"
                         else:
                             post_row[display_name] = '-'
                             abs_imp_row[display_name] = '-'
@@ -480,12 +446,11 @@ def get_defense_tables_with_stats(
         corpora: Optional[List[str]] = None,
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
-        brevity: bool = False,
 ) -> Union[pd.DataFrame, Tuple[
     pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[
         str, DefenseStats]]]:
     """
-    generate defense analysis tables with bayesian credible intervals and additional
+    Generate defense analysis tables with bayesian credible intervals and additional
     dataframes for absolute and relative changes (with 95% hdi) computed from bayesian estimates
     progress bars are added to track processing
 
@@ -524,7 +489,7 @@ def get_defense_tables_with_stats(
 
     # get the basic tables from previous function
     post_df, abs_imp_df, rel_imp_df = get_defense_tables(base_dir, rq, corpora,
-                                                         threat_models, mode, brevity)
+                                                         threat_models, mode)
 
     # prepare additional dataframes for bayesian change estimates
     abs_change_rows = []
@@ -612,10 +577,10 @@ def get_defense_tables_with_stats(
                         rel_ci_lower = (abs_ci_lower / br.pre_value * 100) if br.pre_value != 0 else np.nan
                         rel_ci_upper = (abs_ci_upper / br.pre_value * 100) if br.pre_value != 0 else np.nan
                         abs_row[display_name] = format_estimate_with_hdi(
-                            abs_change, brevity=brevity, ci_lower=abs_ci_lower,
+                            abs_change, ci_lower=abs_ci_lower,
                             ci_upper=abs_ci_upper)
                         rel_row[display_name] = format_estimate_with_hdi(
-                            rel_change, brevity=brevity, ci_lower=rel_ci_lower,
+                            rel_change, ci_lower=rel_ci_lower,
                             ci_upper=rel_ci_upper) + "%"
                     else:
                         abs_row[display_name] = '-'
@@ -638,10 +603,10 @@ def get_defense_tables_with_stats(
                             rel_ci_lower = (abs_ci_lower / base_val * 100) if base_val != 0 else np.nan
                             rel_ci_upper = (abs_ci_upper / base_val * 100) if base_val != 0 else np.nan
                         abs_row[display_name] = format_estimate_with_hdi(
-                            abs_change, brevity=brevity, ci_lower=abs_ci_lower,
+                            abs_change, ci_lower=abs_ci_lower,
                             ci_upper=abs_ci_upper)
                         rel_row[display_name] = format_estimate_with_hdi(
-                            rel_change, brevity=brevity, ci_lower=rel_ci_lower,
+                            rel_change, ci_lower=rel_ci_lower,
                             ci_upper=rel_ci_upper) + "%"
                     else:
                         abs_row[display_name] = '-'
@@ -658,7 +623,8 @@ def get_defense_tables_with_stats(
 
 
 def main():
-    """example usage of defense evaluation; parse args and output csv tables in results folder"""
+    """Example usage of defense evaluation; parse args and output csv tables in results
+    folder"""
     import argparse
     parser = argparse.ArgumentParser(
         description="evaluate defense effectiveness with bayesian analysis"
@@ -702,8 +668,7 @@ def main():
         rq=args.rq,
         corpora=[args.corpus] if args.corpus else None,
         threat_models=None,  # uses default if not provided
-        mode="post",
-        brevity=True,
+        mode="post"
     )
 
     # print the results to the console
