@@ -1,0 +1,16 @@
+Corpus,Scenario,Threat Model,Defense Model,Acc@1 ↓,Acc@5 ↓,True Class Conf ↓,Entropy ↑,BLEU ↑,METEOR ↑,PINC ↑,BERTScore ↑,SBERT ↑
+RJ,Basic Paraphrase,LogReg,GPT-4o,0.076,0.419,0.081,0.781,0.359,0.457,0.640,0.824,0.902
+RJ,Basic Paraphrase,LogReg,Claude-3.5,0.010,0.276,0.021,0.830,0.035,0.205,0.841,0.675,0.795
+RJ,Basic Paraphrase,LogReg,Ministral,0.057,0.181,0.051,0.731,0.069,0.156,0.909,0.545,0.531
+RJ,Basic Paraphrase,LogReg,Llama-3.1,0.019,0.238,0.028,0.935,0.192,0.199,0.920,0.548,0.517
+RJ,Basic Paraphrase,LogReg,Gemma-2,0.029,0.190,0.038,0.671,0.089,0.143,0.917,0.538,0.515
+RJ,Basic Paraphrase,SVM,GPT-4o,0.124,0.457,0.078,3.620,0.359,0.457,0.640,0.824,0.902
+RJ,Basic Paraphrase,SVM,Claude-3.5,0.067,0.257,0.055,3.614,0.035,0.205,0.841,0.675,0.795
+RJ,Basic Paraphrase,SVM,Ministral,0.038,0.229,0.047,3.700,0.069,0.156,0.909,0.545,0.531
+RJ,Basic Paraphrase,SVM,Llama-3.1,0.086,0.219,0.045,3.859,0.192,0.199,0.920,0.548,0.517
+RJ,Basic Paraphrase,SVM,Gemma-2,0.048,0.257,0.044,3.649,0.089,0.143,0.917,0.538,0.515
+RJ,Basic Paraphrase,RoBERTa,GPT-4o,0.143,0.362,0.142,1.389,0.359,0.457,0.640,0.824,0.902
+RJ,Basic Paraphrase,RoBERTa,Claude-3.5,0.124,0.248,0.129,1.924,0.035,0.205,0.841,0.675,0.795
+RJ,Basic Paraphrase,RoBERTa,Ministral,0.010,0.162,0.017,1.684,0.069,0.156,0.909,0.545,0.531
+RJ,Basic Paraphrase,RoBERTa,Llama-3.1,0.019,0.171,0.018,1.625,0.192,0.199,0.920,0.548,0.517
+RJ,Basic Paraphrase,RoBERTa,Gemma-2,0.019,0.238,0.029,1.200,0.089,0.143,0.917,0.538,0.515
