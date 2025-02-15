@@ -88,15 +88,40 @@ class DefenseStats:
     def add_estimate(self, metric_name: str, metric_type: str,
                      pre_value: float, post_values: List[float]) -> None:
         """
-        Add bayesian estimate for a metric based on post_values
-        for effectiveness metrics, baseline is pre_value; for quality metrics,
-        baseline is 1 for bleu/meteor/bertscore and 0 for pinc
+        Add Bayesian estimate for a metric based on post_values.
+        For effectiveness metrics, baseline is pre_value; for quality metrics,
+        baseline is 1 for bleu/meteor/bertscore and 0 for pinc.
+
+        For the 'entropy' metric, the raw values are first normalized to [0,1]
+        by dividing by the scaling factor (np.log2(21) for 'rj' and np.log2(45) for 'ebg'),
+        then the beta model is run, and the resulting posterior estimates are scaled back.
         """
         if not post_values:
             return
 
-        baseline = pre_value if metric_type == 'effectiveness' else (0.0 if metric_name == 'pinc' else 1.0)
-        result = estimate_beta_metric(post_values)
+        baseline = pre_value if metric_type == 'effectiveness' else (
+            0.0 if metric_name == 'pinc' else 1.0)
+
+        # if the metric is entropy, pre-scale the values to [0,1] before modeling.
+        if metric_name == 'entropy':
+            if self.corpus.lower() == 'rj':
+                factor = np.log2(21)
+            elif self.corpus.lower() == 'ebg':
+                factor = np.log2(45)
+            else:
+                factor = 1.0
+            # pre-scale each post value:
+            scaled_post_values = [v / factor for v in post_values]
+            result = estimate_beta_metric(scaled_post_values)
+            # scale the posterior estimates back to the original scale:
+            result = {
+                "mean": result["mean"] * factor,
+                "hdi_lower": result["hdi_lower"] * factor,
+                "hdi_upper": result["hdi_upper"] * factor,
+            }
+        else:
+            result = estimate_beta_metric(post_values)
+
         bayes_result = BayesResult(
             pre_value=baseline,
             post_mean=result["mean"],
@@ -351,7 +376,24 @@ def get_defense_tables(
                         for metric_key, display_name in metrics_map.items():
                             post_vals = post_metrics[metric_key]
                             if post_vals:
-                                result = estimate_beta_metric(post_vals)
+                                # pre-scale if the metric is entropy
+                                if metric_key == 'entropy':
+                                    if corpus.lower() == 'rj':
+                                        factor = np.log2(21)
+                                    elif corpus.lower() == 'ebg':
+                                        factor = np.log2(45)
+                                    else:
+                                        factor = 1.0
+                                    scaled_post_vals = [v / factor for v in post_vals]
+                                    result = estimate_beta_metric(scaled_post_vals)
+                                    # Scale the posterior estimates back
+                                    result = {
+                                        "mean": result["mean"] * factor,
+                                        "hdi_lower": result["hdi_lower"] * factor,
+                                        "hdi_upper": result["hdi_upper"] * factor
+                                    }
+                                else:
+                                    result = estimate_beta_metric(post_vals)
                                 base_row[display_name] = format_estimate_with_hdi(
                                     result["mean"],
                                     result["hdi_lower"],
@@ -534,15 +576,26 @@ def get_defense_tables_with_stats(
                 pre_value = np.mean([v['pre'] for v in values])
                 post_values = [v['post'] for v in values]
 
-                # add the Bayesian estimate to stats
+                # add the Bayesian estimate to stats (which will scale entropy automatically)
                 stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values)
 
                 # also get the overall posterior HDI for display
                 result = estimate_beta_metric(post_values)
+                if metric_key == 'entropy':
+                    if corpus.lower() == 'rj':
+                        factor = np.log2(21)
+                    elif corpus.lower() == 'ebg':
+                        factor = np.log2(45)
+                    else:
+                        factor = 1.0
+                    result = {
+                        "mean": result["mean"] * factor,
+                        "hdi_lower": result["hdi_lower"] * factor,
+                        "hdi_upper": result["hdi_upper"] * factor
+                    }
                 base_row[display_name] = format_estimate_with_hdi(
                     result["mean"], result["hdi_lower"], result["hdi_upper"]
                 )
-
         # process quality metrics
         for qm, (q_key, display_name) in quality_metrics.items():
             quality_key = (config_key, qm)
@@ -558,7 +611,6 @@ def get_defense_tables_with_stats(
                 base_row[display_name] = format_estimate_with_hdi(
                     result["mean"], result["hdi_lower"], result["hdi_upper"]
                 )
-
         post_rows.append(base_row.copy())
 
         # create absolute and relative change rows
