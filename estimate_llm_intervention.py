@@ -26,23 +26,6 @@ import pandas as pd
 import pymc as pm
 from tqdm import tqdm
 
-# define the expected direction for each metric
-METRIC_DIRECTIONS = {
-    # effectiveness metrics – we want metrics to decrease except for entropy and kl divergence
-    'accuracy@1': 'less',
-    'accuracy@5': 'less',
-    'true_class_confidence': 'less',
-    'wrong_entropy': 'greater',
-    'mrr': 'less',
-    'kl_divergence': 'greater',
-
-    # quality metrics – note: for pre, bleu, meteor, bertscore are 1 and pinc is 0
-    'bleu': 'less',
-    'meteor': 'less',
-    'pinc': 'greater',
-    'bertscore': 'less'
-}
-
 
 # for posteriors
 class BayesResult(NamedTuple):
@@ -50,8 +33,6 @@ class BayesResult(NamedTuple):
     post_mean: float            # posterior mean of the parameter
     ci_lower: float             # lower bound of the 95% credible interval
     ci_upper: float             # upper bound of the 95% credible interval
-    effect_size: float          # (post_mean - baseline) / (approximate uncertainty)
-    direction: str              # expected direction ('less' or 'greater')
 
 
 def estimate_beta_metric(post_values: List[float]) -> dict:
@@ -94,36 +75,6 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
     }
 
 
-def bayesian_estimate(metric_name: str, metric_type: str,
-                      post_values: List[float], baseline: float) -> BayesResult:
-    """Use the beta estimation function for all metrics (except for entropy change,
-    which should be normalized before calling this function)
-
-    args:
-        metric_name: name of the metric
-        metric_type: either 'effectiveness' or 'quality'
-        post_values: post-intervention values in [0,1]
-        baseline: pre-intervention value (or fixed baseline for quality metrics)
-
-    returns:
-        a BayesResult object with posterior summaries
-    """
-    result = estimate_beta_metric(post_values)
-    # approximate uncertainty is inferred from the hdi width (for effect size calculation)
-    uncertainty = (result["hdi_upper"] - result["hdi_lower"]) / 4  # approx. std estimate for normal
-    effect_size = (result["mean"] - baseline) / uncertainty if uncertainty != 0 else np.nan
-    direction = METRIC_DIRECTIONS.get(metric_name, "less")
-
-    return BayesResult(
-        pre_value=baseline,
-        post_mean=result["mean"],
-        ci_lower=result["hdi_lower"],
-        ci_upper=result["hdi_upper"],
-        effect_size=effect_size,
-        direction=direction
-    )
-
-
 class DefenseStats:
     """Container for defense evaluation bayesian estimates for each metric"""
 
@@ -135,8 +86,7 @@ class DefenseStats:
         self.quality_estimates: Dict[str, BayesResult] = {}        # metric_name -> BayesResult
 
     def add_estimate(self, metric_name: str, metric_type: str,
-                     pre_value: float, post_values: List[float],
-                     display_name: str) -> None:
+                     pre_value: float, post_values: List[float]) -> None:
         """
         Add bayesian estimate for a metric based on post_values
         for effectiveness metrics, baseline is pre_value; for quality metrics,
@@ -146,7 +96,13 @@ class DefenseStats:
             return
 
         baseline = pre_value if metric_type == 'effectiveness' else (0.0 if metric_name == 'pinc' else 1.0)
-        bayes_result = bayesian_estimate(metric_name, metric_type, post_values, baseline)
+        result = estimate_beta_metric(post_values)
+        bayes_result = BayesResult(
+            pre_value=baseline,
+            post_mean=result["mean"],
+            ci_lower=result["hdi_lower"],
+            ci_upper=result["hdi_upper"],
+        )
         if metric_type == 'effectiveness':
             self.effectiveness_estimates[metric_name] = bayes_result
         else:
@@ -182,8 +138,6 @@ class DefenseStats:
                 print(f"  pre-defense:  {result.pre_value:.3f}")
                 print(f"  post-defense: {result.post_mean:.3f}")
                 print(f"  95% credible interval: [{result.ci_lower:.3f}, {result.ci_upper:.3f}]")
-                print(f"  effect size:  {result.effect_size:.3f}")
-                print(f"  direction:    {result.direction}")
 
         print_group("effectiveness", self.effectiveness_estimates)
         print_group("quality", self.quality_estimates)
@@ -224,19 +178,6 @@ def format_estimate_with_hdi(
         return f"{value:.3f}"
 
 
-def calculate_effect_size(pre_value: float, post_values: List[float]) -> float:
-    """Calculate glass's d effect size using post values"""
-    post_mean = np.mean(post_values)
-    post_std = np.std(post_values)
-    if post_std == 0:
-        if post_mean > pre_value:
-            return float('inf')
-        elif post_mean < pre_value:
-            return float('-inf')
-        return 0.0
-    return (post_mean - pre_value) / post_std
-
-
 def print_defense_stats(
     stats_dict: Dict[str, DefenseStats],
     corpus: Optional[str] = None,
@@ -249,22 +190,6 @@ def print_defense_stats(
             (threat_model is None or stats.threat_model == threat_model) and
             (defense_model is None or stats.defense_model == defense_model)):
             stats.print_summary()
-
-
-# def display_copyable(df: pd.DataFrame) -> HTML:
-#     """display dataframe in a copyable format with a copy button"""
-#     csv_string = df.to_csv(index=False, sep='\t')
-#     return HTML(f"""
-#     <textarea id="copyable_text" style="width: 100%; height: 200px;">{csv_string}</textarea>
-#     <button onclick="copyText()">Copy to Clipboard</button>
-#     <script>
-#     function copyText() {{
-#         var copyText = document.getElementById("copyable_text");
-#         copyText.select();
-#         document.execCommand("copy");
-#     }}
-#     </script>
-#     """)
 
 
 def get_defense_tables(
@@ -350,9 +275,8 @@ def get_defense_tables(
                         for metric_key, display_name in metrics_map.items():
                             value = metrics.get(metric_key)
                             row[display_name] = format_estimate_with_hdi(value)
-                        for _, (_, display_name) in quality_metrics.items():
-                            # pre-defense quality is ideal (1 for most, 0 for pinc)
-                            baseline = 0.0 if _ == 'pinc' else 1.0
+                        for qm_key, (q_key, display_name) in quality_metrics.items():
+                            baseline = 0.0 if qm_key == 'pinc' else 1.0
                             row[display_name] = format_estimate_with_hdi(baseline)
                         pre_rows.append(row)
                         break  # only need one model's data per RQ
@@ -508,12 +432,6 @@ def get_defense_tables_with_stats(
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    from collections import defaultdict
-    import numpy as np
-    import pandas as pd
-    from tqdm import tqdm
-    from pathlib import Path
-
     # collect data from all RQs first
     all_metrics = defaultdict(list)  # store all metrics for later estimation
     all_quality = defaultdict(list)  # store all quality metrics
@@ -615,10 +533,10 @@ def get_defense_tables_with_stats(
                 pre_value = np.mean([v['pre'] for v in values])
                 post_values = [v['post'] for v in values]
 
-                # Add the Bayesian estimate to stats
-                stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values, display_name)
+                # add the Bayesian estimate to stats
+                stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values)
 
-                # Also get the overall posterior HDI for display
+                # also get the overall posterior HDI for display
                 result = estimate_beta_metric(post_values)
                 base_row[display_name] = format_estimate_with_hdi(
                     result["mean"], result["hdi_lower"], result["hdi_upper"]
@@ -633,7 +551,7 @@ def get_defense_tables_with_stats(
                 # baseline is 1.0 for BLEU/METEOR/BERTScore/SBERT, 0.0 for PINC
                 stats.add_estimate(qm, 'quality',
                                    1.0 if qm != 'pinc' else 0.0,
-                                   values, display_name)
+                                   values)
 
                 result = estimate_beta_metric(values)
                 base_row[display_name] = format_estimate_with_hdi(
@@ -829,7 +747,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Collect data from all specified RQs
+    # collect data from all specified RQs
     all_post_dfs = []
     all_abs_change_dfs = []
     all_rel_change_dfs = []
@@ -849,7 +767,7 @@ def main():
         all_rel_change_dfs.append(rel_change_df)
         all_stats_dicts.append(stats_dict)
 
-    # Combine dataframes
+    # combine dataframes
     post_df = pd.concat(all_post_dfs, ignore_index=True)
     abs_change_df = pd.concat(all_abs_change_dfs, ignore_index=True)
     rel_change_df = pd.concat(all_rel_change_dfs, ignore_index=True)
