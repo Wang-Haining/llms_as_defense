@@ -508,12 +508,11 @@ def get_defense_tables_with_stats(
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    if corpora is None:
-        corpora = ['ebg', 'rj']
-    if threat_models is None:
-        threat_models = {'logreg': 'LogReg', 'svm': 'SVM', 'roberta': 'RoBERTa'}
-    if mode not in ["pre", "post"]:
-        raise ValueError('mode must be one of ["pre", "post"]')
+    from collections import defaultdict
+    import numpy as np
+    import pandas as pd
+    from tqdm import tqdm
+    from pathlib import Path
 
     # collect data from all RQs first
     all_metrics = defaultdict(list)  # store all metrics for later estimation
@@ -587,8 +586,8 @@ def get_defense_tables_with_stats(
 
                         # collect quality metrics
                         quality = seed_results[threat_model_key].get('quality', {})
-                        for qm, (key, _) in quality_metrics.items():
-                            score = quality.get(qm, {}).get(key)
+                        for qm, (q_key, _) in quality_metrics.items():
+                            score = quality.get(qm, {}).get(q_key)
                             if score is not None:
                                 all_quality[(config_key, qm)].append(float(score))
 
@@ -616,19 +615,22 @@ def get_defense_tables_with_stats(
                 pre_value = np.mean([v['pre'] for v in values])
                 post_values = [v['post'] for v in values]
 
-                stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values,
-                                   display_name)
+                # Add the Bayesian estimate to stats
+                stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values, display_name)
 
+                # Also get the overall posterior HDI for display
                 result = estimate_beta_metric(post_values)
                 base_row[display_name] = format_estimate_with_hdi(
                     result["mean"], result["hdi_lower"], result["hdi_upper"]
                 )
 
         # process quality metrics
-        for qm, (key, display_name) in quality_metrics.items():
+        for qm, (q_key, display_name) in quality_metrics.items():
             quality_key = (config_key, qm)
             if quality_key in all_quality:
                 values = all_quality[quality_key]
+
+                # baseline is 1.0 for BLEU/METEOR/BERTScore/SBERT, 0.0 for PINC
                 stats.add_estimate(qm, 'quality',
                                    1.0 if qm != 'pinc' else 0.0,
                                    values, display_name)
@@ -641,11 +643,11 @@ def get_defense_tables_with_stats(
         post_rows.append(base_row.copy())
 
         # create absolute and relative change rows
-        abs_row = {k: v for k, v in base_row.items() if
-                   k in ['Corpus', 'Threat Model', 'Defense Model']}
+        abs_row = {k: v for k, v in base_row.items()
+                   if k in ['Corpus', 'Threat Model', 'Defense Model']}
         rel_row = abs_row.copy()
 
-        # add changes for all metrics
+        # for all effectiveness metrics
         for metric_key, display_name in metrics_map.items():
             if metric_key in stats.effectiveness_estimates:
                 br = stats.effectiveness_estimates[metric_key]
@@ -668,6 +670,25 @@ def get_defense_tables_with_stats(
                     )
                 else:
                     rel_row[display_name] = '-'
+
+        # for all quality metrics
+        for qm, (q_key, display_name) in quality_metrics.items():
+            if qm in stats.quality_estimates:
+                br = stats.quality_estimates[qm]
+
+                # absolute changes
+                abs_change = br.post_mean - br.pre_value
+                abs_ci_lower = br.ci_lower - br.pre_value
+                abs_ci_upper = br.ci_upper - br.pre_value
+                abs_row[display_name] = format_estimate_with_hdi(
+                    abs_change, abs_ci_lower, abs_ci_upper
+                )
+                rel_change = abs_change * 100
+                rel_ci_lower = abs_ci_lower * 100
+                rel_ci_upper = abs_ci_upper * 100
+                rel_row[display_name] = format_estimate_with_hdi(
+                    rel_change, rel_ci_lower, rel_ci_upper, as_percent=True
+                )
 
         abs_change_rows.append(abs_row)
         rel_change_rows.append(rel_row)
