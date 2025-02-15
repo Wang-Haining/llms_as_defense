@@ -1,73 +1,47 @@
 """
 Evaluate effectiveness of LLM-based defense against authorship attribution models.
 
-This script implements a comprehensive evaluation framework for assessing the effectiveness
-of LLM-based defenses against authorship attribution attacks. It measures both the absolute
-improvement and progress toward ideal defensive conditions.
+This script implements an evaluation framework for assessing the effectiveness
+of LLM-based defenses against authorship attribution attacks. For effectiveness,
+only the following attribution measures are computed:
+    - Accuracy@1 and Accuracy@5
+    - True class confidence
+    - Prediction entropy
 
-Key Components:
-1. Attribution Performance Metrics:
-   - Accuracy@1/5 and F1@1/5 scores
-   - True class confidence and wrong classification entropy
-   - Distribution metrics (entropy, Gini coefficient, TVD)
-   - Ranking metrics (MRR, Wasserstein distance)
-   - KL divergence between original and transformed predictions
+The output for each experimental run (seed) is saved in a structured directory
+under the output directory (default: defense_evaluation/).
+The file structure is illustrated below:
 
-2. Defense Effectiveness Measures:
-   - Absolute changes in all metrics
-   - Progress toward ideal defensive conditions:
-     * Random guessing accuracy (1/n_classes)
-     * Uniform distribution (max entropy)
-     * Equal class probabilities (min Gini)
-     * Random ranking (MRR = 1/n_classes)
-     * Maximum redistribution (Wasserstein)
-     * Maximum wrong classification entropy when misclassified
-
-3. Text Quality Metrics:
-   - PINC (Paraphrase In N-gram Changes)
-   - BLEU (Bilingual Evaluation Understudy)
-   - METEOR (considering synonyms)
-   - BERTScore (contextual similarity)
-
-Directory Structure:
-defense_evaluation/                        # or specified output_dir
-├── {corpus}/                              # rj and ebg
-│   ├── rq{N}/                             # main research question (e.g., RQ1)
-│   │   ├── rq{N}.{M}/                     # sub-question (e.g., RQ1.1)
-│   │   │   ├── {model_name}/              # e.g., gemma-2b-it
-│   │   │   │   ├── evaluation.json        # consolidated results
-│   │   │   │   └── seed_{seed}.json       # per-seed results
-│   │   │   └── {another_model}/
-│   │   └── rq{N}.{M+1}/
-│   └── rq{N+1}/
-└── {another_corpus}/
-
-File Formats:
-1. seed_{seed}.json: Contains per-seed results including:
-   - Metadata (corpus, RQ, model details, dimensions)
-   - Raw Data:
-     * Original and transformed input texts
-     * True labels
-     * Original and transformed prediction probabilities
-   - Attribution Metrics:
-     * Original metrics (all attribution metrics except KL divergence)
-     * Transformed metrics (all attribution metrics plus KL divergence)
-     * Progress toward ideal defensive conditions
-   - Text Quality Metrics:
-     * PINC, BLEU, METEOR, BERTScore
-   - Example-level Metrics:
-     * Individual sample performance
-     * Rank changes
-     * Distribution changes
-
-2. evaluation.json: Consolidated results across all seeds, following
-   the same structure as individual seed files.
+defense_evaluation/
+└── {corpus}/
+    ├── rq{main}/
+    │   ├── rq{sub}/
+    │   │   └── {model_name}/
+    │   │       ├── evaluation.json         # Consolidated results across seeds
+    │   │       └── seed_{seed}.json        # Detailed per-seed results containing:
+    │   │             ├── metadata          # Corpus, research question, model details, etc.
+    │   │             ├── results             # Contains:
+    │   │             │      attribution:      # Attribution-related data with three keys:
+    │   │             │          pre:           # Aggregated metrics for original predictions:
+    │   │             │                  - accuracy@1
+    │   │             │                  - accuracy@5
+    │   │             │                  - true_class_confidence
+    │   │             │                  - entropy
+    │   │             │          post:          # Aggregated metrics for transformed predictions:
+    │   │             │                  - accuracy@1
+    │   │             │                  - accuracy@5
+    │   │             │                  - true_class_confidence
+    │   │             │                  - entropy
+    │   │             │          raw_predictions:  # Raw prediction probability arrays, stored as a dictionary with:
+    │   │             │                  - original: raw predictions for original texts
+    │   │             │                  - transformed: raw predictions for transformed texts
+    │   │             └── quality:          # Text quality metrics (PINC, BLEU, METEOR, BERTScore, SBERT)
+    │   │             └── example_metrics   # Example-level performance metrics (one-to-one mapping per test sample)
 
 Usage:
-    python eval_llm_defense.py --model "google/gemma-2-9b-it"  # for all rqs
+    python eval_llm_defense.py --model "google/gemma-2-9b-it"  # for all research questions
     python eval_llm_defense.py --rq rq1.1_basic_paraphrase --model "google/gemma-2-9b-it"
 """
-
 
 import argparse
 import json
@@ -76,8 +50,6 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from sklearn.metrics import f1_score
-from sklearn.preprocessing import MultiLabelBinarizer
 
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
@@ -92,18 +64,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def compute_accuracy_at_k(y_true: np.ndarray, y_pred_probs: np.ndarray,
-                          k: int) -> float:
-    """Compute top-k accuracy.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-        k: k for top-k accuracy
-
-    Returns:
-        Accuracy@k score
-    """
+def compute_accuracy_at_k(y_true: np.ndarray, y_pred_probs: np.ndarray, k: int) -> float:
+    """Compute top-k accuracy."""
     n_samples = len(y_true)
     top_k_correct = 0
     for true_label, probs in zip(y_true, y_pred_probs):
@@ -113,365 +75,48 @@ def compute_accuracy_at_k(y_true: np.ndarray, y_pred_probs: np.ndarray,
     return float(top_k_correct / n_samples)
 
 
-def compute_f1_at_k(y_true: np.ndarray, y_pred_probs: np.ndarray, k: int) -> float:
-    """Compute macro-averaged f1 score for top-k predictions.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-        k: k for top-k f1 score
-
-    Returns:
-        f1@k score
-    """
-    n_classes = y_pred_probs.shape[1]
-
-    # convert to top-k predictions
-    y_pred_top_k = []
-    for probs in y_pred_probs:
-        top_k_indices = np.argsort(probs)[-k:]
-        y_pred_top_k.append(top_k_indices)
-
-    # convert to multi-label format
-    mlb = MultiLabelBinarizer(classes=range(n_classes))
-    y_true_bin = mlb.fit_transform([[label] for label in y_true])
-    y_pred_bin = mlb.transform(y_pred_top_k)
-
-    return float(f1_score(y_true_bin, y_pred_bin, average='macro'))
-
-
-def compute_true_class_confidence(y_true: np.ndarray,
-                                  y_pred_probs: np.ndarray) -> float:
-    """Compute average confidence for true class.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        Mean confidence for true class
-    """
+def compute_true_class_confidence(y_true: np.ndarray, y_pred_probs: np.ndarray) -> float:
+    """Compute average confidence for the true class."""
     true_class_probs = np.array(
-        [probs[true_label] for true_label, probs in zip(y_true, y_pred_probs)])
+        [probs[true_label] for true_label, probs in zip(y_true, y_pred_probs)]
+    )
     return float(np.mean(true_class_probs))
 
 
-def compute_entropy(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """Compute entropy of predictions.
-
-    Args:
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        Mean entropy & std of entropy
-    """
+def compute_entropy(y_pred_probs: np.ndarray) -> float:
+    """Compute mean entropy of predictions (no standard deviation)."""
     entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
-    return float(np.mean(entropies)), float(np.std(entropies))
+    return float(np.mean(entropies))
 
 
-def compute_gini(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """compute Gini coefficient of predictions.
-
-    Args:
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        Mean Gini coefficient & std of Gini coefficient
-    """
-    gini_scores = []
-    for probs in y_pred_probs:
-        sorted_probs = np.sort(probs)
-        n = len(sorted_probs)
-        index = np.arange(1, n + 1)
-        gini = ((np.sum((2 * index - n - 1) * sorted_probs)) /
-                (n * np.sum(sorted_probs)))
-        gini_scores.append(gini)
-    return float(np.mean(gini_scores)), float(np.std(gini_scores))
-
-
-def compute_tvd(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """Compute total variation distance from uniform distribution.
-
-    Args:
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        Mean TVD & std of TVD
-    """
-    n_classes = y_pred_probs.shape[1]
-    uniform_dist = np.ones(n_classes) / n_classes
-    tvd_scores = []
-    for probs in y_pred_probs:
-        tvd = 0.5 * np.sum(np.abs(probs - uniform_dist))
-        tvd_scores.append(tvd)
-    return float(np.mean(tvd_scores)), float(np.std(tvd_scores))
-
-
-def compute_mrr(y_true: np.ndarray, y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """Compute mean reciprocal rank.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        MRR & std of reciprocal ranks
-    """
-    mrr_scores = []
-    for true_label, probs in zip(y_true, y_pred_probs):
-        rank = len(probs) - np.where(np.argsort(probs) == true_label)[0][0]
-        mrr_scores.append(1 / rank)
-    return float(np.mean(mrr_scores)), float(np.std(mrr_scores))
-
-
-def compute_wasserstein(y_pred_probs: np.ndarray) -> tuple[float, float]:
-    """Compute wasserstein distance from uniform distribution.
-
-    Args:
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        Mean wasserstein distance & std of wasserstein distance
-    """
-    n_classes = y_pred_probs.shape[1]
-    uniform_dist = np.ones(n_classes) / n_classes
-    wasserstein_scores = []
-    for probs in y_pred_probs:
-        # compute empirical CDF distance from uniform CDF
-        sorted_probs = np.sort(probs)
-        wasserstein = np.mean(np.abs(np.cumsum(sorted_probs) - np.cumsum(uniform_dist)))
-        wasserstein_scores.append(wasserstein)
-    return float(np.mean(wasserstein_scores)), float(np.std(wasserstein_scores))
-
-
-def compute_kl_divergence(y_pred_probs_orig: np.ndarray,
-                          y_pred_probs_trans: np.ndarray) -> float:
-    """compute KL divergence between original and transformed probability distributions.
-
-    Args:
-        y_pred_probs_orig: array of prediction probabilities for original texts
-        y_pred_probs_trans: array of prediction probabilities for transformed texts
-
-    Returns:
-        mean KL divergence
-    """
-    kl_values = []
-    for orig_probs, trans_probs in zip(y_pred_probs_orig, y_pred_probs_trans):
-        # add small constant to avoid division by zero
-        kl = np.sum(orig_probs * np.log2((orig_probs + 1e-10) / (trans_probs + 1e-10)))
-        kl_values.append(kl)
-
-    return float(np.mean(kl_values))
-
-
-def compute_wrong_classification_entropy(y_true: np.ndarray,
-                                         y_pred_probs: np.ndarray) -> tuple[
-    float, float]:
-    """compute entropy of wrong classifications.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-
-    Returns:
-        mean and std of entropy for wrong classifications
-    """
-    wrong_entropies = []
-    for true_label, probs in zip(y_true, y_pred_probs):
-        pred_label = np.argmax(probs)
-        if pred_label != true_label:
-            # compute entropy for wrong classifications
-            ent = -np.sum(probs * np.log2(probs + 1e-10))
-            wrong_entropies.append(ent)
-
-    if wrong_entropies:
-        return float(np.mean(wrong_entropies)), float(np.std(wrong_entropies))
-    return 0.0, 0.0
-
-
-def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray,
-                      y_pred_probs_orig: np.ndarray = None) -> dict:
-    """Calculate comprehensive attribution metrics using individual functions.
-
-    Args:
-        y_true: array of true labels
-        y_pred_probs: array of prediction probabilities
-        y_pred_probs_orig: original probabilities for computing KL divergence (optional)
-
-    Returns:
-        All metrics with their values
-    """
+def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray) -> dict:
+    """Calculate the chosen attribution metrics."""
     metrics = {}
-
-    # overall performance metrics
     for k in [1, 5]:
         metrics[f'accuracy@{k}'] = compute_accuracy_at_k(y_true, y_pred_probs, k)
-        metrics[f'f1@{k}'] = compute_f1_at_k(y_true, y_pred_probs, k)
-
-    # confidence metrics
-    metrics['true_class_confidence'] = compute_true_class_confidence(y_true,
-                                                                     y_pred_probs)
-
-    # distribution metrics
-    metrics['entropy'], metrics['entropy_std'] = compute_entropy(y_pred_probs)
-    metrics['gini'], metrics['gini_std'] = compute_gini(y_pred_probs)
-    metrics['tvd'], metrics['tvd_std'] = compute_tvd(y_pred_probs)
-
-    # ranking metrics
-    metrics['mrr'], metrics['mrr_std'] = compute_mrr(y_true, y_pred_probs)
-    metrics['wasserstein'], metrics['wasserstein_std'] = compute_wasserstein(
-        y_pred_probs)
-
-    # wrong classification entropy
-    metrics['wrong_entropy'], metrics[
-        'wrong_entropy_std'] = compute_wrong_classification_entropy(
-        y_true, y_pred_probs)
-
-    # KL divergence (only if original probabilities are provided)
-    if y_pred_probs_orig is not None:
-        metrics['kl_divergence'] = compute_kl_divergence(y_pred_probs_orig,
-                                                         y_pred_probs)
-
+    metrics['true_class_confidence'] = compute_true_class_confidence(y_true, y_pred_probs)
+    metrics['entropy'] = compute_entropy(y_pred_probs)
     return metrics
-
-
-def defense_effectiveness(pre_metrics: dict, post_metrics: dict) -> dict:
-    """Calculate defense effectiveness metrics by comparing pre/post metrics.
-
-    Args:
-        pre_metrics: metrics before defense
-        post_metrics: metrics after defense
-
-    Returns:
-        Effectiveness metrics including both absolute changes and progress toward ideals
-    """
-    effectiveness = {}
-    n_classes = len(pre_metrics.get('true_class_probs', [1]))  # fallback to 1
-
-    # ideal conditions
-    ideals = {
-        'accuracy': 1 / n_classes,  # random guessing
-        'entropy': np.log2(n_classes),  # uniform distribution entropy
-        'gini': 0.0,  # perfectly equal distribution
-        'tvd': 0.0,  # no deviation from uniform
-        'mrr': 1 / n_classes,  # random ranking
-        'wasserstein': 1.0,  # maximum redistribution
-        'wrong_entropy': np.log2(n_classes),  # maximum confusion when wrong
-    }
-
-    # 1. accuracy and F1 changes
-    for k in [1, 5]:
-        effectiveness[f'accuracy@{k}_abs_change'] = float(
-            post_metrics[f'accuracy@{k}'] - pre_metrics[f'accuracy@{k}']
-        )
-        effectiveness[f'f1@{k}_abs_change'] = float(
-            post_metrics[f'f1@{k}'] - pre_metrics[f'f1@{k}']
-        )
-
-        # progress toward random guessing
-        pre_acc_gap = abs(pre_metrics[f'accuracy@{k}'] - ideals['accuracy'])
-        post_acc_gap = abs(post_metrics[f'accuracy@{k}'] - ideals['accuracy'])
-        effectiveness[f'accuracy@{k}_ideal_progress'] = float(
-            (pre_acc_gap - post_acc_gap) / pre_acc_gap if pre_acc_gap > 0 else 0.0
-        )
-
-    # 2. confidence changes
-    effectiveness['confidence_abs_drop'] = float(
-        pre_metrics['true_class_confidence'] - post_metrics['true_class_confidence']
-    )
-
-    # 3. distribution metrics
-    # entropy (toward maximum)
-    pre_entropy_gap = abs(pre_metrics['entropy'] - ideals['entropy'])
-    post_entropy_gap = abs(post_metrics['entropy'] - ideals['entropy'])
-    effectiveness['entropy_abs_increase'] = float(
-        post_metrics['entropy'] - pre_metrics['entropy']
-    )
-    effectiveness['entropy_ideal_progress'] = float(
-        (
-                    pre_entropy_gap - post_entropy_gap) / pre_entropy_gap if pre_entropy_gap > 0 else 0.0
-    )
-
-    # Gini (toward 0.0)
-    pre_gini_gap = abs(pre_metrics['gini'] - ideals['gini'])
-    post_gini_gap = abs(post_metrics['gini'] - ideals['gini'])
-    effectiveness['gini_abs_reduction'] = float(
-        pre_metrics['gini'] - post_metrics['gini']
-    )
-    effectiveness['gini_ideal_progress'] = float(
-        (pre_gini_gap - post_gini_gap) / pre_gini_gap if pre_gini_gap > 0 else 0.0
-    )
-
-    # TVD (toward 0.0)
-    pre_tvd_gap = abs(pre_metrics['tvd'] - ideals['tvd'])
-    post_tvd_gap = abs(post_metrics['tvd'] - ideals['tvd'])
-    effectiveness['tvd_abs_reduction'] = float(
-        pre_metrics['tvd'] - post_metrics['tvd']
-    )
-    effectiveness['tvd_ideal_progress'] = float(
-        (pre_tvd_gap - post_tvd_gap) / pre_tvd_gap if pre_tvd_gap > 0 else 0.0
-    )
-
-    # 4. ranking metrics
-    # MRR (toward random ranking)
-    pre_mrr_gap = abs(pre_metrics['mrr'] - ideals['mrr'])
-    post_mrr_gap = abs(post_metrics['mrr'] - ideals['mrr'])
-    effectiveness['mrr_abs_reduction'] = float(
-        pre_metrics['mrr'] - post_metrics['mrr']
-    )
-    effectiveness['mrr_ideal_progress'] = float(
-        (pre_mrr_gap - post_mrr_gap) / pre_mrr_gap if pre_mrr_gap > 0 else 0.0
-    )
-
-    # Wasserstein (toward max redistribution)
-    pre_wass_gap = abs(pre_metrics['wasserstein'] - ideals['wasserstein'])
-    post_wass_gap = abs(post_metrics['wasserstein'] - ideals['wasserstein'])
-    effectiveness['wasserstein_abs_increase'] = float(
-        post_metrics['wasserstein'] - pre_metrics['wasserstein']
-    )
-    effectiveness['wasserstein_ideal_progress'] = float(
-        (pre_wass_gap - post_wass_gap) / pre_wass_gap if pre_wass_gap > 0 else 0.0
-    )
-
-    # 5. Wrong classification entropy
-    pre_wrong_gap = abs(pre_metrics['wrong_entropy'] - ideals['wrong_entropy'])
-    post_wrong_gap = abs(post_metrics['wrong_entropy'] - ideals['wrong_entropy'])
-    effectiveness['wrong_entropy_abs_change'] = float(
-        post_metrics['wrong_entropy'] - pre_metrics['wrong_entropy']
-    )
-    effectiveness['wrong_entropy_ideal_progress'] = float(
-        (pre_wrong_gap - post_wrong_gap) / pre_wrong_gap if pre_wrong_gap > 0 else 0.0
-    )
-
-    # 6. KL divergence (transformed only)
-    if 'kl_divergence' in post_metrics:
-        effectiveness['kl_divergence'] = float(post_metrics['kl_divergence'])
-
-    return effectiveness
 
 
 class DefenseEvaluator:
     """Evaluates LLM defense effectiveness against attribution models."""
 
-    def __init__(
-        self,
-        threat_models_dir: Path,
-        llm_outputs_dir: Path,
-        output_dir: Path
-    ):
-        """Initialize evaluator with paths to required data.
+    def __init__(self, threat_models_dir: Path, llm_outputs_dir: Path, output_dir: Path):
+        """
+        Initialize evaluator with paths to required data.
 
         Args:
-            threat_models_dir: directory containing trained models
-            llm_outputs_dir: directory containing LLM transformations
-            output_dir: directory to save evaluation results
+            threat_models_dir: Directory containing trained models.
+            llm_outputs_dir: Directory containing LLM outputs.
+            output_dir: Directory to save evaluation results.
         """
         self.threat_models_dir = Path(threat_models_dir)
         self.llm_outputs_dir = Path(llm_outputs_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # map of model types to predictor classes
+        # map model types to predictor classes.
         self.predictor_classes = {
             'logreg': LogisticRegressionPredictor,
             'svm': SVMPredictor,
@@ -479,75 +124,28 @@ class DefenseEvaluator:
         }
 
     def _get_output_path(self, corpus: str, rq: str, model_name: str) -> Path:
-        """Get standardized output path for both experiment and save results.
-
-        Args:
-            corpus: corpus name (rj/ebg)
-            rq: full research question identifier (e.g. rq1.1_basic_paraphrase)
-            model_name: full model name
-
-        Returns:
-            Path: Standardized path for output files
-        """
-        rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
+        """Determine standardized output path for saving results."""
+        rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
         model_dir = model_name.split('/')[-1].lower()
-
         return self.output_dir / corpus / rq_main / rq / model_dir
 
-    def _load_predictor(
-        self,
-        corpus: str,
-        model_type: str
-    ) -> object:
-        """Load trained model predictor for given corpus and type."""
+    def _load_predictor(self, corpus: str, model_type: str) -> object:
+        """Load the predictor for a given corpus and model type."""
         model_dir = self.threat_models_dir / corpus / "no_protection" / model_type / "model"
-
         return self.predictor_classes[model_type](model_dir)
 
-    def _load_llm_outputs(
-        self,
-        corpus: str,
-        rq: str,
-        model_name: str
-    ) -> List[Dict]:
-        """Load LLM-generated transformations for an experiment."""
-        exp_dir = self._get_experiment_paths(corpus, rq, model_name)
-        logger.info(f"Looking for transformations in: {exp_dir}")
+    def _get_experiment_paths(self, corpus: str, rq: str, model_name: str) -> Path:
+        """Locate the experiment directory based on research question and model name."""
+        rq_base = rq.split('_')[0]
+        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"
+        model_dir = model_name.split('/')[-1].lower()
+        expected_path = self.llm_outputs_dir / corpus / rq_main / rq / model_dir
+        logger.info(f"Looking for files in: {expected_path}")
+        return expected_path
 
-        transformations = []
-        seed_files = list(exp_dir.glob('seed_*.json'))
-        logger.info(f"Found {len(seed_files)} seed files")
-
-        for seed_file in seed_files:
-            logger.info(f"Loading transformations from: {seed_file}")
-            with open(seed_file) as f:
-                results = json.load(f)
-                logger.info(f"Loaded {len(results)} results from seed file")
-                if isinstance(results, list):
-                    transformations.extend(results)
-                else:
-                    # handle nested structures
-                    if 'all_runs' in results:
-                        for run in results['all_runs']:
-                            if 'transformations' in run:
-                                transformations.extend(run['transformations'])
-                                logger.info(
-                                    f"Added {len(run['transformations'])} transformations from run"
-                                )
-
-        logger.info(f"Total transformations loaded: {len(transformations)}")
-
-        if not transformations:
-            logger.warning(f"No transformations found in {exp_dir}")
-
-        return transformations
-
-    def evaluate_experiment(self, corpus: str, rq: str, model_name: str) -> Dict[
-        str, Dict]:
-        """Evaluate LLM-based defense against attribution models."""
+    def evaluate_experiment(self, corpus: str, rq: str, model_name: str) -> Dict[str, Dict]:
+        """Evaluate the LLM-based defense against attribution models."""
         logger.info(f"Evaluating {corpus}-{rq} using {model_name}")
-
-        # load original test data
         _, _, test_texts, test_labels = load_corpus(corpus=corpus, task="no_protection")
         logger.info(f"Loaded {len(test_texts)} original test texts")
 
@@ -555,19 +153,15 @@ class DefenseEvaluator:
         transformations_by_seed = {}
         exp_dir = self._get_experiment_paths(corpus, rq, model_name)
 
-        # process each seed file
         for seed_file in exp_dir.glob("seed_*.json"):
             seed_id = int(seed_file.stem.split("_")[1])
             logger.info(f"Loading transformations from: {seed_file}")
 
             with open(seed_file) as f:
                 seed_data = json.load(f)
-                # extract transformed texts from the JSON structure
                 transformed_texts = []
-                # handle nested structure in JSON
                 if "transformations" in seed_data:
-                    transformed_texts = [t["transformed"] for t in
-                                         seed_data["transformations"]]
+                    transformed_texts = [t["transformed"] for t in seed_data["transformations"]]
                 else:
                     for entry in seed_data:
                         if "transformed" in entry:
@@ -577,19 +171,13 @@ class DefenseEvaluator:
                     transformations_by_seed[seed_id] = transformed_texts
                 else:
                     logger.warning(
-                        f"Skipping seed {seed_id}: expected {len(test_texts)} transformations, got {len(transformed_texts)}")
+                        f"Skipping seed {seed_id}: expected {len(test_texts)} transformations, got {len(transformed_texts)}"
+                    )
 
         logger.info(f"Loaded transformations for {len(transformations_by_seed)} seeds")
-
-        # prepare output directory
-        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
-        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
-        model_dir = model_name.split('/')[-1].lower()
-
         output_base = self._get_output_path(corpus, rq, model_name)
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # evaluate each seed
         all_seed_results = {}
         for seed_id, transformed_texts in transformations_by_seed.items():
             seed_results = {}
@@ -603,35 +191,39 @@ class DefenseEvaluator:
                 trans_preds = predictor.predict_proba(transformed_texts)
 
                 original_metrics = calculate_metrics(test_labels, orig_preds)
-                transformed_metrics = calculate_metrics(test_labels, trans_preds,
-                                                        orig_preds)  # pass original probs for KL
-                effectiveness = defense_effectiveness(original_metrics,
-                                                      transformed_metrics)
+                transformed_metrics = calculate_metrics(test_labels, trans_preds)
 
-                # collect example-level metrics
+                # create one-to-one mapping of pre and post metrics
+                pre_attribution = {
+                    "accuracy@1": original_metrics["accuracy@1"],
+                    "accuracy@5": original_metrics["accuracy@5"],
+                    "true_class_confidence": original_metrics["true_class_confidence"],
+                    "entropy": original_metrics["entropy"]
+                }
+                post_attribution = {
+                    "accuracy@1": transformed_metrics["accuracy@1"],
+                    "accuracy@5": transformed_metrics["accuracy@5"],
+                    "true_class_confidence": transformed_metrics["true_class_confidence"],
+                    "entropy": transformed_metrics["entropy"]
+                }
+
+                # collect example-level metrics (raw predictions are one-to-one with test samples)
                 for idx, (true_label, orig_prob, trans_prob) in enumerate(
                         zip(test_labels, orig_preds, trans_preds)
                 ):
                     orig_ranks = np.argsort(orig_prob)[::-1]
                     trans_ranks = np.argsort(trans_prob)[::-1]
-
                     example_metrics.append({
-                        "example_id": int(idx),  # convert from numpy int
-                        "true_label": int(true_label),  # convert from numpy int
+                        "example_id": int(idx),
+                        "true_label": int(true_label),
                         "orig_probs": orig_prob.tolist(),
                         "trans_probs": trans_prob.tolist(),
                         "original_rank": int(np.where(orig_ranks == true_label)[0][0]),
-                        # convert numpy int
-                        "transformed_rank": int(
-                            np.where(trans_ranks == true_label)[0][0]),
-                        # convert numpy int
-                        "mrr_change": float(1 / (np.where(trans_ranks == true_label)[0][
-                                                     0] + 1) -  # convert numpy float
-                                            1 / (np.where(orig_ranks == true_label)[0][
-                                                     0] + 1))
+                        "transformed_rank": int(np.where(trans_ranks == true_label)[0][0]),
+                        "mrr_change": float(1 / (np.where(trans_ranks == true_label)[0][0] + 1) -
+                                              1 / (np.where(orig_ranks == true_label)[0][0] + 1))
                     })
 
-                # calculate text quality metrics
                 quality_metrics = evaluate_quality(
                     candidate_texts=transformed_texts,
                     reference_texts=test_texts,
@@ -639,36 +231,26 @@ class DefenseEvaluator:
                 )
 
                 seed_results[model_type] = {
-                    'raw': {
-                        'inputs': {
-                            'original_texts': test_texts,
-                            'transformed_texts': transformed_texts,
-                            'true_labels': [int(x) for x in test_labels]
-                            # convert numpy ints
-                        },
-                        'predictions': {
-                            'original_probs': orig_preds.tolist(),
-                            'transformed_probs': trans_preds.tolist()
+                    "attribution": {
+                        "pre": pre_attribution,
+                        "post": post_attribution,
+                        "raw_predictions": {
+                            "original": orig_preds.tolist(),
+                            "transformed": trans_preds.tolist()
                         }
                     },
-                    'attribution': {
-                        'original_metrics': original_metrics,
-                        'transformed_metrics': transformed_metrics,
-                        'effectiveness': effectiveness
-                    },
-                    'quality': quality_metrics
+                    "quality": quality_metrics
                 }
 
-                # save detailed per-seed results
                 output_file = output_base / f"seed_{seed_id}.json"
                 detailed_results = {
                     'metadata': {
                         'corpus': corpus,
                         'research_question': rq,
                         'model_name': model_name,
-                        'seed': int(seed_id),  # convert if numpy int
+                        'seed': int(seed_id),
                         'n_examples': int(len(test_texts)),
-                        'n_classes': int(len(np.unique(test_labels))) # convert numpy int
+                        'n_classes': int(len(np.unique(test_labels)))
                     },
                     'results': seed_results,
                     'example_metrics': example_metrics
@@ -682,41 +264,8 @@ class DefenseEvaluator:
 
         return all_seed_results
 
-    def _get_experiment_paths(self, corpus: str, rq: str, model_name: str) -> Path:
-        """Get experiment directory based on RQ identifier and model name.
-
-        Args:
-            corpus: corpus name (rj/ebg)
-            rq: research question identifier (e.g. rq1.1_basic_paraphrase)
-            model_name: full model name (e.g. google/gemma-2b-it)
-
-        Returns:
-            Path to experiment directory
-        """
-        # extract RQ numbers for parent directory
-        rq_base = rq.split('_')[0]  # e.g., 'rq1.1'
-        rq_main = f"rq{rq_base.split('.')[0].lstrip('rq')}"  # e.g., 'rq1'
-
-        # model dir name: take last part of model path
-        model_dir = model_name.split('/')[-1].lower()
-
-        expected_path = (
-                self.llm_outputs_dir / corpus / rq_main / rq / model_dir
-        )
-        logger.info(f"Looking for files in: {expected_path}")
-        return expected_path
-
-    def save_results(self, results: Dict, corpus: str, rq: str,
-                     model_name: str) -> None:
-        """Save evaluation results following the specified directory structure.
-
-        Args:
-            results: evaluation results dictionary
-            corpus: corpus name (rj/ebg)
-            rq: research question identifier
-            model_name: model name
-        """
-        # get output directory using common path construction
+    def save_results(self, results: Dict, corpus: str, rq: str, model_name: str) -> None:
+        """Save the consolidated evaluation results."""
         save_dir = self._get_output_path(corpus, rq, model_name)
         save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -725,58 +274,15 @@ class DefenseEvaluator:
             json.dump(results, f, indent=2, ensure_ascii=False)
         logger.info(f"Saved final consolidated results to {output_file}")
 
-        # log summary metrics with new measures
         logger.info(f"\nResults for {corpus}-{rq} using {model_name}:")
         for seed, seed_dict in results.items():
             logger.info(f"\n--- Seed: {seed} ---")
             for model_type, metrics in seed_dict.items():
-                orig = metrics['attribution']['original_metrics']
-                transformed = metrics['attribution']['transformed_metrics']
-                effect = metrics['attribution']['effectiveness']
-
-                logger.info(f"\n{model_type.upper()} Results:")
-
-                # accuracy and F1
-                for k in [1, 5]:
-                    logger.info(
-                        f"Accuracy@{k}: {orig[f'accuracy@{k}']:.4f} → {transformed[f'accuracy@{k}']:.4f}")
-                    logger.info(
-                        f"  Ideal Progress: {effect[f'accuracy@{k}_ideal_progress']:.4f}")
-                    logger.info(
-                        f"F1@{k}: {orig[f'f1@{k}']:.4f} → {transformed[f'f1@{k}']:.4f}")
-
-                # distribution metrics
-                logger.info("\nDistribution Metrics:")
-                logger.info(
-                    f"  Entropy: {orig['entropy']:.4f} → {transformed['entropy']:.4f}")
-                logger.info(
-                    f"    Progress to Uniform: {effect['entropy_ideal_progress']:.4f}")
-                logger.info(f"  Gini: {orig['gini']:.4f} → {transformed['gini']:.4f}")
-                logger.info(
-                    f"    Progress to Equal: {effect['gini_ideal_progress']:.4f}")
-                logger.info(f"  TVD: {orig['tvd']:.4f} → {transformed['tvd']:.4f}")
-                logger.info(
-                    f"    Progress to Uniform: {effect['tvd_ideal_progress']:.4f}")
-
-                # ranking metrics
-                logger.info("\nRanking Metrics:")
-                logger.info(f"  MRR: {orig['mrr']:.4f} → {transformed['mrr']:.4f}")
-                logger.info(
-                    f"    Progress to Random: {effect['mrr_ideal_progress']:.4f}")
-                logger.info(
-                    f"  Wasserstein: {orig['wasserstein']:.4f} → {transformed['wasserstein']:.4f}")
-                logger.info(
-                    f"    Progress to Max: {effect['wasserstein_ideal_progress']:.4f}")
-
-                # new metrics
-                logger.info("\nNew Attribution Metrics:")
-                logger.info(
-                    f"  Wrong Classification Entropy: {orig['wrong_entropy']:.4f} → {transformed['wrong_entropy']:.4f}")
-                logger.info(
-                    f"    Progress to Maximum: {effect['wrong_entropy_ideal_progress']:.4f}")
-                logger.info(f"  KL Divergence: {transformed['kl_divergence']:.4f}")
-
-                # text quality
+                pre_attr = metrics['attribution']['pre']
+                post_attr = metrics['attribution']['post']
+                logger.info(f"\n{model_type.upper()} Attribution Metrics:")
+                for key in ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy']:
+                    logger.info(f"{key}: {pre_attr[key]:.4f} → {post_attr[key]:.4f}")
                 qual = metrics['quality']
                 logger.info("\nText Quality:")
                 logger.info(f"  BLEU: {qual['bleu']['bleu']:.4f}")
@@ -785,10 +291,7 @@ class DefenseEvaluator:
                 logger.info(f"  SBERT: {qual['sbert']['sbert_similarity_avg']:.4f}")
 
     def main_loop(self, args):
-        """
-        Handles the overall loop of corpora, RQs, and models.
-        Separated from if __name__ == "__main__" for clarity/testing.
-        """
+        """Main loop iterating over corpora, research questions, and models."""
         corpora = [args.corpus] if args.corpus else CORPORA
         rqs = [args.rq] if args.rq else RQS
         models = [args.model] if args.model else LLMS
@@ -800,9 +303,7 @@ class DefenseEvaluator:
                         results = self.evaluate_experiment(corpus, rq, model)
                         self.save_results(results, corpus, rq, model)
                     except Exception as e:
-                        logger.error(
-                            f"Error evaluating {corpus}-{rq} with {model}: {str(e)}"
-                        )
+                        logger.error(f"Error evaluating {corpus}-{rq} with {model}: {str(e)}")
                         continue
 
 
