@@ -401,14 +401,14 @@ def get_defense_tables(
                             if score is not None:
                                 quality_scores[qm].append(float(score))
 
-                    # Create row with 95% HDI using Bayesian estimation
+                    # create row with 95% HDI using Bayesian estimation
                     base_row = {
                         'Corpus': corpus.upper(),
                         'Scenario': get_scenario_name(rq),
                         'Threat Model': threat_model_name,
                         'Defense Model': model_name
                     }
-                    # For effectiveness metrics
+                    # for effectiveness metrics
                     for metric_key, display_name in metrics_map.items():
                         post_vals = post_metrics[metric_key]
                         if post_vals:
@@ -421,7 +421,7 @@ def get_defense_tables(
                         else:
                             base_row[display_name] = '-'
 
-                    # For quality metrics
+                    # for quality metrics
                     for qm, (key, display_name) in quality_metrics.items():
                         values = quality_scores[qm]
                         if values:
@@ -694,7 +694,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Note changed return values here
     (post_df, abs_change_df, rel_change_df, stats_dict) = get_defense_tables_with_stats(
         base_dir=args.base_dir,
         rq=args.rq,
@@ -713,7 +712,10 @@ def main():
     output_folder = Path(args.output)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    base_filename = args.rq
+    # construct filename starting with corpus name
+    base_filename = f"{args.rq}_{args.corpus}" if args.corpus else args.rq
+
+    # save results with corpus-specific names
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
     rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
