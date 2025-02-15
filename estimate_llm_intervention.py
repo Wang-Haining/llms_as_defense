@@ -32,16 +32,18 @@ import pandas as pd
 import pymc as pm
 from tqdm import tqdm
 
-# For posteriors
+
+# for posteriors
 class BayesResult(NamedTuple):
     pre_value: float            # Baseline value (pre-intervention)
     post_mean: float            # Posterior mean of the parameter
     ci_lower: float             # Lower bound of the 95% credible interval
     ci_upper: float             # Upper bound of the 95% credible interval
 
+
 def estimate_beta_metric(post_values: List[float]) -> dict:
     """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1]."""
-    # Ensure values are strictly within (0, 1)
+    # ensure values are strictly within (0, 1)
     epsilon = 1e-6
     post_values = np.clip(np.array(post_values), epsilon, 1 - epsilon)
 
@@ -75,6 +77,7 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
         "hdi_lower": lower_bound,
         "hdi_upper": upper_bound
     }
+
 
 class DefenseStats:
     """Container for defense evaluation Bayesian estimates for each metric."""
@@ -165,12 +168,14 @@ class DefenseStats:
         print_group("Effectiveness", self.effectiveness_estimates)
         print_group("Quality", self.quality_estimates)
 
+
 def get_scenario_name(rq: str) -> str:
     """Convert RQ identifier to a readable scenario name."""
     parts = rq.split('_')
     if len(parts) > 1:
         return ' '.join(part.capitalize() for part in parts[1:])
     return rq
+
 
 def format_estimate_with_hdi(
         value: float,
@@ -188,6 +193,7 @@ def format_estimate_with_hdi(
             return f"{value:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
         return f"{value:.3f}"
 
+
 def print_defense_stats(
     stats_dict: Dict[str, DefenseStats],
     corpus: Optional[str] = None,
@@ -200,6 +206,7 @@ def print_defense_stats(
             (threat_model is None or stats.threat_model == threat_model) and
             (defense_model is None or stats.defense_model == defense_model)):
             stats.print_summary()
+
 
 def get_defense_tables(
         base_dir: str = "defense_evaluation",
@@ -373,6 +380,7 @@ def get_defense_tables(
                         post_rows.append(base_row.copy())
         columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
         return pd.DataFrame(post_rows, columns=columns)
+
 
 def get_defense_tables_with_stats(
         base_dir: str = "defense_evaluation",
