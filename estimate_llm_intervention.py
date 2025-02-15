@@ -35,10 +35,10 @@ from tqdm import tqdm
 
 # for posteriors
 class BayesResult(NamedTuple):
-    pre_value: float            # Baseline value (pre-intervention)
-    post_mean: float            # Posterior mean of the parameter
-    ci_lower: float             # Lower bound of the 95% credible interval
-    ci_upper: float             # Upper bound of the 95% credible interval
+    pre_value: float            # baseline value (pre-intervention)
+    post_mean: float            # posterior mean of the parameter
+    ci_lower: float             # lower bound of the 95% credible interval
+    ci_upper: float             # upper bound of the 95% credible interval
 
 
 def estimate_beta_metric(post_values: List[float]) -> dict:
@@ -280,7 +280,7 @@ def get_defense_tables(
                         first_seed = seed_keys[0]
                         if threat_model_key not in results[first_seed]:
                             continue
-                        # Updated key: use 'pre'
+                        # updated key: use 'pre'
                         metrics = results[first_seed][threat_model_key]['attribution']['pre']
                         row = {'Corpus': corpus.upper(),
                                'Scenario': 'Combined' if len(rqs) > 1 else 'No protection',
