@@ -443,7 +443,7 @@ def get_defense_tables(
 
 def get_defense_tables_with_stats(
         base_dir: str = "defense_evaluation",
-        rq: str = "rq1.1_basic_paraphrase",
+        rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
         corpora: Optional[List[str]] = None,
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
@@ -455,7 +455,7 @@ def get_defense_tables_with_stats(
 
     Args:
         base_dir: base directory containing evaluation results
-        rq: research question identifier (e.g. 'rq1.1_basic_paraphrase')
+        rqs: a single research question identifier or list of RQs to combine data from
         corpora: list of corpora to analyze (default: ['ebg', 'rj'])
         threat_models: dict mapping model keys to display names
         mode: either 'pre' or 'post'
@@ -467,6 +467,9 @@ def get_defense_tables_with_stats(
         - rel_change_df: relative change (%) with 95% HDI
         - stats_dict: dict mapping (corpus, threat_model, defense_model) to DefenseStats
     """
+    if isinstance(rqs, str):
+        rqs = [rqs]
+
     if corpora is None:
         corpora = ['ebg', 'rj']
     if threat_models is None:
@@ -491,173 +494,189 @@ def get_defense_tables_with_stats(
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
+    if corpora is None:
+        corpora = ['ebg', 'rj']
+    if threat_models is None:
+        threat_models = {'logreg': 'LogReg', 'svm': 'SVM', 'roberta': 'RoBERTa'}
+    if mode not in ["pre", "post"]:
+        raise ValueError('mode must be one of ["pre", "post"]')
 
-    # get the post values with HDI from modified get_defense_tables
-    post_df = get_defense_tables(base_dir, rq, corpora, threat_models, mode)
+    # collect data from all RQs first
+    all_metrics = defaultdict(list)  # store all metrics for later estimation
+    all_quality = defaultdict(list)  # store all quality metrics
+    stats_dict = {}  # store final stats
 
-    # prepare dataframes for changes
-    abs_change_rows = []
-    rel_change_rows = []
-    stats_dict = {}
+    for rq in rqs:
+        rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
 
-    for corpus in tqdm(corpora, desc="Processing corpora"):
-        for threat_model_key, threat_model_name in threat_models.items():
-            corpus_path = Path(base_dir) / corpus / rq_main / rq
-            if not corpus_path.exists():
-                continue
-
-            for model_dir in tqdm(list(corpus_path.glob("*")),
-                                desc=f"Processing models for {corpus} {threat_model_name}",
-                                leave=False):
-                if not model_dir.is_dir():
+        for corpus in tqdm(corpora, desc=f"Processing corpus for {rq}"):
+            for threat_model_key, threat_model_name in threat_models.items():
+                corpus_path = Path(base_dir) / corpus / rq_main / rq
+                if not corpus_path.exists():
                     continue
 
-                # determine display name for model
-                model_dir_name = model_dir.name.lower()
-                if 'llama' in model_dir_name:
-                    model_name = 'Llama-3.1'
-                elif 'gemma' in model_dir_name:
-                    model_name = 'Gemma-2'
-                elif 'ministral' in model_dir_name:
-                    model_name = 'Ministral'
-                elif 'sonnet' in model_dir_name:
-                    model_name = 'Claude-3.5'
-                elif 'gpt' in model_dir_name:
-                    model_name = 'GPT-4o'
-                else:
-                    model_name = model_dir.name
-
-                eval_file = model_dir / "evaluation.json"
-                if not eval_file.exists():
-                    continue
-
-                # initialize defense stats object
-                stats = DefenseStats(corpus, threat_model_name, model_name)
-
-                # collectors for metrics
-                orig_metrics = defaultdict(list)
-                post_metrics = defaultdict(list)
-                quality_scores = defaultdict(list)
-
-                # load evaluation results
-                with open(eval_file) as f:
-                    results = json.load(f)
-
-                # collect metrics across seeds
-                for seed_results in results.values():
-                    if threat_model_key not in seed_results:
+                for model_dir in tqdm(list(corpus_path.glob("*")),
+                                      desc=f"Processing models for {corpus} {threat_model_name}",
+                                      leave=False):
+                    if not model_dir.is_dir():
                         continue
 
-                    metrics = seed_results[threat_model_key]['attribution']
-
-                    # effectiveness metrics
-                    for metric_key, _ in metrics_map.items():
-                        orig_val = metrics['original_metrics'].get(metric_key)
-                        post_val = metrics['transformed_metrics'].get(metric_key)
-                        if orig_val is not None:
-                            orig_metrics[metric_key].append(float(orig_val))
-                        if post_val is not None:
-                            post_metrics[metric_key].append(float(post_val))
-
-                    # quality metrics
-                    quality = seed_results[threat_model_key].get('quality', {})
-                    for qm, (key, _) in quality_metrics.items():
-                        score = quality.get(qm, {}).get(key)
-                        if score is not None:
-                            quality_scores[qm].append(float(score))
-
-                # process effectiveness metrics using bayesian estimates
-                for metric_key, display_name in metrics_map.items():
-                    orig_vals = orig_metrics[metric_key]
-                    post_vals = post_metrics[metric_key]
-                    if orig_vals and post_vals:
-                        stats.add_estimate(metric_key, 'effectiveness',
-                                        np.mean(orig_vals), post_vals, display_name)
-
-                # process quality metrics using bayesian estimates
-                for qm, (key, display_name) in quality_metrics.items():
-                    values = quality_scores[qm]
-                    if values:
-                        stats.add_estimate(qm, 'quality',
-                                        1.0 if qm != 'pinc' else 0.0,
-                                        values, display_name)
-
-                stats_dict[(corpus, threat_model_name, model_name)] = stats
-
-                # prepare rows for change tables
-                base_row_abs = {
-                    'Corpus': corpus.upper(),
-                    'Threat Model': threat_model_name,
-                    'Defense Model': model_name
-                }
-                base_row_rel = base_row_abs.copy()
-
-                # effectiveness metrics changes
-                for metric_key, display_name in metrics_map.items():
-                    if metric_key in stats.effectiveness_estimates:
-                        br = stats.effectiveness_estimates[metric_key]
-                        abs_change = br.post_mean - br.pre_value
-                        abs_ci_lower = br.ci_lower - br.pre_value
-                        abs_ci_upper = br.ci_upper - br.pre_value
-                        base_row_abs[display_name] = format_estimate_with_hdi(
-                            abs_change, abs_ci_lower, abs_ci_upper
-                        )
-
-                        if br.pre_value != 0:
-                            rel_change = (abs_change / br.pre_value) * 100
-                            rel_ci_lower = ((br.ci_lower - br.pre_value) / br.pre_value) * 100
-                            rel_ci_upper = ((br.ci_upper - br.pre_value) / br.pre_value) * 100
-                            base_row_rel[display_name] = format_estimate_with_hdi(
-                                rel_change, rel_ci_lower, rel_ci_upper, as_percent=True
-                            )
-                        else:
-                            base_row_rel[display_name] = '-'
+                    # get model name
+                    model_dir_name = model_dir.name.lower()
+                    if 'llama' in model_dir_name:
+                        model_name = 'Llama-3.1'
+                    elif 'gemma' in model_dir_name:
+                        model_name = 'Gemma-2'
+                    elif 'ministral' in model_dir_name:
+                        model_name = 'Ministral'
+                    elif 'sonnet' in model_dir_name:
+                        model_name = 'Claude-3.5'
+                    elif 'gpt' in model_dir_name:
+                        model_name = 'GPT-4o'
                     else:
-                        base_row_abs[display_name] = '-'
-                        base_row_rel[display_name] = '-'
+                        model_name = model_dir.name
 
-                # quality metrics changes
-                for qm, (key, display_name) in quality_metrics.items():
-                    if qm in stats.quality_estimates:
-                        br = stats.quality_estimates[qm]
-                        base_val = 0.0 if qm == 'pinc' else 1.0
-                        abs_change = br.post_mean - base_val
-                        abs_ci_lower = br.ci_lower - base_val
-                        abs_ci_upper = br.ci_upper - base_val
-                        base_row_abs[display_name] = format_estimate_with_hdi(
-                            abs_change, abs_ci_lower, abs_ci_upper
-                        )
+                    eval_file = model_dir / "evaluation.json"
+                    if not eval_file.exists():
+                        continue
 
-                        # quality metrics relative changes
-                        rel_change = (br.post_mean - base_val) * 100
-                        rel_ci_lower = (br.ci_lower - base_val) * 100
-                        rel_ci_upper = (br.ci_upper - base_val) * 100
-                        base_row_rel[display_name] = format_estimate_with_hdi(
-                            rel_change, rel_ci_lower, rel_ci_upper, as_percent=True
-                        )
-                    else:
-                        base_row_abs[display_name] = '-'
-                        base_row_rel[display_name] = '-'
+                    # key for this configuration
+                    config_key = (corpus, threat_model_name, model_name)
 
-                abs_change_rows.append(base_row_abs)
-                rel_change_rows.append(base_row_rel)
+                    # load and process metrics
+                    with open(eval_file) as f:
+                        results = json.load(f)
+
+                    for seed_results in results.values():
+                        if threat_model_key not in seed_results:
+                            continue
+
+                        metrics = seed_results[threat_model_key]['attribution']
+
+                        # store original metrics if not already stored
+                        if config_key not in stats_dict:
+                            stats_dict[config_key] = DefenseStats(corpus,
+                                                                  threat_model_name,
+                                                                  model_name)
+
+                        # collect effectiveness metrics
+                        for metric_key in metrics_map:
+                            key = (config_key, metric_key)
+                            orig_val = metrics['original_metrics'].get(metric_key)
+                            post_val = metrics['transformed_metrics'].get(metric_key)
+
+                            if orig_val is not None and post_val is not None:
+                                all_metrics[key].append({
+                                    'pre': float(orig_val),
+                                    'post': float(post_val)
+                                })
+
+                        # collect quality metrics
+                        quality = seed_results[threat_model_key].get('quality', {})
+                        for qm, (key, _) in quality_metrics.items():
+                            score = quality.get(qm, {}).get(key)
+                            if score is not None:
+                                all_quality[(config_key, qm)].append(float(score))
+
+    # now process combined metrics for each configuration
+    post_rows = []
+    abs_change_rows = []
+    rel_change_rows = []
+
+    for config_key, stats in stats_dict.items():
+        corpus, threat_model_name, model_name = config_key
+
+        # prepare base rows
+        base_row = {
+            'Corpus': corpus.upper(),
+            'Threat Model': threat_model_name,
+            'Defense Model': model_name,
+            'Scenario': 'Combined' if len(rqs) > 1 else get_scenario_name(rqs[0])
+        }
+
+        # process effectiveness metrics
+        for metric_key, display_name in metrics_map.items():
+            key = (config_key, metric_key)
+            if key in all_metrics:
+                values = all_metrics[key]
+                pre_value = np.mean([v['pre'] for v in values])
+                post_values = [v['post'] for v in values]
+
+                stats.add_estimate(metric_key, 'effectiveness', pre_value, post_values,
+                                   display_name)
+
+                result = estimate_beta_metric(post_values)
+                base_row[display_name] = format_estimate_with_hdi(
+                    result["mean"], result["hdi_lower"], result["hdi_upper"]
+                )
+
+        # process quality metrics
+        for qm, (key, display_name) in quality_metrics.items():
+            quality_key = (config_key, qm)
+            if quality_key in all_quality:
+                values = all_quality[quality_key]
+                stats.add_estimate(qm, 'quality',
+                                   1.0 if qm != 'pinc' else 0.0,
+                                   values, display_name)
+
+                result = estimate_beta_metric(values)
+                base_row[display_name] = format_estimate_with_hdi(
+                    result["mean"], result["hdi_lower"], result["hdi_upper"]
+                )
+
+        post_rows.append(base_row.copy())
+
+        # create absolute and relative change rows
+        abs_row = {k: v for k, v in base_row.items() if
+                   k in ['Corpus', 'Threat Model', 'Defense Model']}
+        rel_row = abs_row.copy()
+
+        # add changes for all metrics
+        for metric_key, display_name in metrics_map.items():
+            if metric_key in stats.effectiveness_estimates:
+                br = stats.effectiveness_estimates[metric_key]
+
+                # absolute changes
+                abs_change = br.post_mean - br.pre_value
+                abs_ci_lower = br.ci_lower - br.pre_value
+                abs_ci_upper = br.ci_upper - br.pre_value
+                abs_row[display_name] = format_estimate_with_hdi(
+                    abs_change, abs_ci_lower, abs_ci_upper
+                )
+
+                # relative changes
+                if br.pre_value != 0:
+                    rel_change = (abs_change / br.pre_value) * 100
+                    rel_ci_lower = ((br.ci_lower - br.pre_value) / br.pre_value) * 100
+                    rel_ci_upper = ((br.ci_upper - br.pre_value) / br.pre_value) * 100
+                    rel_row[display_name] = format_estimate_with_hdi(
+                        rel_change, rel_ci_lower, rel_ci_upper, as_percent=True
+                    )
+                else:
+                    rel_row[display_name] = '-'
+
+        abs_change_rows.append(abs_row)
+        rel_change_rows.append(rel_row)
 
     # create final dataframes
-    cols = ['Corpus', 'Threat Model', 'Defense Model'] + \
-           list(metrics_map.values()) + \
-           [v[1] for v in quality_metrics.values()]
+    post_cols = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + \
+                list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
+    change_cols = ['Corpus', 'Threat Model', 'Defense Model'] + \
+                  list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
 
-    abs_change_df = pd.DataFrame(abs_change_rows, columns=cols)
-    rel_change_df = pd.DataFrame(rel_change_rows, columns=cols)
+    post_df = pd.DataFrame(post_rows, columns=post_cols)
+    abs_change_df = pd.DataFrame(abs_change_rows, columns=change_cols)
+    rel_change_df = pd.DataFrame(rel_change_rows, columns=change_cols)
 
     return post_df, abs_change_df, rel_change_df, stats_dict
 
 
 def main():
     """Example usage of defense evaluation; parse args and output csv tables in results
-    folder"""
+    folder."""
     import argparse
+    import os
+
     parser = argparse.ArgumentParser(
         description="evaluate defense effectiveness with bayesian analysis"
     )
@@ -669,10 +688,11 @@ def main():
         help='base directory containing evaluation results'
     )
     parser.add_argument(
-        '--rq',
+        '--rqs',
         type=str,
-        default='rq1.1_basic_paraphrase',
-        help='research question identifier'
+        nargs='+',
+        default=['rq1.1_basic_paraphrase'],
+        help='research question identifiers (can specify multiple for combining data)'
     )
     parser.add_argument(
         '--corpus',
@@ -694,13 +714,30 @@ def main():
 
     args = parser.parse_args()
 
-    (post_df, abs_change_df, rel_change_df, stats_dict) = get_defense_tables_with_stats(
-        base_dir=args.base_dir,
-        rq=args.rq,
-        corpora=[args.corpus] if args.corpus else None,
-        threat_models=None,  # uses default if not provided
-        mode="post"
-    )
+    # collect data from all specified RQs
+    all_post_dfs = []
+    all_abs_change_dfs = []
+    all_rel_change_dfs = []
+    all_stats_dicts = []
+
+    for rq in args.rqs:
+        (post_df, abs_change_df, rel_change_df,
+         stats_dict) = get_defense_tables_with_stats(
+            base_dir=args.base_dir,
+            rq=rq,
+            corpora=[args.corpus] if args.corpus else None,
+            threat_models=None,  # uses default if not provided
+            mode="post"
+        )
+        all_post_dfs.append(post_df)
+        all_abs_change_dfs.append(abs_change_df)
+        all_rel_change_dfs.append(rel_change_df)
+        all_stats_dicts.append(stats_dict)
+
+    # combine dataframes
+    post_df = pd.concat(all_post_dfs, ignore_index=True)
+    abs_change_df = pd.concat(all_abs_change_dfs, ignore_index=True)
+    rel_change_df = pd.concat(all_rel_change_dfs, ignore_index=True)
 
     print("\npost-intervention results (bayesian estimates with 95% HDI):")
     print(post_df)
@@ -712,10 +749,17 @@ def main():
     output_folder = Path(args.output)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # construct filename starting with corpus name
-    base_filename = f"{args.rq}_{args.corpus}" if args.corpus else args.rq
+    # construct filename reflecting combined RQs
+    if len(args.rqs) == 1:
+        rq_part = args.rqs[0]
+    else:
+        # extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
+        common_prefix = os.path.commonprefix(args.rqs).rstrip('_')
+        rq_part = f"{common_prefix}_combined"
 
-    # save results with corpus-specific names
+    base_filename = f"{rq_part}_{args.corpus}" if args.corpus else rq_part
+
+    # save results with informative names
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
     rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
