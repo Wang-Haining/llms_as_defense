@@ -269,7 +269,7 @@ def print_defense_stats(
 
 def get_defense_tables(
         base_dir: str = "defense_evaluation",
-        rq: str = "rq1.1_basic_paraphrase",
+        rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
         corpora: Optional[List[str]] = None,
         threat_models: Optional[Dict[str, str]] = None,
         mode: str = "post",
@@ -282,7 +282,7 @@ def get_defense_tables(
 
     Args:
         base_dir: base directory containing evaluation results
-        rq: research question identifier (e.g. 'rq1.1_basic_paraphrase')
+        rqs: single research question identifier or list of RQs to combine data from
         corpora: list of corpora to analyze (default: ['ebg', 'rj'])
         threat_models: dict mapping model keys to display names
         mode: either 'pre' or 'post'
@@ -291,6 +291,9 @@ def get_defense_tables(
         if mode=="pre": dataframe with pre-defense values
         if mode=="post": single dataframe with post values and HDI
     """
+    if isinstance(rqs, str):
+        rqs = [rqs]
+
     if corpora is None:
         corpora = ['ebg', 'rj']
     if threat_models is None:
@@ -315,42 +318,44 @@ def get_defense_tables(
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
-
     if mode == "pre":
         pre_rows = []
         for corpus in corpora:
             for threat_model_key, threat_model_name in threat_models.items():
-                corpus_path = Path(base_dir) / corpus / rq_main / rq
-                if not corpus_path.exists():
-                    continue
-                for model_dir in corpus_path.glob("*"):
-                    eval_file = model_dir / "evaluation.json"
-                    if not eval_file.exists():
+                # process each RQ and collect metrics
+                for rq in rqs:
+                    rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
+                    corpus_path = Path(base_dir) / corpus / rq_main / rq
+                    if not corpus_path.exists():
                         continue
-                    with open(eval_file) as f:
-                        results = json.load(f)
-                    if not results:
-                        continue
-                    seed_keys = list(results.keys())
-                    if not seed_keys:
-                        continue
-                    first_seed = seed_keys[0]
-                    if threat_model_key not in results[first_seed]:
-                        continue
-                    metrics = results[first_seed][threat_model_key]['attribution'][
-                        'original_metrics']
-                    row = {'Corpus': corpus.upper(), 'Scenario': 'No protection',
-                           'Threat Model': threat_model_name}
-                    for metric_key, display_name in metrics_map.items():
-                        value = metrics.get(metric_key)
-                        row[display_name] = format_estimate_with_hdi(value)
-                    for _, (_, display_name) in quality_metrics.items():
-                        # pre-defense quality is ideal (1 for most, 0 for pinc)
-                        baseline = 0.0 if _ == 'pinc' else 1.0
-                        row[display_name] = format_estimate_with_hdi(baseline)
-                    pre_rows.append(row)
-                    break  # only need one model's data
+                    for model_dir in corpus_path.glob("*"):
+                        eval_file = model_dir / "evaluation.json"
+                        if not eval_file.exists():
+                            continue
+                        with open(eval_file) as f:
+                            results = json.load(f)
+                        if not results:
+                            continue
+                        seed_keys = list(results.keys())
+                        if not seed_keys:
+                            continue
+                        first_seed = seed_keys[0]
+                        if threat_model_key not in results[first_seed]:
+                            continue
+                        metrics = results[first_seed][threat_model_key]['attribution'][
+                            'original_metrics']
+                        row = {'Corpus': corpus.upper(),
+                               'Scenario': 'Combined' if len(rqs) > 1 else 'No protection',
+                               'Threat Model': threat_model_name}
+                        for metric_key, display_name in metrics_map.items():
+                            value = metrics.get(metric_key)
+                            row[display_name] = format_estimate_with_hdi(value)
+                        for _, (_, display_name) in quality_metrics.items():
+                            # pre-defense quality is ideal (1 for most, 0 for pinc)
+                            baseline = 0.0 if _ == 'pinc' else 1.0
+                            row[display_name] = format_estimate_with_hdi(baseline)
+                        pre_rows.append(row)
+                        break  # only need one model's data per RQ
         columns = ['Corpus', 'Scenario', 'Threat Model'] + list(
             metrics_map.values()) + [v[1] for v in quality_metrics.values()]
         return pd.DataFrame(pre_rows, columns=columns)
@@ -359,87 +364,96 @@ def get_defense_tables(
         post_rows = []
         for corpus in corpora:
             for threat_model_key, threat_model_name in threat_models.items():
-                corpus_path = Path(base_dir) / corpus / rq_main / rq
-                if not corpus_path.exists():
-                    continue
-                for model_dir in corpus_path.glob("*"):
-                    if not model_dir.is_dir():
+                # Process each RQ and collect metrics
+                for rq in rqs:
+                    rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
+                    corpus_path = Path(base_dir) / corpus / rq_main / rq
+                    if not corpus_path.exists():
                         continue
-                    # determine display name for model
-                    model_dir_name = model_dir.name.lower()
-                    if 'llama' in model_dir_name:
-                        model_name = 'Llama-3.1'
-                    elif 'gemma' in model_dir_name:
-                        model_name = 'Gemma-2'
-                    elif 'ministral' in model_dir_name:
-                        model_name = 'Ministral'
-                    elif 'sonnet' in model_dir_name:
-                        model_name = 'Claude-3.5'
-                    elif 'gpt' in model_dir_name:
-                        model_name = 'GPT-4o'
-                    else:
-                        model_name = model_dir.name
 
-                    eval_file = model_dir / "evaluation.json"
-                    if not eval_file.exists():
-                        continue
-                    post_metrics = defaultdict(list)
-                    quality_scores = defaultdict(list)
-                    with open(eval_file) as f:
-                        results = json.load(f)
-                    for seed_results in results.values():
-                        if threat_model_key not in seed_results:
+                    for model_dir in corpus_path.glob("*"):
+                        if not model_dir.is_dir():
                             continue
-                        metrics = seed_results[threat_model_key]['attribution']
-                        for metric_key, _ in metrics_map.items():
-                            post_val = metrics['transformed_metrics'].get(metric_key)
-                            if post_val is not None:
-                                post_metrics[metric_key].append(float(post_val))
-                        quality = seed_results[threat_model_key].get('quality', {})
-                        for qm, (key, _) in quality_metrics.items():
-                            score = quality.get(qm, {}).get(key)
-                            if score is not None:
-                                quality_scores[qm].append(float(score))
 
-                    # create row with 95% HDI using Bayesian estimation
-                    base_row = {
-                        'Corpus': corpus.upper(),
-                        'Scenario': get_scenario_name(rq),
-                        'Threat Model': threat_model_name,
-                        'Defense Model': model_name
-                    }
-                    # for effectiveness metrics
-                    for metric_key, display_name in metrics_map.items():
-                        post_vals = post_metrics[metric_key]
-                        if post_vals:
-                            result = estimate_beta_metric(post_vals)
-                            base_row[display_name] = format_estimate_with_hdi(
-                                result["mean"],
-                                result["hdi_lower"],
-                                result["hdi_upper"]
-                            )
+                        # determine display name for model
+                        model_dir_name = model_dir.name.lower()
+                        if 'llama' in model_dir_name:
+                            model_name = 'Llama-3.1'
+                        elif 'gemma' in model_dir_name:
+                            model_name = 'Gemma-2'
+                        elif 'ministral' in model_dir_name:
+                            model_name = 'Ministral'
+                        elif 'sonnet' in model_dir_name:
+                            model_name = 'Claude-3.5'
+                        elif 'gpt' in model_dir_name:
+                            model_name = 'GPT-4o'
                         else:
-                            base_row[display_name] = '-'
+                            model_name = model_dir.name
 
-                    # for quality metrics
-                    for qm, (key, display_name) in quality_metrics.items():
-                        values = quality_scores[qm]
-                        if values:
-                            result = estimate_beta_metric(values)
-                            base_row[display_name] = format_estimate_with_hdi(
-                                result["mean"],
-                                result["hdi_lower"],
-                                result["hdi_upper"]
-                            )
-                        else:
-                            base_row[display_name] = '-'
+                        eval_file = model_dir / "evaluation.json"
+                        if not eval_file.exists():
+                            continue
 
-                    post_rows.append(base_row)
+                        post_metrics = defaultdict(list)
+                        quality_scores = defaultdict(list)
+
+                        # load and process results
+                        with open(eval_file) as f:
+                            results = json.load(f)
+
+                        for seed_results in results.values():
+                            if threat_model_key not in seed_results:
+                                continue
+                            metrics = seed_results[threat_model_key]['attribution']
+                            for metric_key, _ in metrics_map.items():
+                                post_val = metrics['transformed_metrics'].get(metric_key)
+                                if post_val is not None:
+                                    post_metrics[metric_key].append(float(post_val))
+                            quality = seed_results[threat_model_key].get('quality', {})
+                            for qm, (key, _) in quality_metrics.items():
+                                score = quality.get(qm, {}).get(key)
+                                if score is not None:
+                                    quality_scores[qm].append(float(score))
+
+                        # create row with 95% HDI using Bayesian estimation
+                        base_row = {
+                            'Corpus': corpus.upper(),
+                            'Scenario': 'Combined' if len(rqs) > 1 else get_scenario_name(rqs[0]),
+                            'Threat Model': threat_model_name,
+                            'Defense Model': model_name
+                        }
+
+                        # process effectiveness metrics
+                        for metric_key, display_name in metrics_map.items():
+                            post_vals = post_metrics[metric_key]
+                            if post_vals:
+                                result = estimate_beta_metric(post_vals)
+                                base_row[display_name] = format_estimate_with_hdi(
+                                    result["mean"],
+                                    result["hdi_lower"],
+                                    result["hdi_upper"]
+                                )
+                            else:
+                                base_row[display_name] = '-'
+
+                        # process quality metrics
+                        for qm, (key, display_name) in quality_metrics.items():
+                            values = quality_scores[qm]
+                            if values:
+                                result = estimate_beta_metric(values)
+                                base_row[display_name] = format_estimate_with_hdi(
+                                    result["mean"],
+                                    result["hdi_lower"],
+                                    result["hdi_upper"]
+                                )
+                            else:
+                                base_row[display_name] = '-'
+
+                        post_rows.append(base_row)
 
         columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + \
                   list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
         return pd.DataFrame(post_rows, columns=columns)
-
 
 def get_defense_tables_with_stats(
         base_dir: str = "defense_evaluation",
@@ -714,7 +728,87 @@ def main():
 
     args = parser.parse_args()
 
-    # collect data from all specified RQs
+    # get combined stats directly from multiple RQs
+    post_df, abs_change_df, rel_change_df, stats_dict = get_defense_tables_with_stats(
+        base_dir=args.base_dir,
+        rqs=args.rqs,  # pass all RQs directly
+        corpora=[args.corpus] if args.corpus else None,
+        threat_models=None,  # uses default if not provided
+        mode="post"
+    )
+
+    print("\npost-intervention results (bayesian estimates with 95% HDI):")
+    print(post_df)
+    print("\nbayesian absolute changes (post_mean - pre_value):")
+    print(abs_change_df)
+    print("\nbayesian relative changes (in percent):")
+    print(rel_change_df)
+
+    output_folder = Path(args.output)
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # construct filename reflecting combined RQs
+    if len(args.rqs) == 1:
+        rq_part = args.rqs[0]
+    else:
+        # extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
+        common_prefix = os.path.commonprefix(args.rqs).rstrip('_')
+        rq_part = f"{common_prefix}_combined"
+
+    base_filename = f"{rq_part}_{args.corpus}" if args.corpus else rq_part
+
+    # save results with informative names
+    post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
+    abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
+    rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
+
+    print(f"\nresults saved in folder '{output_folder.absolute()}'")
+
+
+def main():
+    """Example usage of defense evaluation; parse args and output csv tables in results
+    folder."""
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(
+        description="evaluate defense effectiveness with bayesian analysis"
+    )
+
+    parser.add_argument(
+        '--base_dir',
+        type=str,
+        default='defense_evaluation',
+        help='base directory containing evaluation results'
+    )
+    parser.add_argument(
+        '--rqs',
+        type=str,
+        nargs='+',
+        default=['rq1.1_basic_paraphrase'],
+        help='research question identifiers (can specify multiple for combining data)'
+    )
+    parser.add_argument(
+        '--corpus',
+        type=str,
+        choices=['rj', 'ebg'],
+        help='specific corpus to analyze'
+    )
+    parser.add_argument(
+        '--defense_model',
+        type=str,
+        help='specific defense model to analyze (not yet implemented for filtering)'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='results',
+        help='output folder to save csv tables'
+    )
+
+    args = parser.parse_args()
+
+    # Collect data from all specified RQs
     all_post_dfs = []
     all_abs_change_dfs = []
     all_rel_change_dfs = []
@@ -724,9 +818,9 @@ def main():
         (post_df, abs_change_df, rel_change_df,
          stats_dict) = get_defense_tables_with_stats(
             base_dir=args.base_dir,
-            rq=rq,
+            rqs=rq,
             corpora=[args.corpus] if args.corpus else None,
-            threat_models=None,  # uses default if not provided
+            threat_models=None,
             mode="post"
         )
         all_post_dfs.append(post_df)
@@ -734,7 +828,7 @@ def main():
         all_rel_change_dfs.append(rel_change_df)
         all_stats_dicts.append(stats_dict)
 
-    # combine dataframes
+    # Combine dataframes
     post_df = pd.concat(all_post_dfs, ignore_index=True)
     abs_change_df = pd.concat(all_abs_change_dfs, ignore_index=True)
     rel_change_df = pd.concat(all_rel_change_dfs, ignore_index=True)
@@ -753,7 +847,7 @@ def main():
     if len(args.rqs) == 1:
         rq_part = args.rqs[0]
     else:
-        # extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
+        # Extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
         common_prefix = os.path.commonprefix(args.rqs).rstrip('_')
         rq_part = f"{common_prefix}_combined"
 

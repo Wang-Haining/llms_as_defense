@@ -24,8 +24,8 @@ SLEEP_TIME=30
 for corpus in "${CORPORA[@]}"; do
     echo "running for corpus: $corpus"
     for rq in "${RQS[@]}"; do
-        echo "  running: rq=$rq"
-        python -m estimate_llm_intervention --rq "$rq" --corpus "$corpus"
+        echo "  running: rqs=$rq"
+        python -m estimate_llm_intervention --rqs "$rq" --corpus "$corpus"
         # sleep between runs except for last iteration of research questions for this corpus
         if [ "$rq" != "${RQS[-1]}" ]; then
             echo "  sleeping for $SLEEP_TIME seconds..."
