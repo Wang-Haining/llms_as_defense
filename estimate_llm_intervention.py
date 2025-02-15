@@ -868,7 +868,7 @@ def main():
     if len(args.rqs) == 1:
         rq_part = args.rqs[0]
     else:
-        # Extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
+        # extract common prefix (e.g., "rq1.2" from ["rq1.2_backtranslation_via_de", "rq1.2_backtranslation_via_zh"])
         common_prefix = os.path.commonprefix(args.rqs).rstrip('_')
         rq_part = f"{common_prefix}_combined"
 
