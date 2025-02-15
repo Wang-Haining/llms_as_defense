@@ -379,6 +379,7 @@ def get_defense_tables(
                   list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
         return pd.DataFrame(post_rows, columns=columns)
 
+
 def get_defense_tables_with_stats(
         base_dir: str = "defense_evaluation",
         rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
