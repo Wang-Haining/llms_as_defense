@@ -565,6 +565,7 @@ def get_defense_tables_with_stats(
 
     return post_df, abs_change_df, rel_change_df, stats_dict
 
+
 def main():
     """Example usage of defense evaluation; parse arguments and output CSV tables in results folder."""
     import argparse, os
@@ -634,6 +635,14 @@ def main():
     print(abs_change_df)
     print("\nBayesian relative changes (in percent):")
     print(rel_change_df)
+    #  get the pre-defense DataFrame
+    pre_df = get_defense_tables(
+        base_dir=args.base_dir,
+        rqs=args.rqs,
+        corpora=[args.corpus] if args.corpus else None,
+        threat_models=None,
+        mode="pre"
+    )
 
     output_folder = Path(args.output)
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -649,8 +658,10 @@ def main():
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
     rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
+    pre_df.to_csv(output_folder / f"{base_filename}_pre.csv", index=False)
 
     print(f"\nResults saved in folder '{output_folder.absolute()}'")
+
 
 if __name__ == "__main__":
     main()
