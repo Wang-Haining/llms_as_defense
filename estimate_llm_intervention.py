@@ -313,7 +313,7 @@ def get_defense_tables(
         post_rows = []
         for corpus in corpora:
             for threat_model_key, threat_model_name in threat_models.items():
-                # Process each RQ and collect metrics
+                # process each RQ and collect metrics
                 for rq in rqs:
                     rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
                     corpus_path = Path(base_dir) / corpus / rq_main / rq
@@ -386,7 +386,7 @@ def get_defense_tables(
                                         factor = 1.0
                                     scaled_post_vals = [v / factor for v in post_vals]
                                     result = estimate_beta_metric(scaled_post_vals)
-                                    # Scale the posterior estimates back
+                                    # scale the posterior estimates back
                                     result = {
                                         "mean": result["mean"] * factor,
                                         "hdi_lower": result["hdi_lower"] * factor,
