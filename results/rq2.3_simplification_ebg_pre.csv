@@ -1,0 +1,4 @@
+Corpus,Scenario,Threat Model,Acc@1 ↓,Acc@5 ↓,True Class Conf ↓,Entropy ↑,BLEU ↑,METEOR ↑,PINC ↑,BERTScore ↑,SBERT ↑
+EBG,No protection,LogReg,0.667,0.867,0.426,2.627,1.000,1.000,0.000,1.000,1.000
+EBG,No protection,SVM,0.733,0.889,0.253,4.267,1.000,1.000,0.000,1.000,1.000
+EBG,No protection,RoBERTa,0.867,0.933,0.831,0.700,1.000,1.000,0.000,1.000,1.000
