@@ -606,6 +606,20 @@ def get_defense_tables_with_stats(
     return post_df, abs_change_df, rel_change_df, stats_dict
 
 
+def serialize_defense_stats(stats):
+    """
+    Convert a DefenseStats instance to a dictionary.
+    Assumes that BayesResult is a NamedTuple so we can use _asdict().
+    """
+    return {
+        "corpus": stats.corpus,
+        "threat_model": stats.threat_model,
+        "defense_model": stats.defense_model,
+        "effectiveness_estimates": {k: v._asdict() for k, v in stats.effectiveness_estimates.items()},
+        "quality_estimates": {k: v._asdict() for k, v in stats.quality_estimates.items()}
+    }
+
+
 def main():
     """Example usage of defense evaluation; parse arguments and output CSV tables and aggregated stats JSON in results folder."""
     import argparse, os, json
@@ -680,7 +694,7 @@ def main():
     print("\nBayesian relative changes (in percent):")
     print(rel_change_df)
 
-    # get the pre-defense DataFrame.
+    # get the pre-defense DataFrame
     pre_df = get_defense_tables(
         base_dir=args.base_dir,
         rqs=args.rqs,
@@ -700,28 +714,29 @@ def main():
 
     base_filename = f"{rq_part}_{args.corpus}" if args.corpus else rq_part
 
-    # save the CSV files.
+    # save the CSV files
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
     rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
     pre_df.to_csv(output_folder / f"{base_filename}_pre.csv", index=False)
 
-    # merge all stats_dict dictionaries (aggregated stats across RQs).
+    # merge all stats_dict dictionaries (aggregated stats across RQs)
     merged_stats = {}
     for sd in all_stats_dicts:
         merged_stats.update(sd)
 
-    # convert tuple keys to strings for JSON serialization.
-    merged_stats_str = {str(key): value for key, value in merged_stats.items()}
+    # convert tuple keys to strings and convert DefenseStats to dicts
+    merged_stats_serializable = {
+        str(key): serialize_defense_stats(value) for key, value in merged_stats.items()
+    }
 
-    # save the merged stats_dict to a JSON file.
+    # save the merged stats_dict to a JSON file
     stats_file = output_folder / f"{base_filename}_stats.json"
     with open(stats_file, "w") as f:
-        json.dump(merged_stats_str, f, indent=2)
+        json.dump(merged_stats_serializable, f, indent=2)
 
     print(f"\nResults saved in folder '{output_folder.absolute()}'")
     print("\nNote: Run-level details are stored in the per-seed JSON files within each experiment directory.")
-
 
 if __name__ == "__main__":
     main()
