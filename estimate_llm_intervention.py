@@ -272,14 +272,18 @@ def get_defense_tables(base_dir: str = "defense_evaluation", rqs: Union[str, Lis
     return pd.DataFrame(pre_rows, columns=columns)
 
 
-def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
-                                  corpora: Optional[List[str]] = None, threat_models: Optional[Dict[str, str]] = None,
-                                  mode: str = "post") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
+def get_defense_tables_with_stats(
+    base_dir: str = "defense_evaluation",
+    rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
+    corpora: Optional[List[str]] = None,
+    threat_models: Optional[Dict[str, str]] = None,
+    mode: str = "post",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
     """
     Generate defense analysis tables with Bayesian credible intervals (95% HDI)
     and additional dataframes for absolute and relative changes.
-    For post mode, we use run-level values for accuracy and confidence, and
-    sample-level values for entropy and quality metrics.
+    For post mode, we use run-level values for accuracy and true class confidence,
+    and sample-level values for entropy and quality metrics.
     """
     if isinstance(rqs, str):
         rqs = [rqs]
@@ -304,7 +308,7 @@ def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Uni
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    # Dictionaries to collect values for later modeling.
+    # Dictionaries to collect raw values for later modeling.
     all_metrics = defaultdict(list)  # key: (config_key, metric_key)
     all_quality = defaultdict(list)  # key: (config_key, quality_metric)
     stats_dict = {}  # key: (corpus, threat_model, defense_model) -> DefenseStats
@@ -345,8 +349,8 @@ def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Uni
                     with open(eval_file) as f:
                         results = json.load(f)
 
-                    # For run-level effectiveness metrics, take values from one seed.
-                    for seed_results in results.values():
+                    # For run-level effectiveness metrics, take aggregated values from one seed.
+                    for seed_key, seed_results in results.items():
                         if threat_model_key not in seed_results:
                             continue
                         run_pre = seed_results[threat_model_key]['attribution']['pre']
@@ -356,59 +360,58 @@ def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Uni
                             post_val = run_post.get(metric)
                             if orig_val is not None and post_val is not None:
                                 all_metrics[(config_key, metric)].append({'pre': float(orig_val), 'post': float(post_val)})
-                        # For entropy, get the aggregated pre value.
+                        # For entropy, record the aggregated pre value.
                         orig_entropy = run_pre.get('entropy')
-                        break  # use one seed's aggregated values
+                        break  # use the first seed's aggregated values
 
-                    # Now load sample-level data from seed files for entropy and quality.
+                    # Now, for sample-level data (entropy & quality), process each seed file.
                     entropy_samples = []
                     quality_scores = {'bleu': [], 'meteor': [], 'pinc': [], 'bertscore': [], 'sbert': []}
                     for seed_file in model_dir.glob("seed_*.json"):
                         with open(seed_file) as f:
                             seed_data = json.load(f)
-                        # For entropy: first try "example_metrics"
+                        # Try to extract sample-level entropy from "example_metrics".
                         if "example_metrics" in seed_data:
                             for ex in seed_data["example_metrics"]:
-                                # (Optional: if a "model_type" field exists, you could check it here.)
                                 trans_probs = ex.get("trans_probs")
                                 if trans_probs:
                                     entropy_samples.append(-np.sum(np.array(trans_probs) * np.log2(np.array(trans_probs) + 1e-10)))
-                        # Otherwise, fall back to using raw_predictions from aggregated results.
+                        # Fallback: if no "example_metrics", try raw_predictions.
                         elif "results" in seed_data and threat_model_key in seed_data["results"]:
                             preds = seed_data["results"][threat_model_key]["attribution"]["raw_predictions"].get("transformed", [])
                             for pred in preds:
                                 entropy_samples.append(-np.sum(np.array(pred) * np.log2(np.array(pred) + 1e-10)))
-                        # For quality: first try "example_quality"
+                        # For quality metrics, first check for "example_quality".
                         if "example_quality" in seed_data:
                             for ex in seed_data["example_quality"]:
                                 for qm in quality_scores.keys():
                                     if qm in ex:
                                         quality_scores[qm].append(float(ex[qm]))
-                        # Otherwise, use the aggregated "quality" field.
+                        # Fallback: use aggregated "quality" field if "example_quality" is not present.
                         elif "results" in seed_data and threat_model_key in seed_data["results"]:
                             qdata = seed_data["results"][threat_model_key].get("quality", {})
-                            # For PINC, choose "pinc_1_scores" if available.
-                            if "pinc" in qdata and "pinc_1_scores" in qdata["pinc"]:
-                                quality_scores["pinc"].extend([float(x) for x in qdata["pinc_1_scores"]])
+                            # For PINC: iterate over keys ending with "_scores".
+                            if "pinc" in qdata:
+                                for key, scores in qdata["pinc"].items():
+                                    if key.endswith("_scores"):
+                                        quality_scores["pinc"].extend([float(x) for x in scores])
                             if "meteor" in qdata and "meteor_scores" in qdata["meteor"]:
-                                quality_scores["meteor"].extend([float(x) for x in qdata["meteor_scores"]])
+                                quality_scores["meteor"].extend([float(x) for x in qdata["meteor"]["meteor_scores"]])
                             if "bertscore" in qdata and "bertscore_individual" in qdata["bertscore"]:
-                                for item in qdata["bertscore_individual"]:
+                                for item in qdata["bertscore"]["bertscore_individual"]:
                                     if "f1" in item:
                                         quality_scores["bertscore"].append(float(item["f1"]))
                             if "sbert" in qdata and "sbert_similarity_scores" in qdata["sbert"]:
-                                quality_scores["sbert"].extend([float(x) for x in qdata["sbert_similarity_scores"]])
-                            # BLEU is not available per sample; skip it.
+                                quality_scores["sbert"].extend([float(x) for x in qdata["sbert"]["sbert_similarity_scores"]])
                     if orig_entropy is not None and entropy_samples:
                         all_metrics[(config_key, 'entropy')].append({'pre': float(orig_entropy), 'post_samples': entropy_samples})
                     for qm, scores in quality_scores.items():
                         if scores:
                             all_quality[(config_key, qm)].extend(scores)
                 # End loop over model_dir.
-            # End loop over threat model.
+            # End loop over threat models.
         # End loop over corpus.
-
-    # Build tables for each configuration.
+    # Now, build tables for each configuration.
     post_rows = []
     abs_change_rows = []
     rel_change_rows = []
@@ -417,11 +420,11 @@ def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Uni
         corpus_val, threat_model_name_val, model_name_disp_val = config_key
         base_row = {
             'Corpus': corpus_val.upper(),
+            'Scenario': 'Combined' if len(rqs) > 1 else get_scenario_name(rqs[0]),
             'Threat Model': threat_model_name_val,
-            'Defense Model': model_name_disp_val,
-            'Scenario': 'Combined' if len(rqs) > 1 else get_scenario_name(rqs[0])
+            'Defense Model': model_name_disp_val
         }
-        # Process effectiveness metrics.
+        # Process run-level effectiveness metrics.
         for metric_key, display_name in metrics_map.items():
             key = (config_key, metric_key)
             if key in all_metrics:
