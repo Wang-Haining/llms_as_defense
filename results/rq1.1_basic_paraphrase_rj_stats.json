@@ -1,2 +1,437 @@
 {
-  "('rj', 'LogReg', 'Llama-3.1')": 
+  "('rj', 'LogReg', 'Llama-3.1')": {
+    "corpus": "rj",
+    "threat_model": "LogReg",
+    "defense_model": "Llama-3.1",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1259342532258233,
+        "std": 0.15921677212933338,
+        "ci_lower": 0.0005515869267397737,
+        "ci_upper": 0.4920190817080465
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.31917303420131443,
+        "std": 0.15214789742552304,
+        "ci_lower": 0.049426692663440935,
+        "ci_upper": 0.6237624650115318
+      },
+      "true_class_confidence": {
+        "pre_value": 0.2347824771315894,
+        "post_mean": 0.14386457153935725,
+        "std": 0.15137680799545752,
+        "ci_lower": 0.001660567377209305,
+        "ci_upper": 0.47754665080810915
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'LogReg', 'GPT-4o')": {
+    "corpus": "rj",
+    "threat_model": "LogReg",
+    "defense_model": "GPT-4o",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.21951052824969977,
+        "std": 0.1486903781551234,
+        "ci_lower": 0.006515396685296505,
+        "ci_upper": 0.5356550091020563
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.3528812828877993,
+        "std": 0.15500211192598803,
+        "ci_lower": 0.07467043206211117,
+        "ci_upper": 0.6705710392957202
+      },
+      "true_class_confidence": {
+        "pre_value": 0.2347824771315894,
+        "post_mean": 0.2076245475447945,
+        "std": 0.14172790251385575,
+        "ci_lower": 0.014022500225378428,
+        "ci_upper": 0.5009747337990074
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'LogReg', 'Gemma-2')": {
+    "corpus": "rj",
+    "threat_model": "LogReg",
+    "defense_model": "Gemma-2",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.24972864234683648,
+        "std": 0.14764893441382537,
+        "ci_lower": 0.016454105822673887,
+        "ci_upper": 0.5440364364782752
+      },
+      "true_class_confidence": {
+        "pre_value": 0.2347824771315894,
+        "post_mean": 0.19028329978259778,
+        "std": 0.1538199346970663,
+        "ci_lower": 0.005057363481547367,
+        "ci_upper": 0.5241723078089986
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'LogReg', 'Ministral')": {
+    "corpus": "rj",
+    "threat_model": "LogReg",
+    "defense_model": "Ministral",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.28644280324051224,
+        "std": 0.15150747343465973,
+        "ci_lower": 0.038579560739608845,
+        "ci_upper": 0.5990025646912381
+      },
+      "true_class_confidence": {
+        "pre_value": 0.2347824771315894,
+        "post_mean": 0.19182932496376298,
+        "std": 0.1515176349302091,
+        "ci_lower": 0.0051763997358236415,
+        "ci_upper": 0.5089977428038476
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'LogReg', 'Claude-3.5')": {
+    "corpus": "rj",
+    "threat_model": "LogReg",
+    "defense_model": "Claude-3.5",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.4175914408028651,
+        "std": 0.15604192512739995,
+        "ci_lower": 0.10180037803387029,
+        "ci_upper": 0.7192677877613619
+      },
+      "true_class_confidence": {
+        "pre_value": 0.2347824771315894,
+        "post_mean": 0.1965464229009184,
+        "std": 0.14644548951672492,
+        "ci_lower": 0.010263834177839996,
+        "ci_upper": 0.5017417501829771
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'SVM', 'Llama-3.1')": {
+    "corpus": "rj",
+    "threat_model": "SVM",
+    "defense_model": "Llama-3.1",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.21951052824969977,
+        "std": 0.1486903781551234,
+        "ci_lower": 0.006515396685296505,
+        "ci_upper": 0.5356550091020563
+      },
+      "accuracy@5": {
+        "pre_value": 0.5238095238095238,
+        "post_mean": 0.31917303420131443,
+        "std": 0.15214789742552304,
+        "ci_lower": 0.049426692663440935,
+        "ci_upper": 0.6237624650115318
+      },
+      "true_class_confidence": {
+        "pre_value": 0.13195051529659466,
+        "post_mean": 0.18326331142638363,
+        "std": 0.14838107556890837,
+        "ci_lower": 0.009123335645678885,
+        "ci_upper": 0.49982309241999373
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'SVM', 'GPT-4o')": {
+    "corpus": "rj",
+    "threat_model": "SVM",
+    "defense_model": "GPT-4o",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.21951052824969977,
+        "std": 0.1486903781551234,
+        "ci_lower": 0.006515396685296505,
+        "ci_upper": 0.5356550091020563
+      },
+      "accuracy@5": {
+        "pre_value": 0.5238095238095238,
+        "post_mean": 0.44949292108390054,
+        "std": 0.15983506177789672,
+        "ci_lower": 0.13335833594386848,
+        "ci_upper": 0.7727533040958386
+      },
+      "true_class_confidence": {
+        "pre_value": 0.13195051529659466,
+        "post_mean": 0.1985196907959452,
+        "std": 0.14177682824326457,
+        "ci_lower": 0.0038740302997876228,
+        "ci_upper": 0.48914640408836524
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'SVM', 'Gemma-2')": {
+    "corpus": "rj",
+    "threat_model": "SVM",
+    "defense_model": "Gemma-2",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.21951052824969977,
+        "std": 0.1486903781551234,
+        "ci_lower": 0.006515396685296505,
+        "ci_upper": 0.5356550091020563
+      },
+      "accuracy@5": {
+        "pre_value": 0.5238095238095238,
+        "post_mean": 0.31917303420131443,
+        "std": 0.15214789742552304,
+        "ci_lower": 0.049426692663440935,
+        "ci_upper": 0.6237624650115318
+      },
+      "true_class_confidence": {
+        "pre_value": 0.13195051529659466,
+        "post_mean": 0.18800952711777438,
+        "std": 0.14986366859988798,
+        "ci_lower": 0.003059317527249088,
+        "ci_upper": 0.5028901739961548
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'SVM', 'Ministral')": {
+    "corpus": "rj",
+    "threat_model": "SVM",
+    "defense_model": "Ministral",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5238095238095238,
+        "post_mean": 0.31917303420131443,
+        "std": 0.15214789742552304,
+        "ci_lower": 0.049426692663440935,
+        "ci_upper": 0.6237624650115318
+      },
+      "true_class_confidence": {
+        "pre_value": 0.13195051529659466,
+        "post_mean": 0.19300169927885757,
+        "std": 0.1523270756630627,
+        "ci_lower": 0.0038469062767446036,
+        "ci_upper": 0.508501848460421
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'SVM', 'Claude-3.5')": {
+    "corpus": "rj",
+    "threat_model": "SVM",
+    "defense_model": "Claude-3.5",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.2857142857142857,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5238095238095238,
+        "post_mean": 0.3856916325461293,
+        "std": 0.15846714534046194,
+        "ci_lower": 0.09041917374041253,
+        "ci_upper": 0.7120475068146469
+      },
+      "true_class_confidence": {
+        "pre_value": 0.13195051529659466,
+        "post_mean": 0.19205517791056334,
+        "std": 0.1495350319374555,
+        "ci_lower": 0.005280760250813242,
+        "ci_upper": 0.513028900444529
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'RoBERTa', 'Llama-3.1')": {
+    "corpus": "rj",
+    "threat_model": "RoBERTa",
+    "defense_model": "Llama-3.1",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.19047619047619047,
+        "post_mean": 0.1259342532258233,
+        "std": 0.15921677212933338,
+        "ci_lower": 0.0005515869267397737,
+        "ci_upper": 0.4920190817080465
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.24972864234683648,
+        "std": 0.14764893441382537,
+        "ci_lower": 0.016454105822673887,
+        "ci_upper": 0.5440364364782752
+      },
+      "true_class_confidence": {
+        "pre_value": 0.19828349351882935,
+        "post_mean": 0.16296949284711604,
+        "std": 0.15278058700424962,
+        "ci_lower": 0.0010285639491517211,
+        "ci_upper": 0.493376693372008
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'RoBERTa', 'GPT-4o')": {
+    "corpus": "rj",
+    "threat_model": "RoBERTa",
+    "defense_model": "GPT-4o",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.19047619047619047,
+        "post_mean": 0.24972864234683648,
+        "std": 0.14764893441382537,
+        "ci_lower": 0.016454105822673887,
+        "ci_upper": 0.5440364364782752
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.3528812828877993,
+        "std": 0.15500211192598803,
+        "ci_lower": 0.07467043206211117,
+        "ci_upper": 0.6705710392957202
+      },
+      "true_class_confidence": {
+        "pre_value": 0.19828349351882935,
+        "post_mean": 0.2475251261593561,
+        "std": 0.14438824600665473,
+        "ci_lower": 0.02376558400085567,
+        "ci_upper": 0.5475237167708911
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'RoBERTa', 'Gemma-2')": {
+    "corpus": "rj",
+    "threat_model": "RoBERTa",
+    "defense_model": "Gemma-2",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.19047619047619047,
+        "post_mean": 0.1849646065380778,
+        "std": 0.1474677474130982,
+        "ci_lower": 0.0020649781325356165,
+        "ci_upper": 0.498881369797724
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.3856916325461293,
+        "std": 0.15846714534046194,
+        "ci_lower": 0.09041917374041253,
+        "ci_upper": 0.7120475068146469
+      },
+      "true_class_confidence": {
+        "pre_value": 0.19828349351882935,
+        "post_mean": 0.191520106733985,
+        "std": 0.14782340902993224,
+        "ci_lower": 0.00709902004645056,
+        "ci_upper": 0.4985895131094469
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'RoBERTa', 'Ministral')": {
+    "corpus": "rj",
+    "threat_model": "RoBERTa",
+    "defense_model": "Ministral",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.19047619047619047,
+        "post_mean": 0.1259342532258233,
+        "std": 0.15921677212933338,
+        "ci_lower": 0.0005515869267397737,
+        "ci_upper": 0.4920190817080465
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.28644280324051224,
+        "std": 0.15150747343465973,
+        "ci_lower": 0.038579560739608845,
+        "ci_upper": 0.5990025646912381
+      },
+      "true_class_confidence": {
+        "pre_value": 0.19828349351882935,
+        "post_mean": 0.14743542139038246,
+        "std": 0.15264691433487723,
+        "ci_lower": 0.0013420004717370902,
+        "ci_upper": 0.48091077128865306
+      }
+    },
+    "quality_estimates": {}
+  },
+  "('rj', 'RoBERTa', 'Claude-3.5')": {
+    "corpus": "rj",
+    "threat_model": "RoBERTa",
+    "defense_model": "Claude-3.5",
+    "effectiveness_estimates": {
+      "accuracy@1": {
+        "pre_value": 0.19047619047619047,
+        "post_mean": 0.24972864234683648,
+        "std": 0.14764893441382537,
+        "ci_lower": 0.016454105822673887,
+        "ci_upper": 0.5440364364782752
+      },
+      "accuracy@5": {
+        "pre_value": 0.5714285714285714,
+        "post_mean": 0.31917303420131443,
+        "std": 0.15214789742552304,
+        "ci_lower": 0.049426692663440935,
+        "ci_upper": 0.6237624650115318
+      },
+      "true_class_confidence": {
+        "pre_value": 0.19828349351882935,
+        "post_mean": 0.2418592332613904,
+        "std": 0.14636899429735437,
+        "ci_lower": 0.014664560064444835,
+        "ci_upper": 0.5358628085451517
+      }
+    },
+    "quality_estimates": {}
+  }
+}
