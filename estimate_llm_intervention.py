@@ -2,6 +2,11 @@
 Defense evaluation script that performs Bayesian analysis comparing pre/post defense
 performance across different metrics, corpora, and threat models.
 
+This version has been updated to compute and document the standard deviation (std) of
+the full posterior distribution for each metric. This std value reflects the spread of the
+posterior distribution and can be used in future computations (e.g., to define a ROPE range
+around the pre-defense performance).
+
 Expected directory structure:
 defense_evaluation/
 ├── {corpus}/                              # e.g., rj and ebg
@@ -19,6 +24,9 @@ defense_evaluation/
 │   │   │   └── {another_model}/
 │   └── rq{N+1}/
 └── {another_corpus}/
+
+Results are saved as CSV files (pre, post, absolute change, and relative change)
+in the specified output folder.
 """
 
 import json
@@ -33,16 +41,29 @@ import pymc as pm
 from tqdm import tqdm
 
 
-# for posteriors
+# Updated BayesResult with standard deviation (std) included
 class BayesResult(NamedTuple):
     pre_value: float            # baseline value (pre-intervention)
     post_mean: float            # posterior mean of the parameter
+    std: float                  # standard deviation (spread) of the posterior
     ci_lower: float             # lower bound of the 95% credible interval
     ci_upper: float             # upper bound of the 95% credible interval
 
 
 def estimate_beta_metric(post_values: List[float]) -> dict:
-    """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1]."""
+    """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1],
+    and compute the estimated standard deviation (std) of the full posterior of mu.
+
+    This std value reflects the spread of the posterior distribution and can be used
+    later to define a ROPE range around the pre-defense performance (e.g., as a fraction of the std).
+
+    Returns:
+        A dictionary with keys:
+            "mean": posterior mean of mu,
+            "std": standard deviation of the posterior samples of mu,
+            "hdi_lower": lower bound of the 95% HDI,
+            "hdi_upper": upper bound of the 95% HDI.
+    """
     # ensure values are strictly within (0, 1)
     epsilon = 1e-6
     post_values = np.clip(np.array(post_values), epsilon, 1 - epsilon)
@@ -66,14 +87,19 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
             return_inferencedata=True
         )
 
+    # Extract posterior samples for mu
     mu_samples = trace.posterior["mu"].values.flatten()
     mean_mu = float(np.mean(mu_samples))
+    std_mu = float(np.std(mu_samples))  # This is the spread of the posterior (NOT the standard error)
+
+    # Compute the 95% HDI using arviz
     hdi_bounds = az.hdi(mu_samples, hdi_prob=0.95)
     lower_bound = float(max(0, hdi_bounds[0]))
     upper_bound = float(min(1, hdi_bounds[1]))
 
     return {
         "mean": mean_mu,
+        "std": std_mu,
         "hdi_lower": lower_bound,
         "hdi_upper": upper_bound
     }
@@ -115,8 +141,10 @@ class DefenseStats:
                 raise RuntimeError('Entropy normalization fails.')
             scaled_post_values = [v / factor for v in post_values]
             result = estimate_beta_metric(scaled_post_values)
+            # Scale back all quantities, including std
             result = {
                 "mean": result["mean"] * factor,
+                "std": result["std"] * factor,
                 "hdi_lower": result["hdi_lower"] * factor,
                 "hdi_upper": result["hdi_upper"] * factor,
             }
@@ -126,6 +154,7 @@ class DefenseStats:
         bayes_result = BayesResult(
             pre_value=baseline,
             post_mean=result["mean"],
+            std=result["std"],
             ci_lower=result["hdi_lower"],
             ci_upper=result["hdi_upper"],
         )
@@ -163,6 +192,7 @@ class DefenseStats:
                 print(f"\n{metric_name}:")
                 print(f"  Pre-defense:  {result.pre_value:.3f}")
                 print(f"  Post-defense: {result.post_mean:.3f}")
+                print(f"  Std:          {result.std:.3f}")
                 print(f"  95% credible interval: [{result.ci_lower:.3f}, {result.ci_upper:.3f}]")
 
         print_group("Effectiveness", self.effectiveness_estimates)
@@ -337,7 +367,7 @@ def get_defense_tables(
                         for seed_results in results.values():
                             if threat_model_key not in seed_results:
                                 continue
-                            # Updated key: use 'post'
+                            # updated key: use 'post'
                             metrics = seed_results[threat_model_key]['attribution']['post']
                             for metric_key, _ in metrics_map.items():
                                 post_val = metrics.get(metric_key)
@@ -369,6 +399,7 @@ def get_defense_tables(
                                     result = estimate_beta_metric(scaled_post_vals)
                                     result = {
                                         "mean": result["mean"] * factor,
+                                        "std": result["std"] * factor,
                                         "hdi_lower": result["hdi_lower"] * factor,
                                         "hdi_upper": result["hdi_upper"] * factor
                                     }
@@ -432,9 +463,9 @@ def get_defense_tables_with_stats(
         'sbert': ('sbert_similarity_avg', 'SBERT ↑')
     }
 
-    all_metrics = defaultdict(list)  # Store all metrics for later estimation.
-    all_quality = defaultdict(list)  # Store all quality metrics.
-    stats_dict = {}  # Store final stats.
+    all_metrics = defaultdict(list)  # store all metrics for later estimation
+    all_quality = defaultdict(list)  # store all quality metrics
+    stats_dict = {}  # store final stats
 
     for rq in rqs:
         rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
@@ -474,7 +505,7 @@ def get_defense_tables_with_stats(
                     for seed_results in results.values():
                         if threat_model_key not in seed_results:
                             continue
-                        # Updated keys: use 'pre' and 'post'
+                        # updated keys: use 'pre' and 'post'
                         metrics = seed_results[threat_model_key]['attribution']
                         if config_key not in stats_dict:
                             stats_dict[config_key] = DefenseStats(corpus, threat_model_name, model_name_disp)
@@ -521,6 +552,7 @@ def get_defense_tables_with_stats(
                         factor = 1.0
                     result = {
                         "mean": result["mean"] * factor,
+                        "std": result["std"] * factor,
                         "hdi_lower": result["hdi_lower"] * factor,
                         "hdi_upper": result["hdi_upper"] * factor
                     }
