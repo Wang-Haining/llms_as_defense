@@ -51,21 +51,82 @@ class BayesResult(NamedTuple):
     ci_upper: float             # upper bound of the 95% credible interval
 
 
+# def estimate_beta_metric(post_values: List[float]) -> dict:
+#     """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1],
+#     and compute the estimated standard deviation (std) of the full posterior of mu.
+#     """
+#     epsilon = 1e-6
+#     post_values = np.clip(np.array(post_values), epsilon, 1 - epsilon)
+#
+#     with pm.Model() as model:
+#         mu = pm.Beta("mu", alpha=1, beta=1)
+#         kappa = pm.HalfNormal("kappa", sigma=10)
+#         _ = pm.Beta("obs",
+#                     alpha=mu * kappa,
+#                     beta=(1 - mu) * kappa,
+#                     observed=post_values)
+#
+#         trace = pm.sample(
+#             2000,
+#             tune=1000,
+#             cores=4,
+#             progressbar=True,
+#             random_seed=42,
+#             target_accept=0.95,
+#             return_inferencedata=True
+#         )
+#
+#     mu_samples = trace.posterior["mu"].values.flatten()
+#     mean_mu = float(np.mean(mu_samples))
+#     std_mu = float(np.std(mu_samples))
+#     hdi_bounds = az.hdi(mu_samples, hdi_prob=0.95)
+#     lower_bound = float(max(0, hdi_bounds[0]))
+#     upper_bound = float(min(1, hdi_bounds[1]))
+#
+#     return {
+#         "mean": mean_mu,
+#         "std": std_mu,
+#         "hdi_lower": lower_bound,
+#         "hdi_upper": upper_bound
+#     }
+
 def estimate_beta_metric(post_values: List[float]) -> dict:
-    """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1],
-    and compute the estimated standard deviation (std) of the full posterior of mu.
     """
+    Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1].
+    This function computes the posterior for μ using a Beta model.
+
+    - If the number of observations in post_values is exactly 5, we assume these are run‐level aggregated
+      metrics and we use an informative prior, where the prior mean is set to the median of post_values
+      and the effective prior sample size (default_strength) is 5.
+    - Otherwise (more than 5 observations, e.g. sample-level data), we use a noncommittal prior Beta(1,1).
+
+    Returns a dictionary with the posterior mean, std, and 95% HDI of μ.
+    """
+    import numpy as np
+    import pymc as pm
+    import arviz as az
+
     epsilon = 1e-6
     post_values = np.clip(np.array(post_values), epsilon, 1 - epsilon)
+    n_obs = len(post_values)
+
+    if n_obs == 5:
+        # informative prior: use the median and a default strength
+        prior_mean = float(np.median(post_values))
+        default_strength = 5.0  # effective prior sample size
+        alpha_prior = prior_mean * default_strength
+        beta_prior = (1 - prior_mean) * default_strength
+    else:
+        # noncommittal prior
+        alpha_prior, beta_prior = 1, 1
 
     with pm.Model() as model:
-        mu = pm.Beta("mu", alpha=1, beta=1)
+        mu = pm.Beta("mu", alpha=alpha_prior, beta=beta_prior)
         kappa = pm.HalfNormal("kappa", sigma=10)
         _ = pm.Beta("obs",
                     alpha=mu * kappa,
                     beta=(1 - mu) * kappa,
                     observed=post_values)
-
         trace = pm.sample(
             2000,
             tune=1000,
