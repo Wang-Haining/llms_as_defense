@@ -19,9 +19,8 @@ defense_evaluation/
 │   │   │   │               pre:  aggregated pre-defense metrics
 │   │   │   │               post: aggregated post-defense metrics
 │   │   │   │               raw_predictions: raw probability arrays for original and transformed texts
-│   │   │   │           quality: text quality metrics (aggregated)
-│   │   │   │           example_metrics: example-level attribution data
-│   │   │   │           example_quality: (NEW!) example-level quality metrics
+│   │   │   │           quality: text quality metrics (aggregated and/or sample-level arrays)
+│   │   │   │           [example_metrics and/or example_quality may be present]
 │   │   │   └── {another_model}/
 │   └── rq{N+1}/
 └── {another_corpus}/
@@ -53,8 +52,7 @@ class BayesResult(NamedTuple):
 
 
 def estimate_beta_metric(post_values: List[float]) -> dict:
-    """
-    Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1],
+    """Estimate beta distribution parameters with 95% HDI intervals for metrics naturally bounded in [0,1],
     and compute the estimated standard deviation (std) of the full posterior of mu.
     """
     epsilon = 1e-6
@@ -95,7 +93,6 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
 
 class DefenseStats:
     """Container for defense evaluation Bayesian estimates for each metric."""
-
     def __init__(self, corpus: str, threat_model: str, defense_model: str):
         self.corpus = corpus
         self.threat_model = threat_model
@@ -117,8 +114,7 @@ class DefenseStats:
         if not post_values:
             return
 
-        baseline = pre_value if metric_type == 'effectiveness' else (
-            0.0 if metric_name == 'pinc' else 1.0)
+        baseline = pre_value if metric_type == 'effectiveness' else (0.0 if metric_name == 'pinc' else 1.0)
 
         if metric_name == 'entropy':
             if self.corpus.lower() == 'rj':
@@ -156,11 +152,7 @@ class DefenseStats:
         if metric_name not in tests:
             return '-'
         result = tests[metric_name]
-        return format_estimate_with_hdi(
-            result.post_mean,
-            ci_lower=result.ci_lower,
-            ci_upper=result.ci_upper
-        )
+        return format_estimate_with_hdi(result.post_mean, ci_lower=result.ci_lower, ci_upper=result.ci_upper)
 
     def print_summary(self) -> None:
         """Print a summary of all Bayesian estimates."""
@@ -189,34 +181,20 @@ class DefenseStats:
 def get_scenario_name(rq: str) -> str:
     """Convert RQ identifier to a readable scenario name."""
     parts = rq.split('_')
-    if len(parts) > 1:
-        return ' '.join(part.capitalize() for part in parts[1:])
-    return rq
+    return ' '.join(parts[1:]) if len(parts) > 1 else rq
 
 
-def format_estimate_with_hdi(
-        value: float,
-        ci_lower: Optional[float] = None,
-        ci_upper: Optional[float] = None,
-        as_percent: bool = False
-) -> str:
+def format_estimate_with_hdi(value: float, ci_lower: Optional[float] = None,
+                             ci_upper: Optional[float] = None, as_percent: bool = False) -> str:
     """Format a value with its 95% HDI interval in a consistent way."""
     if as_percent:
-        if ci_lower is not None and ci_upper is not None:
-            return f"{value:.1f}% [{ci_lower:.1f}%, {ci_upper:.1f}%]"
-        return f"{value:.1f}%"
+        return f"{value:.1f}% [{ci_lower:.1f}%, {ci_upper:.1f}%]" if ci_lower is not None and ci_upper is not None else f"{value:.1f}%"
     else:
-        if ci_lower is not None and ci_upper is not None:
-            return f"{value:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
-        return f"{value:.3f}"
+        return f"{value:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]" if ci_lower is not None and ci_upper is not None else f"{value:.3f}"
 
 
-def print_defense_stats(
-    stats_dict: Dict[str, DefenseStats],
-    corpus: Optional[str] = None,
-    threat_model: Optional[str] = None,
-    defense_model: Optional[str] = None
-) -> None:
+def print_defense_stats(stats_dict: Dict[str, DefenseStats], corpus: Optional[str] = None,
+                        threat_model: Optional[str] = None, defense_model: Optional[str] = None) -> None:
     """Print Bayesian summaries with optional filtering."""
     for key, stats in stats_dict.items():
         if ((corpus is None or stats.corpus == corpus) and
@@ -225,21 +203,15 @@ def print_defense_stats(
             stats.print_summary()
 
 
-def get_defense_tables(
-        base_dir: str = "defense_evaluation",
-        rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
-        corpora: Optional[List[str]] = None,
-        threat_models: Optional[Dict[str, str]] = None,
-        mode: str = "pre",
-) -> pd.DataFrame:
+def get_defense_tables(base_dir: str = "defense_evaluation", rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
+                       corpora: Optional[List[str]] = None, threat_models: Optional[Dict[str, str]] = None,
+                       mode: str = "pre") -> pd.DataFrame:
     """
     Generate defense analysis tables for pre-defense values.
-
     For pre mode, quality measures are set to their ideal (1 for most, 0 for PINC).
     """
     if isinstance(rqs, str):
         rqs = [rqs]
-
     if corpora is None:
         corpora = ['ebg', 'rj']
     if threat_models is None:
@@ -253,7 +225,6 @@ def get_defense_tables(
         'true_class_confidence': 'True Class Conf ↓',
         'entropy': 'Entropy ↑'
     }
-
     quality_metrics = {
         'bleu': ('bleu', 'BLEU ↑'),
         'meteor': ('meteor_avg', 'METEOR ↑'),
@@ -284,7 +255,7 @@ def get_defense_tables(
                     first_seed = seed_keys[0]
                     if threat_model_key not in results[first_seed]:
                         continue
-                    # use aggregated run-level pre values
+                    # Use run-level pre values from aggregated results.
                     metrics = results[first_seed][threat_model_key]['attribution']['pre']
                     row = {'Corpus': corpus.upper(),
                            'Scenario': 'Combined' if len(rqs) > 1 else 'No protection',
@@ -296,28 +267,22 @@ def get_defense_tables(
                         baseline = 0.0 if qm_key == 'pinc' else 1.0
                         row[display_name] = format_estimate_with_hdi(baseline)
                     pre_rows.append(row)
-                    break  # Only one model's data per RQ is needed
+                    break  # Use one model's data per RQ
     columns = ['Corpus', 'Scenario', 'Threat Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
     return pd.DataFrame(pre_rows, columns=columns)
 
 
-def get_defense_tables_with_stats(
-        base_dir: str = "defense_evaluation",
-        rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
-        corpora: Optional[List[str]] = None,
-        threat_models: Optional[Dict[str, str]] = None,
-        mode: str = "post",
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
+def get_defense_tables_with_stats(base_dir: str = "defense_evaluation", rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
+                                  corpora: Optional[List[str]] = None, threat_models: Optional[Dict[str, str]] = None,
+                                  mode: str = "post") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
     """
     Generate defense analysis tables with Bayesian credible intervals (95% HDI)
     and additional dataframes for absolute and relative changes.
-
     For post mode, we use run-level values for accuracy and confidence, and
     sample-level values for entropy and quality metrics.
     """
     if isinstance(rqs, str):
         rqs = [rqs]
-
     if corpora is None:
         corpora = ['ebg', 'rj']
     if threat_models is None:
@@ -331,7 +296,6 @@ def get_defense_tables_with_stats(
         'true_class_confidence': 'True Class Conf ↓',
         'entropy': 'Entropy ↑'
     }
-
     quality_metrics = {
         'bleu': ('bleu', 'BLEU ↑'),
         'meteor': ('meteor_avg', 'METEOR ↑'),
@@ -352,13 +316,11 @@ def get_defense_tables_with_stats(
                 corpus_path = Path(base_dir) / corpus / rq_main / rq
                 if not corpus_path.exists():
                     continue
-                for model_dir in tqdm(list(corpus_path.glob("*")),
-                                      desc=f"Processing models for {corpus} {threat_model_name}",
-                                      leave=False):
+                for model_dir in tqdm(list(corpus_path.glob("*")), desc=f"Processing models for {corpus} {threat_model_name}", leave=False):
                     if not model_dir.is_dir():
                         continue
 
-                    # Determine a display name for the defense model.
+                    # Determine defense model display name.
                     model_dir_name = model_dir.name.lower()
                     if 'llama' in model_dir_name:
                         model_name_disp = 'Llama-3.1'
@@ -380,12 +342,10 @@ def get_defense_tables_with_stats(
                     eval_file = model_dir / "evaluation.json"
                     if not eval_file.exists():
                         continue
-
                     with open(eval_file) as f:
                         results = json.load(f)
 
-                    # For run-level effectiveness metrics (accuracy and confidence),
-                    # take values from one seed's aggregated results.
+                    # For run-level effectiveness metrics, take values from one seed.
                     for seed_results in results.values():
                         if threat_model_key not in seed_results:
                             continue
@@ -396,34 +356,51 @@ def get_defense_tables_with_stats(
                             post_val = run_post.get(metric)
                             if orig_val is not None and post_val is not None:
                                 all_metrics[(config_key, metric)].append({'pre': float(orig_val), 'post': float(post_val)})
-                        # For entropy, take the aggregated pre value…
+                        # For entropy, get the aggregated pre value.
                         orig_entropy = run_pre.get('entropy')
-                        break  # Use one seed’s aggregated run-level values
+                        break  # use one seed's aggregated values
 
-                    # Now load sample-level data from each seed file for entropy and quality.
+                    # Now load sample-level data from seed files for entropy and quality.
                     entropy_samples = []
                     quality_scores = {'bleu': [], 'meteor': [], 'pinc': [], 'bertscore': [], 'sbert': []}
                     for seed_file in model_dir.glob("seed_*.json"):
                         with open(seed_file) as f:
                             seed_data = json.load(f)
-                        # From example_metrics, compute sample-level entropy.
-                        for ex in seed_data.get("example_metrics", []):
-                            if ex.get("model_type", "").lower() == threat_model_key:
+                        # For entropy: first try "example_metrics"
+                        if "example_metrics" in seed_data:
+                            for ex in seed_data["example_metrics"]:
+                                # (Optional: if a "model_type" field exists, you could check it here.)
                                 trans_probs = ex.get("trans_probs")
                                 if trans_probs:
-                                    entropy_samples.append(
-                                        -np.sum(np.array(trans_probs) * np.log2(np.array(trans_probs) + 1e-10))
-                                    )
-                        # From example_quality, collect quality scores.
-                        for ex in seed_data.get("example_quality", []):
-                            if ex.get("model_type", "").lower() == threat_model_key:
+                                    entropy_samples.append(-np.sum(np.array(trans_probs) * np.log2(np.array(trans_probs) + 1e-10)))
+                        # Otherwise, fall back to using raw_predictions from aggregated results.
+                        elif "results" in seed_data and threat_model_key in seed_data["results"]:
+                            preds = seed_data["results"][threat_model_key]["attribution"]["raw_predictions"].get("transformed", [])
+                            for pred in preds:
+                                entropy_samples.append(-np.sum(np.array(pred) * np.log2(np.array(pred) + 1e-10)))
+                        # For quality: first try "example_quality"
+                        if "example_quality" in seed_data:
+                            for ex in seed_data["example_quality"]:
                                 for qm in quality_scores.keys():
                                     if qm in ex:
                                         quality_scores[qm].append(float(ex[qm]))
-                    # Add entropy sample-level values if available.
+                        # Otherwise, use the aggregated "quality" field.
+                        elif "results" in seed_data and threat_model_key in seed_data["results"]:
+                            qdata = seed_data["results"][threat_model_key].get("quality", {})
+                            # For PINC, choose "pinc_1_scores" if available.
+                            if "pinc" in qdata and "pinc_1_scores" in qdata["pinc"]:
+                                quality_scores["pinc"].extend([float(x) for x in qdata["pinc_1_scores"]])
+                            if "meteor" in qdata and "meteor_scores" in qdata["meteor"]:
+                                quality_scores["meteor"].extend([float(x) for x in qdata["meteor_scores"]])
+                            if "bertscore" in qdata and "bertscore_individual" in qdata["bertscore"]:
+                                for item in qdata["bertscore_individual"]:
+                                    if "f1" in item:
+                                        quality_scores["bertscore"].append(float(item["f1"]))
+                            if "sbert" in qdata and "sbert_similarity_scores" in qdata["sbert"]:
+                                quality_scores["sbert"].extend([float(x) for x in qdata["sbert_similarity_scores"]])
+                            # BLEU is not available per sample; skip it.
                     if orig_entropy is not None and entropy_samples:
                         all_metrics[(config_key, 'entropy')].append({'pre': float(orig_entropy), 'post_samples': entropy_samples})
-                    # For each quality metric, add all sample scores.
                     for qm, scores in quality_scores.items():
                         if scores:
                             all_quality[(config_key, qm)].extend(scores)
@@ -519,11 +496,11 @@ def get_defense_tables_with_stats(
                 rel_ci_upper = abs_ci_upper * 100
                 rel_row[display_name] = format_estimate_with_hdi(rel_change, rel_ci_lower, rel_ci_upper, as_percent=True)
         post_rows.append(base_row.copy())
+
     columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
     change_cols = ['Corpus', 'Threat Model', 'Defense Model'] + list(metrics_map.values()) + [v[1] for v in quality_metrics.values()]
 
     post_df = pd.DataFrame(post_rows, columns=columns)
-    # For absolute and relative change tables, we reuse the change values from post_rows.
     abs_change_df = pd.DataFrame([{k: v for k, v in row.items() if k in change_cols} for row in post_rows], columns=change_cols)
     rel_change_df = pd.DataFrame([{k: v for k, v in row.items() if k in change_cols} for row in post_rows], columns=change_cols)
 
@@ -531,9 +508,7 @@ def get_defense_tables_with_stats(
 
 
 def serialize_defense_stats(stats: DefenseStats) -> dict:
-    """
-    Convert a DefenseStats instance to a dictionary.
-    """
+    """Convert a DefenseStats instance to a dictionary."""
     return {
         "corpus": stats.corpus,
         "threat_model": stats.threat_model,
@@ -546,40 +521,13 @@ def serialize_defense_stats(stats: DefenseStats) -> dict:
 def main():
     """Example usage: parse arguments and output CSV tables and aggregated stats JSON in the results folder."""
     import argparse, os
-    parser = argparse.ArgumentParser(
-        description="Evaluate defense effectiveness with Bayesian analysis"
-    )
+    parser = argparse.ArgumentParser(description="Evaluate defense effectiveness with Bayesian analysis")
 
-    parser.add_argument(
-        '--base_dir',
-        type=str,
-        default='defense_evaluation',
-        help='Base directory containing evaluation results'
-    )
-    parser.add_argument(
-        '--rqs',
-        type=str,
-        nargs='+',
-        default=['rq1.1_basic_paraphrase'],
-        help='Research question identifiers (can specify multiple for combining data)'
-    )
-    parser.add_argument(
-        '--corpus',
-        type=str,
-        choices=['rj', 'ebg'],
-        help='Specific corpus to analyze'
-    )
-    parser.add_argument(
-        '--defense_model',
-        type=str,
-        help='Specific defense model to analyze (not yet implemented for filtering)'
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default='results',
-        help='Output folder to save CSV tables and stats JSON'
-    )
+    parser.add_argument('--base_dir', type=str, default='defense_evaluation', help='Base directory containing evaluation results')
+    parser.add_argument('--rqs', type=str, nargs='+', default=['rq1.1_basic_paraphrase'], help='Research question identifiers (can specify multiple for combining data)')
+    parser.add_argument('--corpus', type=str, choices=['rj', 'ebg'], help='Specific corpus to analyze')
+    parser.add_argument('--defense_model', type=str, help='Specific defense model to analyze (not yet implemented for filtering)')
+    parser.add_argument('--output', type=str, default='results', help='Output folder to save CSV tables and stats JSON')
 
     args = parser.parse_args()
 
@@ -623,12 +571,7 @@ def main():
     output_folder = Path(args.output)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    if len(args.rqs) == 1:
-        rq_part = args.rqs[0]
-    else:
-        common_prefix = os.path.commonprefix(args.rqs).rstrip('_')
-        rq_part = f"{common_prefix}_combined"
-
+    rq_part = args.rqs[0] if len(args.rqs) == 1 else f"{os.path.commonprefix(args.rqs).rstrip('_')}_combined"
     base_filename = f"{rq_part}_{args.corpus}" if args.corpus else rq_part
 
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
@@ -640,9 +583,7 @@ def main():
     for sd in all_stats_dicts:
         merged_stats.update(sd)
 
-    merged_stats_serializable = {
-        str(key): serialize_defense_stats(value) for key, value in merged_stats.items()
-    }
+    merged_stats_serializable = {str(key): serialize_defense_stats(value) for key, value in merged_stats.items()}
 
     stats_file = output_folder / f"{base_filename}_stats.json"
     with open(stats_file, "w") as f:
