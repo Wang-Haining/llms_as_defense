@@ -607,8 +607,9 @@ def get_defense_tables_with_stats(
 
 
 def main():
-    """Example usage of defense evaluation; parse arguments and output CSV tables in results folder."""
-    import argparse, os
+    """Example usage of defense evaluation; parse arguments and output CSV tables and aggregated stats JSON in results folder."""
+    import argparse
+    import os
 
     parser = argparse.ArgumentParser(
         description="Evaluate defense effectiveness with Bayesian analysis"
@@ -642,7 +643,7 @@ def main():
         '--output',
         type=str,
         default='results',
-        help='Output folder to save CSV tables'
+        help='Output folder to save CSV tables and stats JSON'
     )
 
     args = parser.parse_args()
@@ -652,8 +653,9 @@ def main():
     all_rel_change_dfs = []
     all_stats_dicts = []
 
+    # process each research question.
     for rq in args.rqs:
-        (post_df, abs_change_df, rel_change_df, stats_dict) = get_defense_tables_with_stats(
+        post_df, abs_change_df, rel_change_df, stats_dict = get_defense_tables_with_stats(
             base_dir=args.base_dir,
             rqs=rq,
             corpora=[args.corpus] if args.corpus else None,
@@ -665,6 +667,7 @@ def main():
         all_rel_change_dfs.append(rel_change_df)
         all_stats_dicts.append(stats_dict)
 
+    # concatenate results from all research questions
     post_df = pd.concat(all_post_dfs, ignore_index=True)
     abs_change_df = pd.concat(all_abs_change_dfs, ignore_index=True)
     rel_change_df = pd.concat(all_rel_change_dfs, ignore_index=True)
@@ -675,7 +678,8 @@ def main():
     print(abs_change_df)
     print("\nBayesian relative changes (in percent):")
     print(rel_change_df)
-    #  get the pre-defense DataFrame
+
+    # get the pre-defense DataFrame
     pre_df = get_defense_tables(
         base_dir=args.base_dir,
         rqs=args.rqs,
@@ -695,12 +699,25 @@ def main():
 
     base_filename = f"{rq_part}_{args.corpus}" if args.corpus else rq_part
 
+    # save the CSV files
     post_df.to_csv(output_folder / f"{base_filename}_post.csv", index=False)
     abs_change_df.to_csv(output_folder / f"{base_filename}_abs_change.csv", index=False)
     rel_change_df.to_csv(output_folder / f"{base_filename}_rel_change.csv", index=False)
     pre_df.to_csv(output_folder / f"{base_filename}_pre.csv", index=False)
 
+    # merge all stats_dict dictionaries (aggregated stats across RQs).
+    merged_stats = {}
+    for sd in all_stats_dicts:
+        merged_stats.update(sd)
+
+    # save the merged stats_dict to a JSON file
+    stats_file = output_folder / f"{base_filename}_stats.json"
+    with open(stats_file, "w") as f:
+        json.dump(merged_stats, f, indent=2)
+
     print(f"\nResults saved in folder '{output_folder.absolute()}'")
+    print(
+        "\nNote: Run-level details are stored in the per-seed JSON files within each experiment directory.")
 
 
 if __name__ == "__main__":
