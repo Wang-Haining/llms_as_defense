@@ -110,7 +110,7 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
     if n_obs == 5:
         # informative prior: use the median and a default strength
         prior_mean = float(np.median(post_values))
-        default_strength = 5.0  # effective prior sample size
+        default_strength = 2.0  # for a weaker prior
         alpha_prior = prior_mean * default_strength
         beta_prior = (1 - prior_mean) * default_strength
     else:
