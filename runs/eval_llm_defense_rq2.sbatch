@@ -11,6 +11,8 @@
 #SBATCH --mail-user=haining.wang@montana.edu
 #SBATCH --mail-type=ALL
 
+mkdir -p results
+
 module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 source ~/.bashrc

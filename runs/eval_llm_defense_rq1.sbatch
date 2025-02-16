@@ -16,6 +16,8 @@ module load CUDA/12.2.0
 source ~/.bashrc
 . .venv/bin/activate
 
+mkdir -p results
+
 # define research questions
 RQS=(
     "rq1.1_basic_paraphrase"
