@@ -229,19 +229,9 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                      model_name: str, run_metrics: List[str],
                      sample_metrics: List[str], stats_dict: Dict) -> Optional[Dict]:
     """extract both run-level and sample-level metrics from results"""
-    # initialize row
-    row = {
-        'Corpus': corpus.upper(),
-        'Scenario': 'Combined' if '_' not in rq else ' '.join(rq.split('_')[1:]),
-        'Threat Model': threat_model_key,
-        'Defense Model': model_name
-    }
+    # initialize row and stats dict as before...
 
-    config_key = (corpus, threat_model_key, model_name)
-    if config_key not in stats_dict:
-        stats_dict[config_key] = DefenseStats(corpus, threat_model_key, model_name)
-
-    # extract run-level metrics
+    # extract run-level metrics (no change)
     for seed_key, seed_results in results.items():
         if threat_model_key not in seed_results:
             continue
@@ -249,20 +239,22 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
         run_pre = seed_results[threat_model_key]['attribution']['pre']
         run_post = seed_results[threat_model_key]['attribution']['post']
 
+        # get pre/post values for run-level metrics
         for metric in run_metrics:
+            if metric == 'entropy':
+                continue  # skip, will handle separately
             orig_val = run_pre.get(metric)
             post_val = run_post.get(metric)
             if orig_val is not None and post_val is not None:
                 stats_dict[config_key].run_level_observations.setdefault(metric,
                                                                          []).append(
                     post_val)
-                if len(stats_dict[config_key].run_level_observations[
-                           metric]) == 5:  # full set of runs
+                if len(stats_dict[config_key].run_level_observations[metric]) == 5:
                     stats_dict[config_key].add_observations(
                         metric, 'effectiveness', orig_val,
                         stats_dict[config_key].run_level_observations[metric]
                     )
-                    display_name = f"{metric} ↓" if metric != 'entropy' else 'Entropy ↑'
+                    display_name = f"{metric} ↓"
                     row[display_name] = format_estimate(
                         stats_dict[config_key].effectiveness_estimates[
                             metric].post_mean,
@@ -270,76 +262,74 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                         stats_dict[config_key].effectiveness_estimates[metric].ci_upper
                     )
 
-    # extract sample-level metrics
-    for seed_key, seed_results in results.items():
-        if threat_model_key not in seed_results:
-            continue
+        # extract entropy from raw predictions
+        if 'raw_predictions' in seed_results[threat_model_key]['attribution']:
+            transformed_preds = \
+            seed_results[threat_model_key]['attribution']['raw_predictions'][
+                'transformed']
+            for pred in transformed_preds:
+                pred = np.array(pred)
+                entropy = -np.sum(pred * np.log2(pred + 1e-10))
+                stats_dict[config_key].sample_level_observations.setdefault('entropy',
+                                                                            []).append(
+                    entropy)
 
-        # get entropy from trans_probs if available
-        if "example_metrics" in seed_results:
-            for ex in seed_results["example_metrics"]:
-                trans_probs = ex.get("trans_probs")
-                if trans_probs:
-                    entropy = -np.sum(
-                        np.array(trans_probs) * np.log2(np.array(trans_probs) + 1e-10))
-                    stats_dict[config_key].sample_level_observations.setdefault(
-                        "entropy", []).append(entropy)
+    # handle entropy after collecting all samples
+    if 'entropy' in sample_metrics and 'entropy' in stats_dict[
+        config_key].sample_level_observations:
+        entropy_values = stats_dict[config_key].sample_level_observations['entropy']
+        pre_entropy = run_pre.get('entropy', 0.0)
+        stats_dict[config_key].add_observations('entropy', 'effectiveness', pre_entropy,
+                                                entropy_values)
+        row['Entropy ↑'] = format_estimate(
+            stats_dict[config_key].effectiveness_estimates['entropy'].post_mean,
+            stats_dict[config_key].effectiveness_estimates['entropy'].ci_lower,
+            stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
+        )
 
-        # get quality metrics
-        quality_data = seed_results[threat_model_key].get("quality", {})
+    # extract other sample-level metrics (e.g. SBERT) - showing first 20 values in debug mode
+    quality_data = seed_results[threat_model_key].get("quality", {})
 
-        for metric in sample_metrics:
-            if metric == 'entropy':
-                continue
+    # handle SBERT specifically
+    if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data['sbert']:
+        sbert_scores = [float(x) for x in
+                        quality_data['sbert']['sbert_similarity_scores']]
+        stats_dict[config_key].sample_level_observations['sbert'] = sbert_scores
+        stats_dict[config_key].add_observations('sbert', 'quality', 1.0, sbert_scores)
+        row['sbert ↑'] = format_estimate(
+            stats_dict[config_key].quality_estimates['sbert'].post_mean,
+            stats_dict[config_key].quality_estimates['sbert'].ci_lower,
+            stats_dict[config_key].quality_estimates['sbert'].ci_upper
+        )
 
-            if metric == 'pinc' and 'pinc' in quality_data:
-                n_samples = len(quality_data["pinc"].get("pinc_1_scores", []))
-                if n_samples > 0:
-                    for i in range(n_samples):
-                        sample_scores = []
-                        for k in range(1, 5):
-                            scores = quality_data["pinc"].get(f"pinc_{k}_scores", [])
-                            if scores and i < len(scores):
-                                sample_scores.append(scores[i])
-                        if sample_scores:
-                            avg_score = np.mean(sample_scores)
-                            stats_dict[config_key].sample_level_observations.setdefault(
-                                metric, []).append(avg_score)
+    return row
 
-            elif metric in quality_data:
-                scores = []
-                if metric == 'meteor' and 'meteor_scores' in quality_data[metric]:
-                    scores = quality_data[metric]['meteor_scores']
-                elif metric == 'bertscore' and 'bertscore_individual' in quality_data[
-                    metric]:
-                    scores = [item['f1'] for item in
-                              quality_data[metric]['bertscore_individual']]
-                elif metric == 'sbert' and 'sbert_similarity_scores' in quality_data[
-                    metric]:
-                    scores = quality_data[metric]['sbert_similarity_scores']
 
-                if scores:
-                    stats_dict[config_key].sample_level_observations.setdefault(metric,
-                                                                                []).extend(
-                        [float(x) for x in scores]
-                    )
+def print_debug_summary(self, metrics: List[str]):
+    """print detailed debug information for specified metrics"""
+    print(f"\nModel: {self.defense_model} vs {self.threat_model}")
+    print(f"Corpus: {self.corpus}")
 
-    # add sample-level metrics to row
-    for metric in sample_metrics:
-        if metric in stats_dict[config_key].sample_level_observations:
-            values = stats_dict[config_key].sample_level_observations[metric]
-            if len(values) > 0:  # we have observations
-                baseline = 0.0 if metric == 'pinc' else 1.0
-                stats_dict[config_key].add_observations(metric, 'quality', baseline,
-                                                        values)
-                display_name = f"{metric} ↑"
-                if metric in stats_dict[config_key].quality_estimates:
-                    est = stats_dict[config_key].quality_estimates[metric]
-                    row[display_name] = format_estimate(
-                        est.post_mean, est.ci_lower, est.ci_upper
-                    )
+    for metric in metrics:
+        print(f"\n{metric}:")
+        if metric in self.run_level_observations:
+            values = self.run_level_observations[metric]
+            print(f"Run-level observations (n=5): {values}")
+            if metric in self.effectiveness_estimates:
+                est = self.effectiveness_estimates[metric]
+                print(f"Pre-value: {est.pre_value:.4f}")
+                print(f"Post mean: {est.post_mean:.4f}")
+                print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
-    return row if row else None
+        elif metric in self.sample_level_observations:
+            values = self.sample_level_observations[metric]
+            print(f"Sample-level observations (n={len(values)})")
+            print(f"First 20 observations: {values[:20]}")
+            print(f"Mean: {np.mean(values):.4f}")
+            if metric in self.quality_estimates:
+                est = self.quality_estimates[metric]
+                print(f"Bayesian estimate mean: {est.post_mean:.4f}")
+                print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
 
 def _process_model_results(base_dir: str, corpus: str, rq: str,
