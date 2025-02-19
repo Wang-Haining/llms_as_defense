@@ -18,13 +18,11 @@ source ~/.bashrc
 SLEEP_TIME=30
 
 # process each corpus with sleep between runs
-for corpus in "${CORPORA[@]}"; do
-    python -m estimate_llm_intervention \
-        --rqs "rq1.2_backtranslation_via_de" "rq1.2_backtranslation_via_zh"
+python -m estimate_llm_intervention \
+    --rqs "rq1.2_backtranslation_via_de" "rq1.2_backtranslation_via_zh"
 
-    # sleep between runs except for last corpus
-    if [ "$corpus" != "${CORPORA[-1]}" ]; then
-        echo "sleeping for $SLEEP_TIME seconds..."
-        sleep $SLEEP_TIME
-    fi
-done
+# sleep between runs except for last corpus
+if [ "$corpus" != "${CORPORA[-1]}" ]; then
+    echo "sleeping for $SLEEP_TIME seconds..."
+    sleep $SLEEP_TIME
+fi

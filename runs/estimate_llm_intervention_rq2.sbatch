@@ -20,14 +20,12 @@ RQS=("rq2.1_obfuscation" "rq2.2_imitation" "rq2.2_imitation_w_exemplar" "rq2.3_s
 SLEEP_TIME=30
 
 # loop through corpora and research questions
-for corpus in "${CORPORA[@]}"; do
-    for rq in "${RQS[@]}"; do
-        echo "  running: rqs=$rq"
-        python -m estimate_llm_intervention --rqs "$rq"
-        # sleep between runs except for last iteration of research questions for this corpus
-        if [ "$rq" != "${RQS[-1]}" ]; then
-            echo "  sleeping for $SLEEP_TIME seconds..."
-            sleep $SLEEP_TIME
-        fi
-    done
+for rq in "${RQS[@]}"; do
+    echo "  running: rqs=$rq"
+    python -m estimate_llm_intervention --rqs "$rq"
+    # sleep between runs except for last iteration of research questions for this corpus
+    if [ "$rq" != "${RQS[-1]}" ]; then
+        echo "  sleeping for $SLEEP_TIME seconds..."
+        sleep $SLEEP_TIME
+    fi
 done

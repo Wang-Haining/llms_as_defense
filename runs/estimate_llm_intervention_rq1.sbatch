@@ -20,14 +20,12 @@ RQS=("rq1.1_basic_paraphrase" "rq1.2_backtranslation_via_de" "rq1.2_backtranslat
 SLEEP_TIME=30
 
 # loop through corpora and research questions
-for corpus in "${CORPORA[@]}"; do
-    for rq in "${RQS[@]}"; do
-        echo "  running: rqs=$rq"
-        python -m estimate_llm_intervention --rqs "$rq"
-        # sleep between runs except for last iteration of research questions for this corpus
-        if [ "$rq" != "${RQS[-1]}" ]; then
-            echo "  sleeping for $SLEEP_TIME seconds..."
-            sleep $SLEEP_TIME
-        fi
-    done
+for rq in "${RQS[@]}"; do
+    echo "  running: rqs=$rq"
+    python -m estimate_llm_intervention --rqs "$rq"
+    # sleep between runs except for last iteration of research questions for this corpus
+    if [ "$rq" != "${RQS[-1]}" ]; then
+        echo "  sleeping for $SLEEP_TIME seconds..."
+        sleep $SLEEP_TIME
+    fi
 done
