@@ -316,6 +316,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
 
     return row
 
+
 def print_debug_summary(self, metrics: List[str]):
     """print detailed debug information for specified metrics"""
     print(f"\nModel: {self.defense_model} vs {self.threat_model}")
@@ -335,7 +336,9 @@ def print_debug_summary(self, metrics: List[str]):
         elif metric in self.sample_level_observations:
             values = self.sample_level_observations[metric]
             print(f"Sample-level observations (n={len(values)})")
-            print(f"First 20 observations: {values[:20]}")
+            print(f"First 20 raw values:")
+            for i, v in enumerate(values[:20]):
+                print(f"  {i + 1}: {v:.4f}")
             print(f"Mean: {np.mean(values):.4f}")
             if metric in self.quality_estimates:
                 est = self.quality_estimates[metric]
