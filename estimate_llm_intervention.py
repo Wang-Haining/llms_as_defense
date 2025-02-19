@@ -112,6 +112,10 @@ class DefenseStats:
         print(f"\nModel: {self.defense_model} vs {self.threat_model}")
         print(f"Corpus: {self.corpus}")
 
+        print("\nStored observations:")
+        print("Run-level metrics:", list(self.run_level_observations.keys()))
+        print("Sample-level metrics:", list(self.sample_level_observations.keys()))
+
         for metric in metrics:
             print(f"\n{metric}:")
             if metric in self.run_level_observations:
@@ -126,6 +130,9 @@ class DefenseStats:
             elif metric in self.sample_level_observations:
                 values = self.sample_level_observations[metric]
                 print(f"Sample-level observations (n={len(values)})")
+                print("First 20 raw values:")
+                for i, v in enumerate(values[:20]):
+                    print(f"  {i + 1}: {v:.4f}")
                 print(f"Mean: {np.mean(values):.4f}")
                 if metric in self.quality_estimates:
                     est = self.quality_estimates[metric]
@@ -324,6 +331,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
 
     return row
 
+
 def print_debug_summary(self, metrics: List[str]):
     print(f"\nModel: {self.defense_model} vs {self.threat_model}")
     print(f"Corpus: {self.corpus}")
@@ -429,7 +437,7 @@ def main():
     args = parser.parse_args()
 
     if args.debug:
-        # debug mode with specific models/metrics
+        # debug mode - just print statistics
         threat_models = {'logreg': 'LogReg'}
         debug_metrics = ['accuracy@1', 'true_class_confidence', 'entropy', 'sbert']
 
@@ -455,21 +463,39 @@ def main():
         print(results_df)
 
     else:
-        # normal mode
+        # normal mode - save results and raw observations
         results_df, stats_dict = get_defense_tables_with_stats(
             base_dir=args.base_dir,
             rqs=args.rqs
         )
 
-        # save results
         output_folder = Path(args.output)
         output_folder.mkdir(parents=True, exist_ok=True)
 
+        # save results dataframe
         rq_str = args.rqs[0] if len(args.rqs) == 1 else "combined"
         results_df.to_csv(output_folder / f"{rq_str}_results.csv", index=False)
 
-        print(f"\nResults saved to {output_folder}")
-        print("\nNote: Raw observations are stored in the stats dictionary")
+        # save raw observations
+        raw_observations = {}
+        for key, stats in stats_dict.items():
+            corpus, threat_model, defense_model = key
+            model_key = f"{corpus}_{defense_model}_{threat_model}"
+            raw_observations[model_key] = {
+                "run_level": {
+                    metric: values
+                    for metric, values in stats.run_level_observations.items()
+                },
+                "sample_level": {
+                    metric: values
+                    for metric, values in stats.sample_level_observations.items()
+                }
+            }
+
+        with open(output_folder / f"{rq_str}_raw_observations.json", "w") as f:
+            json.dump(raw_observations, f, indent=2)
+
+        print(f"\nResults and raw observations saved to {output_folder}")
 
 
 if __name__ == "__main__":
