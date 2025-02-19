@@ -439,7 +439,13 @@ def main():
     if args.debug:
         # debug mode - just print statistics
         threat_models = {'logreg': 'LogReg'}
-        debug_metrics = ['accuracy@1', 'true_class_confidence', 'entropy', 'sbert']
+        debug_metrics = ['accuracy@1',
+                         'accuracy@5',
+                         'true_class_confidence',
+                         'entropy',
+                         'pinc',
+                         'berscore',
+                         'sbert']
 
         print("Running in debug mode...")
         print("Models: Claude-3.5 (defense) vs LogReg (threat)")
