@@ -225,6 +225,123 @@ def get_defense_tables_with_stats(
     return pd.DataFrame(results_rows, columns=columns), stats_dict
 
 
+def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
+                     model_name: str, run_metrics: List[str],
+                     sample_metrics: List[str], stats_dict: Dict) -> Optional[Dict]:
+    """extract both run-level and sample-level metrics from results"""
+    # initialize row
+    row = {
+        'Corpus': corpus.upper(),
+        'Scenario': 'Combined' if '_' not in rq else ' '.join(rq.split('_')[1:]),
+        'Threat Model': threat_model_key,
+        'Defense Model': model_name
+    }
+
+    config_key = (corpus, threat_model_key, model_name)
+    if config_key not in stats_dict:
+        stats_dict[config_key] = DefenseStats(corpus, threat_model_key, model_name)
+
+    # extract run-level metrics
+    for seed_key, seed_results in results.items():
+        if threat_model_key not in seed_results:
+            continue
+
+        run_pre = seed_results[threat_model_key]['attribution']['pre']
+        run_post = seed_results[threat_model_key]['attribution']['post']
+
+        for metric in run_metrics:
+            orig_val = run_pre.get(metric)
+            post_val = run_post.get(metric)
+            if orig_val is not None and post_val is not None:
+                stats_dict[config_key].run_level_observations.setdefault(metric,
+                                                                         []).append(
+                    post_val)
+                if len(stats_dict[config_key].run_level_observations[
+                           metric]) == 5:  # full set of runs
+                    stats_dict[config_key].add_observations(
+                        metric, 'effectiveness', orig_val,
+                        stats_dict[config_key].run_level_observations[metric]
+                    )
+                    display_name = f"{metric} ↓" if metric != 'entropy' else 'Entropy ↑'
+                    row[display_name] = format_estimate(
+                        stats_dict[config_key].effectiveness_estimates[
+                            metric].post_mean,
+                        stats_dict[config_key].effectiveness_estimates[metric].ci_lower,
+                        stats_dict[config_key].effectiveness_estimates[metric].ci_upper
+                    )
+
+    # extract sample-level metrics
+    for seed_key, seed_results in results.items():
+        if threat_model_key not in seed_results:
+            continue
+
+        # get entropy from trans_probs if available
+        if "example_metrics" in seed_results:
+            for ex in seed_results["example_metrics"]:
+                trans_probs = ex.get("trans_probs")
+                if trans_probs:
+                    entropy = -np.sum(
+                        np.array(trans_probs) * np.log2(np.array(trans_probs) + 1e-10))
+                    stats_dict[config_key].sample_level_observations.setdefault(
+                        "entropy", []).append(entropy)
+
+        # get quality metrics
+        quality_data = seed_results[threat_model_key].get("quality", {})
+
+        for metric in sample_metrics:
+            if metric == 'entropy':
+                continue
+
+            if metric == 'pinc' and 'pinc' in quality_data:
+                n_samples = len(quality_data["pinc"].get("pinc_1_scores", []))
+                if n_samples > 0:
+                    for i in range(n_samples):
+                        sample_scores = []
+                        for k in range(1, 5):
+                            scores = quality_data["pinc"].get(f"pinc_{k}_scores", [])
+                            if scores and i < len(scores):
+                                sample_scores.append(scores[i])
+                        if sample_scores:
+                            avg_score = np.mean(sample_scores)
+                            stats_dict[config_key].sample_level_observations.setdefault(
+                                metric, []).append(avg_score)
+
+            elif metric in quality_data:
+                scores = []
+                if metric == 'meteor' and 'meteor_scores' in quality_data[metric]:
+                    scores = quality_data[metric]['meteor_scores']
+                elif metric == 'bertscore' and 'bertscore_individual' in quality_data[
+                    metric]:
+                    scores = [item['f1'] for item in
+                              quality_data[metric]['bertscore_individual']]
+                elif metric == 'sbert' and 'sbert_similarity_scores' in quality_data[
+                    metric]:
+                    scores = quality_data[metric]['sbert_similarity_scores']
+
+                if scores:
+                    stats_dict[config_key].sample_level_observations.setdefault(metric,
+                                                                                []).extend(
+                        [float(x) for x in scores]
+                    )
+
+    # add sample-level metrics to row
+    for metric in sample_metrics:
+        if metric in stats_dict[config_key].sample_level_observations:
+            values = stats_dict[config_key].sample_level_observations[metric]
+            if len(values) > 0:  # we have observations
+                baseline = 0.0 if metric == 'pinc' else 1.0
+                stats_dict[config_key].add_observations(metric, 'quality', baseline,
+                                                        values)
+                display_name = f"{metric} ↑"
+                if metric in stats_dict[config_key].quality_estimates:
+                    est = stats_dict[config_key].quality_estimates[metric]
+                    row[display_name] = format_estimate(
+                        est.post_mean, est.ci_lower, est.ci_upper
+                    )
+
+    return row if row else None
+
+
 def _process_model_results(base_dir: str, corpus: str, rq: str,
                            threat_model_key: str, run_metrics: List[str],
                            sample_metrics: List[str], stats_dict: dict,
