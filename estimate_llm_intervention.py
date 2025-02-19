@@ -229,9 +229,20 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                      model_name: str, run_metrics: List[str],
                      sample_metrics: List[str], stats_dict: Dict) -> Optional[Dict]:
     """extract both run-level and sample-level metrics from results"""
-    # initialize row and stats dict as before...
+    # initialize row
+    config_key = (corpus, threat_model_key, model_name)  # define config_key first
+    row = {
+        'Corpus': corpus.upper(),
+        'Scenario': 'Combined' if '_' not in rq else ' '.join(rq.split('_')[1:]),
+        'Threat Model': threat_model_key,
+        'Defense Model': model_name
+    }
 
-    # extract run-level metrics (no change)
+    # ensure stats object exists
+    if config_key not in stats_dict:
+        stats_dict[config_key] = DefenseStats(corpus, threat_model_key, model_name)
+
+    # for each seed
     for seed_key, seed_results in results.items():
         if threat_model_key not in seed_results:
             continue
@@ -242,7 +253,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
         # get pre/post values for run-level metrics
         for metric in run_metrics:
             if metric == 'entropy':
-                continue  # skip, will handle separately
+                continue  # handle separately below
             orig_val = run_pre.get(metric)
             post_val = run_post.get(metric)
             if orig_val is not None and post_val is not None:
@@ -287,23 +298,23 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
         )
 
-    # extract other sample-level metrics (e.g. SBERT) - showing first 20 values in debug mode
-    quality_data = seed_results[threat_model_key].get("quality", {})
-
-    # handle SBERT specifically
-    if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data['sbert']:
-        sbert_scores = [float(x) for x in
-                        quality_data['sbert']['sbert_similarity_scores']]
-        stats_dict[config_key].sample_level_observations['sbert'] = sbert_scores
-        stats_dict[config_key].add_observations('sbert', 'quality', 1.0, sbert_scores)
-        row['sbert ↑'] = format_estimate(
-            stats_dict[config_key].quality_estimates['sbert'].post_mean,
-            stats_dict[config_key].quality_estimates['sbert'].ci_lower,
-            stats_dict[config_key].quality_estimates['sbert'].ci_upper
-        )
+    # extract SBERT scores
+    if 'quality' in seed_results[threat_model_key]:
+        quality_data = seed_results[threat_model_key]['quality']
+        if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
+            'sbert']:
+            sbert_scores = [float(x) for x in
+                            quality_data['sbert']['sbert_similarity_scores']]
+            stats_dict[config_key].sample_level_observations['sbert'] = sbert_scores
+            stats_dict[config_key].add_observations('sbert', 'quality', 1.0,
+                                                    sbert_scores)
+            row['sbert ↑'] = format_estimate(
+                stats_dict[config_key].quality_estimates['sbert'].post_mean,
+                stats_dict[config_key].quality_estimates['sbert'].ci_lower,
+                stats_dict[config_key].quality_estimates['sbert'].ci_upper
+            )
 
     return row
-
 
 def print_debug_summary(self, metrics: List[str]):
     """print detailed debug information for specified metrics"""
