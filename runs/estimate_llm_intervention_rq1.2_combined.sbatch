@@ -15,15 +15,12 @@ module load CUDA/12.2.0
 source ~/.bashrc
 . .venv/bin/activate
 
-CORPORA=("rj" "ebg")
 SLEEP_TIME=30
 
 # process each corpus with sleep between runs
 for corpus in "${CORPORA[@]}"; do
-    echo "running for corpus: $corpus"
     python -m estimate_llm_intervention \
-        --rqs "rq1.2_backtranslation_via_de" "rq1.2_backtranslation_via_zh" \
-        --corpus "$corpus"
+        --rqs "rq1.2_backtranslation_via_de" "rq1.2_backtranslation_via_zh"
 
     # sleep between runs except for last corpus
     if [ "$corpus" != "${CORPORA[-1]}" ]; then
