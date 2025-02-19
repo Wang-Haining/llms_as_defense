@@ -230,7 +230,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                      sample_metrics: List[str], stats_dict: Dict) -> Optional[Dict]:
     """extract both run-level and sample-level metrics from results"""
     # initialize row
-    config_key = (corpus, threat_model_key, model_name)  # define config_key first
+    config_key = (corpus, threat_model_key, model_name)
     row = {
         'Corpus': corpus.upper(),
         'Scenario': 'Combined' if '_' not in rq else ' '.join(rq.split('_')[1:]),
@@ -273,7 +273,8 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                         stats_dict[config_key].effectiveness_estimates[metric].ci_upper
                     )
 
-        # extract entropy from raw predictions
+        # process sample-level metrics from this seed
+        # calculate and store entropy values
         if 'raw_predictions' in seed_results[threat_model_key]['attribution']:
             transformed_preds = \
             seed_results[threat_model_key]['attribution']['raw_predictions'][
@@ -285,7 +286,19 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                                                                             []).append(
                     entropy)
 
-    # handle entropy after collecting all samples
+        # extract SBERT scores from quality metrics
+        if 'quality' in seed_results[threat_model_key]:
+            quality_data = seed_results[threat_model_key]['quality']
+            if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
+                'sbert']:
+                sbert_scores = [float(x) for x in
+                                quality_data['sbert']['sbert_similarity_scores']]
+                stats_dict[config_key].sample_level_observations.setdefault('sbert',
+                                                                            []).extend(
+                    sbert_scores)
+
+    # process all sample-level metrics after collecting all samples
+    # handle entropy
     if 'entropy' in sample_metrics and 'entropy' in stats_dict[
         config_key].sample_level_observations:
         entropy_values = stats_dict[config_key].sample_level_observations['entropy']
@@ -298,29 +311,26 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
         )
 
-    # extract SBERT scores
-    if 'quality' in seed_results[threat_model_key]:
-        quality_data = seed_results[threat_model_key]['quality']
-        if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
-            'sbert']:
-            sbert_scores = [float(x) for x in
-                            quality_data['sbert']['sbert_similarity_scores']]
-            stats_dict[config_key].sample_level_observations['sbert'] = sbert_scores
-            stats_dict[config_key].add_observations('sbert', 'quality', 1.0,
-                                                    sbert_scores)
-            row['sbert ↑'] = format_estimate(
-                stats_dict[config_key].quality_estimates['sbert'].post_mean,
-                stats_dict[config_key].quality_estimates['sbert'].ci_lower,
-                stats_dict[config_key].quality_estimates['sbert'].ci_upper
-            )
+    # handle SBERT
+    if 'sbert' in sample_metrics and 'sbert' in stats_dict[
+        config_key].sample_level_observations:
+        sbert_values = stats_dict[config_key].sample_level_observations['sbert']
+        stats_dict[config_key].add_observations('sbert', 'quality', 1.0, sbert_values)
+        row['sbert ↑'] = format_estimate(
+            stats_dict[config_key].quality_estimates['sbert'].post_mean,
+            stats_dict[config_key].quality_estimates['sbert'].ci_lower,
+            stats_dict[config_key].quality_estimates['sbert'].ci_upper
+        )
 
     return row
 
-
 def print_debug_summary(self, metrics: List[str]):
-    """print detailed debug information for specified metrics"""
     print(f"\nModel: {self.defense_model} vs {self.threat_model}")
     print(f"Corpus: {self.corpus}")
+
+    print("\nStored observations:")
+    print("Run-level metrics:", list(self.run_level_observations.keys()))
+    print("Sample-level metrics:", list(self.sample_level_observations.keys()))
 
     for metric in metrics:
         print(f"\n{metric}:")
@@ -336,7 +346,7 @@ def print_debug_summary(self, metrics: List[str]):
         elif metric in self.sample_level_observations:
             values = self.sample_level_observations[metric]
             print(f"Sample-level observations (n={len(values)})")
-            print(f"First 20 raw values:")
+            print("First 20 raw values:")
             for i, v in enumerate(values[:20]):
                 print(f"  {i + 1}: {v:.4f}")
             print(f"Mean: {np.mean(values):.4f}")
