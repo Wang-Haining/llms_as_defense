@@ -137,6 +137,7 @@ class DefenseStats:
                 if metric in self.quality_estimates:
                     est = self.quality_estimates[metric]
                     print(f"Bayesian estimate mean: {est.post_mean:.4f}")
+                    print(f"Bayesian estimate std: {est.std:.4f}")
                     print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
 
