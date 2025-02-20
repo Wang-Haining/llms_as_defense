@@ -293,9 +293,29 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                                                                             []).append(
                     entropy)
 
-        # extract SBERT scores from quality metrics
+        # extract quality metrics
         if 'quality' in seed_results[threat_model_key]:
             quality_data = seed_results[threat_model_key]['quality']
+
+            # handle PINC scores - average PINC1-4 for each sample
+            if 'pinc' in quality_data:
+                n_samples = len(quality_data["pinc"].get("pinc_1_scores", []))
+                if n_samples > 0:
+                    for i in range(n_samples):
+                        sample_pinc_scores = []
+                        for k in range(1, 5):  # PINC1 to PINC4
+                            scores_key = f"pinc_{k}_scores"
+                            if scores_key in quality_data["pinc"]:
+                                scores = quality_data["pinc"][scores_key]
+                                if i < len(scores):
+                                    sample_pinc_scores.append(scores[i])
+
+                        if sample_pinc_scores:  # if we have scores for this sample
+                            avg_pinc = np.mean(sample_pinc_scores)
+                            stats_dict[config_key].sample_level_observations.setdefault(
+                                'pinc', []).append(avg_pinc)
+
+            # handle SBERT scores
             if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
                 'sbert']:
                 sbert_scores = [float(x) for x in
@@ -316,6 +336,17 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
             stats_dict[config_key].effectiveness_estimates['entropy'].post_mean,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_lower,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
+        )
+
+    # handle PINC
+    if 'pinc' in sample_metrics and 'pinc' in stats_dict[
+        config_key].sample_level_observations:
+        pinc_values = stats_dict[config_key].sample_level_observations['pinc']
+        stats_dict[config_key].add_observations('pinc', 'quality', 0.0, pinc_values)
+        row['pinc ↑'] = format_estimate(
+            stats_dict[config_key].quality_estimates['pinc'].post_mean,
+            stats_dict[config_key].quality_estimates['pinc'].ci_lower,
+            stats_dict[config_key].quality_estimates['pinc'].ci_upper
         )
 
     # handle SBERT
