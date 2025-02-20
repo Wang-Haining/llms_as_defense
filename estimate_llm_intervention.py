@@ -173,34 +173,9 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
     }
 
 
-def format_estimate(value: float, std: Optional[float] = None,
-                    ci_lower: Optional[float] = None, ci_upper: Optional[float] = None,
-                    as_percent: bool = False) -> str:
-    """
-    Format estimate with standard deviation and credible interval.
-
-    Args:
-        value: posterior mean
-        std: posterior standard deviation
-        ci_lower: lower bound of credible interval
-        ci_upper: upper bound of credible interval
-        as_percent: whether to format as percentage
-
-    Returns:
-        formatted string with mean ± std [ci_lower, ci_upper]
-    """
-    if as_percent:
-        if std is not None and ci_lower is not None:
-            return f"{value:.1f}% ± {std:.1f}% [{ci_lower:.1f}%, {ci_upper:.1f}%]"
-        elif std is not None:
-            return f"{value:.1f}% ± {std:.1f}%"
-        return f"{value:.1f}%"
-
-    if std is not None and ci_lower is not None:
-        return f"{value:.3f} ± {std:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
-    elif std is not None:
-        return f"{value:.3f} ± {std:.3f}"
-    return f"{value:.3f}"
+def format_estimate(value: float, ci_lower: float, std: float, ci_upper: float) -> str:
+    """format estimate with credible interval"""
+    return f"{value:.3f} ± {std:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
 
 
 def get_defense_tables_with_stats(
@@ -298,6 +273,8 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                     row[display_name] = format_estimate(
                         stats_dict[config_key].effectiveness_estimates[
                             metric].post_mean,
+                        stats_dict[config_key].effectiveness_estimates[
+                            metric].std,
                         stats_dict[config_key].effectiveness_estimates[metric].ci_lower,
                         stats_dict[config_key].effectiveness_estimates[metric].ci_upper
                     )
@@ -365,6 +342,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                                                 entropy_values)
         row['entropy ↑'] = format_estimate(
             stats_dict[config_key].effectiveness_estimates['entropy'].post_mean,
+            stats_dict[config_key].effectiveness_estimates['entropy'].std,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_lower,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
         )
@@ -376,6 +354,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
         stats_dict[config_key].add_observations('pinc', 'quality', 0.0, pinc_values)
         row['pinc ↑'] = format_estimate(
             stats_dict[config_key].quality_estimates['pinc'].post_mean,
+            stats_dict[config_key].quality_estimates['pinc'].std,
             stats_dict[config_key].quality_estimates['pinc'].ci_lower,
             stats_dict[config_key].quality_estimates['pinc'].ci_upper
         )
@@ -388,6 +367,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                                                 bertscore_values)
         row['bertscore ↑'] = format_estimate(
             stats_dict[config_key].quality_estimates['bertscore'].post_mean,
+            stats_dict[config_key].quality_estimates['bertscore'].std,
             stats_dict[config_key].quality_estimates['bertscore'].ci_lower,
             stats_dict[config_key].quality_estimates['bertscore'].ci_upper
         )
@@ -399,6 +379,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
         stats_dict[config_key].add_observations('sbert', 'quality', 1.0, sbert_values)
         row['sbert ↑'] = format_estimate(
             stats_dict[config_key].quality_estimates['sbert'].post_mean,
+            stats_dict[config_key].quality_estimates['sbert'].std,
             stats_dict[config_key].quality_estimates['sbert'].ci_lower,
             stats_dict[config_key].quality_estimates['sbert'].ci_upper
         )
@@ -423,6 +404,7 @@ def print_debug_summary(self, metrics: List[str]):
                 est = self.effectiveness_estimates[metric]
                 print(f"Pre-value: {est.pre_value:.4f}")
                 print(f"Post mean: {est.post_mean:.4f}")
+                print(f"Std: {est.std:.4f}")
                 print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
         elif metric in self.sample_level_observations:
@@ -435,6 +417,7 @@ def print_debug_summary(self, metrics: List[str]):
             if metric in self.quality_estimates:
                 est = self.quality_estimates[metric]
                 print(f"Bayesian estimate mean: {est.post_mean:.4f}")
+                print(f"Bayesian estimate std: {est.std:.4f}")
                 print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
 
