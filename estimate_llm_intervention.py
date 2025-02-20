@@ -496,7 +496,7 @@ def main():
                          'true_class_confidence',
                          'entropy',
                          'pinc',
-                         'berscore',
+                         'bertscore',
                          'sbert']
 
         print("Running in debug mode...")
