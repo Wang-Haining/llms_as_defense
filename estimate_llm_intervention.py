@@ -227,7 +227,7 @@ def get_defense_tables_with_stats(
     # create output dataframe
     columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + \
               [f"{m} ↓" for m in run_metrics if m != 'entropy'] + \
-              ['Entropy ↑'] + [f"{m} ↑" for m in sample_metrics if m != 'entropy']
+              ['entropy ↑'] + [f"{m} ↑" for m in sample_metrics if m != 'entropy']
 
     return pd.DataFrame(results_rows, columns=columns), stats_dict
 
