@@ -315,6 +315,15 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                             stats_dict[config_key].sample_level_observations.setdefault(
                                 'pinc', []).append(avg_pinc)
 
+            # handle BERTScore - extract F1 scores from individual results
+            if 'bertscore' in quality_data and 'bertscore_individual' in quality_data[
+                'bertscore']:
+                bertscore_f1s = [item['f1'] for item in
+                                 quality_data['bertscore']['bertscore_individual']]
+                stats_dict[config_key].sample_level_observations.setdefault('bertscore',
+                                                                            []).extend(
+                    bertscore_f1s)
+
             # handle SBERT scores
             if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
                 'sbert']:
@@ -347,6 +356,18 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
             stats_dict[config_key].quality_estimates['pinc'].post_mean,
             stats_dict[config_key].quality_estimates['pinc'].ci_lower,
             stats_dict[config_key].quality_estimates['pinc'].ci_upper
+        )
+
+    # handle BERTScore
+    if 'bertscore' in sample_metrics and 'bertscore' in stats_dict[
+        config_key].sample_level_observations:
+        bertscore_values = stats_dict[config_key].sample_level_observations['bertscore']
+        stats_dict[config_key].add_observations('bertscore', 'quality', 1.0,
+                                                bertscore_values)
+        row['bertscore ↑'] = format_estimate(
+            stats_dict[config_key].quality_estimates['bertscore'].post_mean,
+            stats_dict[config_key].quality_estimates['bertscore'].ci_lower,
+            stats_dict[config_key].quality_estimates['bertscore'].ci_upper
         )
 
     # handle SBERT
