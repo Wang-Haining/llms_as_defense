@@ -141,6 +141,38 @@ class DefenseStats:
                     print(f"95% CI: [{est.ci_lower:.4f}, {est.ci_upper:.4f}]")
 
 
+def get_pre_values_from_seed(base_dir: str, corpus: str, rq: str, threat_model: str) -> \
+Dict[str, float]:
+    """Get pre values from first seed file found for a defense configuration."""
+    rq_main = f"rq{rq.split('_')[0].split('.')[0].lstrip('rq')}"
+    corpus_path = Path(base_dir) / corpus / rq_main / rq
+
+    # find first model directory and first seed file
+    for model_dir in corpus_path.glob("*"):
+        if not model_dir.is_dir():
+            continue
+        seed_files = list(model_dir.glob("seed_*.json"))
+        if not seed_files:
+            continue
+
+        # read first seed file found
+        with open(seed_files[0]) as f:
+            data = json.load(f)
+
+        # extract pre values
+        if threat_model in data['results']:
+            pre_values = data['results'][threat_model]['attribution']['pre']
+            # Add fixed quality metrics
+            pre_values.update({
+                'pinc': 0.0,
+                'bertscore': 1.0,
+                'sbert': 1.0
+            })
+            return pre_values
+
+    return {}
+
+
 def estimate_beta_metric(post_values: List[float]) -> dict:
     """estimate beta distribution with 95% HDI intervals"""
     epsilon = 1e-6
@@ -179,6 +211,56 @@ def format_estimate(value: float, ci_lower: float, std: float, ci_upper: float) 
     return f"{value:.3f} ± {std:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
 
 
+# def get_defense_tables_with_stats(
+#         base_dir: str = "defense_evaluation",
+#         rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
+#         corpora: Optional[List[str]] = None,
+#         threat_models: Optional[Dict[str, str]] = None,
+#         debug_mode: bool = False,
+#         debug_metrics: Optional[List[str]] = None
+# ) -> Tuple[pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
+#     """generate defense analysis table and stats dictionary"""
+#     if isinstance(rqs, str):
+#         rqs = [rqs]
+#     if corpora is None:
+#         corpora = ['ebg', 'rj']
+#     if threat_models is None:
+#         threat_models = {'logreg': 'LogReg', 'svm': 'SVM', 'roberta': 'RoBERTa'}
+#
+#     # define metrics to analyze
+#     run_metrics = ['accuracy@1', 'accuracy@5', 'true_class_confidence']
+#     sample_metrics = ['entropy', 'pinc', 'bertscore', 'sbert']
+#
+#     if debug_mode and debug_metrics:
+#         # filter metrics in debug mode
+#         run_metrics = [m for m in run_metrics if m in debug_metrics]
+#         sample_metrics = [m for m in sample_metrics if m in debug_metrics]
+#
+#     stats_dict = {}
+#     results_rows = []
+#
+#     # process each configuration
+#     for corpus in tqdm(corpora, desc="Processing corpora"):
+#         for threat_model_key, threat_model_name in threat_models.items():
+#             for rq in rqs:
+#                 # extract metrics from files
+#                 model_results = _process_model_results(
+#                     base_dir, corpus, rq, threat_model_key,
+#                     run_metrics, sample_metrics, stats_dict,
+#                     debug_mode
+#                 )
+#
+#                 # add to results if any valid data found
+#                 if model_results:
+#                     results_rows.extend(model_results)
+#
+#     # create output dataframe
+#     columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + \
+#               [f"{m} ↓" for m in run_metrics if m != 'entropy'] + \
+#               ['entropy ↑'] + [f"{m} ↑" for m in sample_metrics if m != 'entropy']
+#
+#     return pd.DataFrame(results_rows, columns=columns), stats_dict
+
 def get_defense_tables_with_stats(
         base_dir: str = "defense_evaluation",
         rqs: Union[str, List[str]] = "rq1.1_basic_paraphrase",
@@ -186,8 +268,8 @@ def get_defense_tables_with_stats(
         threat_models: Optional[Dict[str, str]] = None,
         debug_mode: bool = False,
         debug_metrics: Optional[List[str]] = None
-) -> Tuple[pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
-    """generate defense analysis table and stats dictionary"""
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[Tuple[str, str, str], DefenseStats]]:
+    """Generate defense analysis table and stats dictionary."""
     if isinstance(rqs, str):
         rqs = [rqs]
     if corpora is None:
@@ -200,35 +282,53 @@ def get_defense_tables_with_stats(
     sample_metrics = ['entropy', 'pinc', 'bertscore', 'sbert']
 
     if debug_mode and debug_metrics:
-        # filter metrics in debug mode
         run_metrics = [m for m in run_metrics if m in debug_metrics]
         sample_metrics = [m for m in sample_metrics if m in debug_metrics]
 
     stats_dict = {}
-    results_rows = []
+    post_results_rows = []
+    pre_results_rows = []
 
     # process each configuration
     for corpus in tqdm(corpora, desc="Processing corpora"):
         for threat_model_key, threat_model_name in threat_models.items():
+            # Get pre values first (just need first RQ as baseline is same)
+            pre_values = get_pre_values_from_seed(base_dir, corpus, rqs[0],
+                                                  threat_model_key)
+            if pre_values:
+                pre_results_rows.append({
+                    'Corpus': corpus.upper(),
+                    'Threat Model': threat_model_key,
+                    **{f"{k} ↓": v for k, v in pre_values.items() if
+                       k not in ['entropy', 'pinc', 'bertscore', 'sbert']},
+                    'entropy ↑': pre_values.get('entropy', 0.0),
+                    'pinc ↑': 0.0,
+                    'bertscore ↑': 1.0,
+                    'sbert ↑': 1.0
+                })
+
             for rq in rqs:
-                # extract metrics from files
+                # Process post defense results as before
                 model_results = _process_model_results(
                     base_dir, corpus, rq, threat_model_key,
                     run_metrics, sample_metrics, stats_dict,
                     debug_mode
                 )
-
-                # add to results if any valid data found
                 if model_results:
-                    results_rows.extend(model_results)
+                    post_results_rows.extend(model_results)
 
-    # create output dataframe
+    # Create output dataframes
     columns = ['Corpus', 'Scenario', 'Threat Model', 'Defense Model'] + \
               [f"{m} ↓" for m in run_metrics if m != 'entropy'] + \
               ['entropy ↑'] + [f"{m} ↑" for m in sample_metrics if m != 'entropy']
 
-    return pd.DataFrame(results_rows, columns=columns), stats_dict
+    pre_columns = ['Corpus', 'Threat Model'] + \
+                  [f"{m} ↓" for m in run_metrics if m != 'entropy'] + \
+                  ['entropy ↑'] + [f"{m} ↑" for m in sample_metrics if m != 'entropy']
 
+    return pd.DataFrame(post_results_rows, columns=columns), \
+        pd.DataFrame(pre_results_rows, columns=pre_columns), \
+        stats_dict
 
 def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                      model_name: str, run_metrics: List[str],
@@ -481,16 +581,16 @@ def _get_model_display_name(model_dir_name: str) -> str:
 
 
 def main():
-    """main entry point with argument parsing"""
+    """Main entry point with argument parsing."""
     import argparse
     parser = argparse.ArgumentParser(
         description="Evaluate defense effectiveness with Bayesian analysis")
     parser.add_argument('--base_dir', type=str, default='defense_evaluation')
     parser.add_argument('--rqs', type=str, nargs='+',
-                        default=['rq1.1_basic_paraphrase'])
+                       default=['rq1.1_basic_paraphrase'])
     parser.add_argument('--output', type=str, default='results')
     parser.add_argument('--debug', action='store_true',
-                        help='Run debug mode with RJ/EBG, Claude-3.5, LogReg')
+                       help='Run debug mode with RJ/EBG, Claude-3.5, LogReg')
 
     args = parser.parse_args()
 
@@ -498,19 +598,19 @@ def main():
         # debug mode - just print statistics
         threat_models = {'logreg': 'LogReg'}
         debug_metrics = ['accuracy@1',
-                         'accuracy@5',
-                         'true_class_confidence',
-                         'entropy',
-                         'pinc',
-                         'bertscore',
-                         'sbert']
+                        'accuracy@5',
+                        'true_class_confidence',
+                        'entropy',
+                        'pinc',
+                        'bertscore',
+                        'sbert']
 
         print("Running in debug mode...")
         print("Models: Claude-3.5 (defense) vs LogReg (threat)")
         print("Metrics:", debug_metrics)
         print("Corpora: RJ, EBG")
 
-        results_df, stats_dict = get_defense_tables_with_stats(
+        post_df, pre_df, stats_dict = get_defense_tables_with_stats(
             base_dir=args.base_dir,
             rqs=args.rqs,
             debug_mode=True,
@@ -523,12 +623,14 @@ def main():
             if stats.defense_model == 'Claude-3.5':
                 stats.print_debug_summary(metrics=debug_metrics)
 
-        print("\nResults DataFrame:")
-        print(results_df)
+        print("\nPre-defense Results:")
+        print(pre_df)
+        print("\nPost-defense Results:")
+        print(post_df)
 
     else:
         # normal mode - save results and raw observations
-        results_df, stats_dict = get_defense_tables_with_stats(
+        post_df, pre_df, stats_dict = get_defense_tables_with_stats(
             base_dir=args.base_dir,
             rqs=args.rqs
         )
@@ -536,9 +638,10 @@ def main():
         output_folder = Path(args.output)
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        # save results dataframe
+        # save results dataframes
         rq_str = args.rqs[0] if len(args.rqs) == 1 else "combined"
-        results_df.to_csv(output_folder / f"{rq_str}_results.csv", index=False)
+        post_df.to_csv(output_folder / f"{rq_str}_post_results.csv", index=False)
+        pre_df.to_csv(output_folder / f"{rq_str}_pre_results.csv", index=False)
 
         # save raw observations
         raw_observations = {}
@@ -561,6 +664,90 @@ def main():
 
         print(f"\nResults and raw observations saved to {output_folder}")
 
-
 if __name__ == "__main__":
     main()
+
+# def main():
+#     """main entry point with argument parsing"""
+#     import argparse
+#     parser = argparse.ArgumentParser(
+#         description="Evaluate defense effectiveness with Bayesian analysis")
+#     parser.add_argument('--base_dir', type=str, default='defense_evaluation')
+#     parser.add_argument('--rqs', type=str, nargs='+',
+#                         default=['rq1.1_basic_paraphrase'])
+#     parser.add_argument('--output', type=str, default='results')
+#     parser.add_argument('--debug', action='store_true',
+#                         help='Run debug mode with RJ/EBG, Claude-3.5, LogReg')
+#
+#     args = parser.parse_args()
+#
+#     if args.debug:
+#         # debug mode - just print statistics
+#         threat_models = {'logreg': 'LogReg'}
+#         debug_metrics = ['accuracy@1',
+#                          'accuracy@5',
+#                          'true_class_confidence',
+#                          'entropy',
+#                          'pinc',
+#                          'bertscore',
+#                          'sbert']
+#
+#         print("Running in debug mode...")
+#         print("Models: Claude-3.5 (defense) vs LogReg (threat)")
+#         print("Metrics:", debug_metrics)
+#         print("Corpora: RJ, EBG")
+#
+#         results_df, stats_dict = get_defense_tables_with_stats(
+#             base_dir=args.base_dir,
+#             rqs=args.rqs,
+#             debug_mode=True,
+#             debug_metrics=debug_metrics,
+#             threat_models=threat_models
+#         )
+#
+#         # print debug summaries
+#         for key, stats in stats_dict.items():
+#             if stats.defense_model == 'Claude-3.5':
+#                 stats.print_debug_summary(metrics=debug_metrics)
+#
+#         print("\nResults DataFrame:")
+#         print(results_df)
+#
+#     else:
+#         # normal mode - save results and raw observations
+#         results_df, stats_dict = get_defense_tables_with_stats(
+#             base_dir=args.base_dir,
+#             rqs=args.rqs
+#         )
+#
+#         output_folder = Path(args.output)
+#         output_folder.mkdir(parents=True, exist_ok=True)
+#
+#         # save results dataframe
+#         rq_str = args.rqs[0] if len(args.rqs) == 1 else "combined"
+#         results_df.to_csv(output_folder / f"{rq_str}_results.csv", index=False)
+#
+#         # save raw observations
+#         raw_observations = {}
+#         for key, stats in stats_dict.items():
+#             corpus, threat_model, defense_model = key
+#             model_key = f"{corpus}_{defense_model}_{threat_model}"
+#             raw_observations[model_key] = {
+#                 "run_level": {
+#                     metric: values
+#                     for metric, values in stats.run_level_observations.items()
+#                 },
+#                 "sample_level": {
+#                     metric: values
+#                     for metric, values in stats.sample_level_observations.items()
+#                 }
+#             }
+#
+#         with open(output_folder / f"{rq_str}_raw_observations.json", "w") as f:
+#             json.dump(raw_observations, f, indent=2)
+#
+#         print(f"\nResults and raw observations saved to {output_folder}")
+#
+#
+# if __name__ == "__main__":
+#     main()
