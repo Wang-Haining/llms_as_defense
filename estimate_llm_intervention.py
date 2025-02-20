@@ -199,7 +199,7 @@ def get_defense_tables_with_stats(
 
     # define metrics to analyze
     run_metrics = ['accuracy@1', 'accuracy@5', 'true_class_confidence']
-    sample_metrics = ['entropy', 'pinc', 'meteor', 'bertscore', 'sbert']
+    sample_metrics = ['entropy', 'pinc', 'bertscore', 'sbert']
 
     if debug_mode and debug_metrics:
         # filter metrics in debug mode
