@@ -173,12 +173,34 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
     }
 
 
-def format_estimate(value: float, ci_lower: Optional[float] = None,
-                    ci_upper: Optional[float] = None, as_percent: bool = False) -> str:
-    """format estimate with credible interval"""
+def format_estimate(value: float, std: Optional[float] = None,
+                    ci_lower: Optional[float] = None, ci_upper: Optional[float] = None,
+                    as_percent: bool = False) -> str:
+    """
+    Format estimate with standard deviation and credible interval.
+
+    Args:
+        value: posterior mean
+        std: posterior standard deviation
+        ci_lower: lower bound of credible interval
+        ci_upper: upper bound of credible interval
+        as_percent: whether to format as percentage
+
+    Returns:
+        formatted string with mean ± std [ci_lower, ci_upper]
+    """
     if as_percent:
-        return f"{value:.1f}% [{ci_lower:.1f}%, {ci_upper:.1f}%]" if ci_lower is not None else f"{value:.1f}%"
-    return f"{value:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]" if ci_lower is not None else f"{value:.3f}"
+        if std is not None and ci_lower is not None:
+            return f"{value:.1f}% ± {std:.1f}% [{ci_lower:.1f}%, {ci_upper:.1f}%]"
+        elif std is not None:
+            return f"{value:.1f}% ± {std:.1f}%"
+        return f"{value:.1f}%"
+
+    if std is not None and ci_lower is not None:
+        return f"{value:.3f} ± {std:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
+    elif std is not None:
+        return f"{value:.3f} ± {std:.3f}"
+    return f"{value:.3f}"
 
 
 def get_defense_tables_with_stats(
