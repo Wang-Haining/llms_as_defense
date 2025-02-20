@@ -341,7 +341,7 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
         pre_entropy = run_pre.get('entropy', 0.0)
         stats_dict[config_key].add_observations('entropy', 'effectiveness', pre_entropy,
                                                 entropy_values)
-        row['Entropy ↑'] = format_estimate(
+        row['entropy ↑'] = format_estimate(
             stats_dict[config_key].effectiveness_estimates['entropy'].post_mean,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_lower,
             stats_dict[config_key].effectiveness_estimates['entropy'].ci_upper
