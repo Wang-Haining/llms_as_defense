@@ -175,7 +175,7 @@ def estimate_beta_metric(post_values: List[float]) -> dict:
     }
 
 
-def format_estimate(value: float, ci_lower: float, std: float, ci_upper: float) -> str:
+def format_estimate(value: float, std: float, ci_lower: float, ci_upper: float) -> str:
     """format estimate with credible interval"""
     return f"{value:.3f} ± {std:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
 
