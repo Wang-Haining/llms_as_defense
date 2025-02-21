@@ -311,8 +311,8 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
 
     # caption dictionary for metrics
     caption_dict = {
-        "accuracy@1": {"title": "Accuracy@1", "ylabel": "Accuracy"},
-        "accuracy@5": {"title": "Accuracy@5", "ylabel": "Accuracy"},
+        "accuracy@1": {"title": "Accuracy@1", "ylabel": "Accuracy@1"},
+        "accuracy@5": {"title": "Accuracy@5", "ylabel": "Accuracy@5"},
         "true_class_confidence": {"title": "True Class Confidence",
                                   "ylabel": "Probability"},
         "entropy": {"title": "Entropy", "ylabel": "Bits"},
