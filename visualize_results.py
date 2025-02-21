@@ -467,7 +467,7 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
 
 
 def plot_pivoted_bayesian_hdi_row(stats_df, metrics_list, corpus, threat_model=None,
-                                  arrow_offset=0.1, arrow_end_height=0.3, dpi=150,
+                                  arrow_offset=0.1, arrow_end_height=0.3, dpi=800,
                                   save_name=None):
     """
     Plots a row of pivoted Bayesian HDI interval plots for multiple metrics.
@@ -577,7 +577,7 @@ def plot_entropy_distributions(
         pre_df,
         corpus='ebg',
         figsize=(15, 4),
-        dpi=150,
+        dpi=800,
         save_name=None
 ):
     """
