@@ -530,7 +530,7 @@ def plot_pivoted_bayesian_hdi_row(stats_df, metrics_list, corpus, threat_model=N
                fontsize=10, prop={'family': 'Times New Roman'})
 
     if save_name:
-        fig.savefig(save_name, format="pdf", dpi=dpi, bbox_inches='tight')
+        fig.savefig(save_name, format="jpg", dpi=dpi, bbox_inches='tight')
 
     return fig, axes
 
@@ -600,7 +600,7 @@ def plot_entropy_distributions(
 
     # create figure and subplots with minimal spacing
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
-    plt.subplots_adjust(wspace=0.2)  # Reduced spacing between subplots
+    plt.subplots_adjust(wspace=0.1)
 
     titles = {
         'logreg': 'Logistic Regression',
@@ -688,6 +688,6 @@ def plot_entropy_distributions(
     plt.tight_layout(rect=[0, 0.1, 1, 0.98])
 
     if save_name:
-        plt.savefig(save_name, format='pdf', bbox_inches='tight')
+        plt.savefig(save_name, format='jpg', bbox_inches='tight')
 
     return fig, axes
