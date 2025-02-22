@@ -2,10 +2,9 @@ import json
 import numpy as np
 from pathlib import Path
 from roberta import RobertaPredictor
-from utils import LogisticRegressionPredictor, SVMPredictor, load_corpus
+from utils import LogisticRegressionPredictor, SVMPredictor, load_corpus, CORPORA
 
 THREAT_MODELS_DIR = Path("threat_models")
-CORPORA = ["EBG", "RJ"]
 PREDICTOR_CLASSES = {
     "logreg": LogisticRegressionPredictor,
     "svm": SVMPredictor,
