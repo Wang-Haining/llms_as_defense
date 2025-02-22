@@ -11,10 +11,9 @@ PREDICTOR_CLASSES = {
     "roberta": RobertaPredictor,
 }
 
-def compute_entropy(y_pred_probs: np.ndarray) -> float:
-    """Compute mean entropy of predictions."""
-    entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
-    return float(np.mean(entropies))
+def compute_entropy(y_pred_probs: np.ndarray) -> np.ndarray:
+    """Compute entropy of predictions for each sample."""
+    return -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
 
 entropy_results = {}
 
@@ -28,13 +27,18 @@ for corpus in CORPORA:
 
         # get probability predictions
         y_pred_probs = predictor.predict_proba(test_texts)
-        entropy = compute_entropy(y_pred_probs)
-        entropy_results[corpus][model_type] = entropy
+        entropy_values = compute_entropy(y_pred_probs)
 
-# # save results to JSON
-# output_file = Path("results/pre_entropy_dist.json")
-# with open(output_file, "w", encoding="utf-8") as f:
-#     json.dump(entropy_results, f, indent=2, ensure_ascii=False)
+        # store raw entropy values
+        entropy_results[corpus][model_type] = {
+            "mean_entropy": float(np.mean(entropy_values)),
+            "raw_entropy": entropy_values.tolist()
+        }
+
+# save results to JSON
+output_file = Path("results/pre_entropy_dist.json")
+with open(output_file, "w", encoding="utf-8") as f:
+    json.dump(entropy_results, f, indent=2, ensure_ascii=False)
 
 # print results to stdout
 print(json.dumps(entropy_results, indent=2, ensure_ascii=False))
