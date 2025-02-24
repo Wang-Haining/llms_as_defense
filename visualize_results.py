@@ -446,7 +446,9 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                              arrow_offset=0, arrow_end_height=0.3):
     """
     Draws a single pivoted Bayesian HDI plot using the summarized stats DataFrame.
-    Groups boxplots by threat models (logistic regression, SVM, RoBERTa).
+    For attribution metrics (which include threat model information), the plot groups by threat model.
+    For quality metrics (which do not include threat model), the plot groups by defense model only,
+    removes x-ticks and labels, and interleaves white and light gray background spans.
     """
     # mapping for defense model ordering and colors - order is important
     model_colors = {
@@ -476,10 +478,16 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
     ylabel_str = caption_dict[m_lower][
         "ylabel"] if m_lower in caption_dict else metric.title()
 
-    # filter dataframe by corpus and metric
-    df = stats_df[(stats_df["Corpus"].str.upper() == corpus.upper()) &
-                  (stats_df["Metric"] == metric)].copy()
-    if threat_model is not None:
+    # Filter the DataFrame: if "Metric" column exists, filter by the given metric; otherwise, use all rows.
+    if "Metric" in stats_df.columns:
+        df = stats_df[(stats_df["Corpus"].str.upper() == corpus.upper()) &
+                      (stats_df["Metric"] == metric)].copy()
+    else:
+        df = stats_df.copy()
+        if "Corpus" in df.columns:
+            df = df[df["Corpus"].str.upper() == corpus.upper()]
+
+    if threat_model is not None and "Threat Model" in df.columns:
         df = df[df["Threat Model"] == threat_model]
 
     if df.empty:
@@ -487,52 +495,76 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                 fontsize=16, fontfamily='Times New Roman')
         return ax
 
-    # group by threat models in fixed order
-    threat_order = ["logreg", "svm", "roberta"]
-    threat_names = {"logreg": "Logistic Regression", "svm": "SVM", "roberta": "RoBERTa"}
-    df["Threat Group"] = df["Threat Model"].str.lower()
+    # Determine whether we are plotting quality metrics (i.e. no "Threat Model" column)
+    is_quality = "Threat Model" not in df.columns
 
-    # calculate x positions for grouped layout
-    group_width = 2.5  # width allocated for each threat group
-    group_gap = 0.5  # gap between groups
+    if not is_quality:
+        # Attribution metrics: group by threat model.
+        threat_order = ["logreg", "svm", "roberta"]
+        threat_names = {"logreg": "Logistic Regression", "svm": "SVM",
+                        "roberta": "RoBERTa"}
+        df["Threat Group"] = df["Threat Model"].str.lower()
 
-    # initialize x positions dictionary
-    x_positions = {}
-    current_pos = 0
+        group_width = 2.5  # width allocated for each threat group
+        group_gap = 0.5  # gap between groups
+        x_positions = {}
+        current_pos = 0
+        for threat in threat_order:
+            group_df = df[df["Threat Group"] == threat]
+            if not group_df.empty:
+                model_spacing = group_width / (len(model_colors) + 1)
+                position = 1
+                for model in model_colors.keys():
+                    model_indices = group_df[group_df["Defense Model"] == model].index
+                    for idx in model_indices:
+                        x_positions[idx] = current_pos + position * model_spacing
+                    position += 1
+            current_pos += group_width + group_gap
+    else:
+        # Quality metrics: group solely by defense model.
+        defense_model_order = list(model_colors.keys())
+        df["Defense Model"] = pd.Categorical(df["Defense Model"],
+                                             categories=defense_model_order,
+                                             ordered=True)
+        df = df.sort_values("Defense Model")
+        x_positions = {}
+        unique_defense = df["Defense Model"].unique()
+        for i, model in enumerate(unique_defense):
+            for idx in df[df["Defense Model"] == model].index:
+                x_positions[idx] = i + 1
+        current_pos = len(unique_defense) + 1
 
-    # assign x positions for each model within their threat groups
-    for threat in threat_order:
-        group_df = df[df["Threat Group"] == threat]
-        if not group_df.empty:
-            model_spacing = group_width / (len(model_colors) + 1)
+        # Remove x ticks and labels for quality metrics.
+        ax.set_xticks([])
 
-            # Assign positions based on model_colors order
-            position = 1
-            for model in model_colors.keys():
-                model_indices = group_df[group_df["Defense Model"] == model].index
-                for idx in model_indices:
-                    x_positions[idx] = current_pos + position * model_spacing
-                position += 1
+        # Add interleaved background colors for each defense model group.
+        for i, model in enumerate(unique_defense):
+            group_rows = df[df["Defense Model"] == model]
+            if not group_rows.empty:
+                group_x_positions = [x_positions[idx] for idx in group_rows.index]
+                group_min = min(group_x_positions) - 0.5
+                group_max = max(group_x_positions) + 0.5
+                # Alternate between white and light gray.
+                color = "lightgrey" if i % 2 == 1 else "white"
+                ax.axvspan(group_min, group_max, facecolor=color, alpha=0.3)
 
-        current_pos += group_width + group_gap
-
-    # adjust y-axis range
+    # Set y-axis range.
     if "entropy" in m_lower:
         ax.set_ylim(0,
                     np.log2(45) + 0.1 if corpus.lower() == "ebg" else np.log2(21) + 0.1)
     else:
         ax.set_ylim(0, 1)
 
-    # remove top/right spines
+    # Remove top/right spines.
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    # Check if metric should show ideal ROPE
+    # Determine whether to show ideal ROPE (for attribution metrics).
     is_quality_metric = any(
         keyword in m_lower for keyword in ['pinc', 'sbert', 'bertscore'])
     show_ideal_rope = not is_quality_metric
 
-    # plot error bars and boxes for each model
+    # Plot error bars and ROPE boxes.
     for idx, row in df.iterrows():
         x = x_positions[idx]
         y = row["Post Mean"]
@@ -540,11 +572,9 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
         y_err_high = row["CI Upper"] - y
         col = model_colors.get(row["Defense Model"], "gray")
 
-        # error bars
         ax.errorbar(x, y, yerr=[[y_err_low], [y_err_high]], fmt=".", capsize=2,
                     color=col, elinewidth=0.5, ecolor=col, markeredgecolor="white")
 
-        # pre rope box
         band_width = 0.2
         x_pre = x + arrow_offset
         ax.fill_between([x_pre - band_width / 2, x_pre + band_width / 2],
@@ -557,7 +587,6 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                 [row["Pre ROPE Upper"], row["Pre ROPE Upper"]],
                 color="grey", lw=1.5, linestyle="--")
 
-        # ideal rope box - only plot if it should be shown
         if show_ideal_rope and "Ideal ROPE Lower" in row and row[
             "Ideal ROPE Lower"] is not None:
             x_ideal = x - arrow_offset
@@ -571,46 +600,39 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                     [row["Ideal ROPE Upper"], row["Ideal ROPE Upper"]],
                     color="skyblue", lw=1.5, linestyle="--")
 
-    # remove x-ticks and labels for models
-    ax.set_xticks([])
+    # For attribution metrics, add threat group labels; for quality metrics, no x-labels are added.
+    if not is_quality:
+        ax.set_xticks([])
+        current_pos = 0
+        threat_order = ["logreg", "svm", "roberta"]
+        threat_names = {"logreg": "Logistic Regression", "svm": "SVM",
+                        "roberta": "RoBERTa"}
+        for threat in threat_order:
+            group_df = df[df["Threat Group"] == threat]
+            if not group_df.empty:
+                group_start = min([x_positions[idx] for idx in group_df.index]) - 0.5
+                group_end = max([x_positions[idx] for idx in group_df.index]) + 0.5
+                group_center = (group_start + group_end) / 2
+                y_min, y_max = ax.get_ylim()
+                ax.text(group_center, y_min - 0.15 * (y_max - y_min),
+                        threat_names[threat],
+                        ha="center", va="top", fontsize=12,
+                        fontfamily='Times New Roman')
+            current_pos += 2.5 + 0.5
+    else:
+        # For quality metrics, x ticks and labels have already been removed.
+        pass
 
-    # add threat group labels and backgrounds
-    current_pos = 0
-    for threat in threat_order:
-        group_df = df[df["Threat Group"] == threat]
-        if not group_df.empty:
-            # calculate group boundaries
-            group_start = min(
-                [x_positions[idx] for idx in group_df.index]) - group_width / (
-                                      len(group_df) + 1)
-            group_end = max(
-                [x_positions[idx] for idx in group_df.index]) + group_width / (
-                                    len(group_df) + 1)
-            group_center = (group_start + group_end) / 2
-
-            # add background for SVM group
-            if threat == "svm":
-                ax.axvspan(group_start, group_end, color="lightgrey", alpha=0.3)
-
-            # add threat group label
-            y_min, y_max = ax.get_ylim()
-            ax.text(group_center, y_min - 0.15 * (y_max - y_min), threat_names[threat],
-                    ha="center", va="top", fontsize=12, fontfamily='Times New Roman')
-
-        current_pos += group_width + group_gap
-
-    # set axis labels and title with Times New Roman
     ax.set_ylabel(ylabel_str, fontsize=14, fontfamily='Times New Roman')
     ax.set_title(title_str, fontsize=14, fontfamily='Times New Roman')
-
-    # set tick labels to Times New Roman
     ax.tick_params(axis='both', which='major', labelsize=12)
     for label in ax.get_yticklabels():
         label.set_fontfamily('Times New Roman')
 
-    # adjust x-axis limits to accommodate all groups
-    ax.set_xlim(-0.5, current_pos - group_gap)
-
+    if is_quality:
+        ax.set_xlim(min(x_positions.values()) - 0.5, max(x_positions.values()) + 0.5)
+    else:
+        ax.set_xlim(-0.5, current_pos - 0.5)
     return ax
 
 
@@ -620,6 +642,7 @@ def plot_pivoted_bayesian_hdi_row(stats_df, metrics_list, corpus, threat_model=N
     """
     Plots a row of pivoted Bayesian HDI interval plots for multiple metrics.
     """
+
     # define common legend elements with enforced order
     model_colors = {
         "Gemma-2": "#d62728",  # red
