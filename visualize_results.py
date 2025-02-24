@@ -989,6 +989,6 @@ def parse_results_df(df: pd.DataFrame) -> tuple:
     ebg_quality_df = ebg_quality_df[quality_order]
     rj_quality_df = rj_quality_df[quality_order]
 
-    return ebg_df.reset_index(drop=True), rj_df.reset_index(drop=True), ebg_quality_df.reset_index(drop=True), rj_quality_df.reset_index(drop=True)
+    return ebg_df, rj_df, ebg_quality_df, rj_quality_df
 
 
