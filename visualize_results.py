@@ -150,46 +150,122 @@ def calculate_rope_ranges(metric_name: str, pre_value: float, std: float,
     }
 
 
-def format_for_plotting(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
-                        metrics: Union[str, List[str]],
-                        corpus: str = None) -> pd.DataFrame:
+# def format_for_plotting(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
+#                         metrics: Union[str, List[str]],
+#                         corpus: str = None) -> pd.DataFrame:
+#     """
+#     Format raw stats DataFrame for the HDI plotting functions.
+#
+#     Args:
+#         raw_df: DataFrame with raw statistical entries for post values
+#         pre_df: DataFrame with pre-values
+#         metrics: metrics to process
+#         corpus: optional corpus to filter by
+#
+#     Returns:
+#         DataFrame formatted for plotting with correct pre and ideal values
+#     """
+#     # handle single metric case
+#     if isinstance(metrics, str):
+#         metrics = [metrics]
+#
+#     # list to store processed rows
+#     processed_rows = []
+#
+#     for metric in metrics:
+#         # find the actual column names that match this metric (ignoring arrows)
+#         post_col = [col for col in raw_df.columns if
+#                     clean_column_name(col) == clean_column_name(metric)][0]
+#         pre_col = [col for col in pre_df.columns if
+#                    clean_column_name(col) == clean_column_name(metric)][0]
+#
+#         # extract stats from the raw entries
+#         for idx, row in raw_df.iterrows():
+#             mean, std, ci_lower, ci_upper = parse_stat_entry(row[post_col])
+#
+#             # get pre-value from pre_df
+#             pre_val = float(pre_df[
+#                                 (pre_df['Corpus'] == row['Corpus']) &
+#                                 (pre_df['Threat Model'] == row['Threat Model'])
+#                                 ][pre_col].iloc[0])
+#
+#             # calculate ROPEs using pre-value
+#             rope_ranges = calculate_rope_ranges(metric, pre_val, std, row['Corpus'])
+#
+#             row_data = {
+#                 'Corpus': row['Corpus'],
+#                 'Threat Model': row['Threat Model'],
+#                 'Defense Model': row['Defense Model'],
+#                 'Metric': clean_column_name(metric),
+#                 'Post Mean': mean,
+#                 'CI Lower': ci_lower,
+#                 'CI Upper': ci_upper,
+#                 'Pre ROPE Lower': rope_ranges['pre_rope'][0],
+#                 'Pre ROPE Upper': rope_ranges['pre_rope'][1],
+#             }
+#
+#             # Only add ideal ROPE if it exists
+#             if rope_ranges['ideal_rope'] is not None:
+#                 row_data.update({
+#                     'Ideal ROPE Lower': rope_ranges['ideal_rope'][0],
+#                     'Ideal ROPE Upper': rope_ranges['ideal_rope'][1],
+#                     'Ideal Value': rope_ranges['ideal_value']
+#                 })
+#             else:
+#                 row_data.update({
+#                     'Ideal ROPE Lower': None,
+#                     'Ideal ROPE Upper': None,
+#                     'Ideal Value': None
+#                 })
+#
+#             processed_rows.append(row_data)
+#
+#     result_df = pd.DataFrame(processed_rows)
+#
+#     # filter by corpus if specified
+#     if corpus:
+#         result_df = result_df[result_df['Corpus'].str.upper() == corpus.upper()]
+#
+#     return result_df
+
+
+def format_for_plotting_attribution(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
+                                      metrics: Union[str, List[str]] = None,
+                                      corpus: str = None) -> pd.DataFrame:
     """
-    Format raw stats DataFrame for the HDI plotting functions.
+    Format raw stats DataFrame for HDI plotting (effectiveness/robustness metrics).
+    Defaults to metrics: ["accuracy@1", "accuracy@5", "true_class_confidence", "entropy"]
 
     Args:
-        raw_df: DataFrame with raw statistical entries for post values
-        pre_df: DataFrame with pre-values
-        metrics: metrics to process
-        corpus: optional corpus to filter by
+        raw_df: DataFrame with raw statistical entries for post values.
+        pre_df: DataFrame with pre-values.
+        metrics: Metrics to process.
+        corpus: Optional corpus to filter by.
 
     Returns:
-        DataFrame formatted for plotting with correct pre and ideal values
+        DataFrame formatted for plotting with correct pre and ideal values.
     """
-    # handle single metric case
+    if metrics is None:
+        metrics = ["accuracy@1", "accuracy@5", "true_class_confidence", "entropy"]
     if isinstance(metrics, str):
         metrics = [metrics]
 
-    # list to store processed rows
     processed_rows = []
 
     for metric in metrics:
-        # Find the actual column names that match this metric (ignoring arrows)
-        post_col = [col for col in raw_df.columns if
-                    clean_column_name(col) == clean_column_name(metric)][0]
-        pre_col = [col for col in pre_df.columns if
-                   clean_column_name(col) == clean_column_name(metric)][0]
+        post_col = [col for col in raw_df.columns
+                    if clean_column_name(col) == clean_column_name(metric)][0]
+        pre_col = [col for col in pre_df.columns
+                   if clean_column_name(col) == clean_column_name(metric)][0]
 
-        # extract stats from the raw entries
         for idx, row in raw_df.iterrows():
             mean, std, ci_lower, ci_upper = parse_stat_entry(row[post_col])
 
-            # get pre-value from pre_df
             pre_val = float(pre_df[
                                 (pre_df['Corpus'] == row['Corpus']) &
                                 (pre_df['Threat Model'] == row['Threat Model'])
                                 ][pre_col].iloc[0])
 
-            # calculate ROPEs using pre-value
             rope_ranges = calculate_rope_ranges(metric, pre_val, std, row['Corpus'])
 
             row_data = {
@@ -204,7 +280,6 @@ def format_for_plotting(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
                 'Pre ROPE Upper': rope_ranges['pre_rope'][1],
             }
 
-            # Only add ideal ROPE if it exists
             if rope_ranges['ideal_rope'] is not None:
                 row_data.update({
                     'Ideal ROPE Lower': rope_ranges['ideal_rope'][0],
@@ -221,10 +296,83 @@ def format_for_plotting(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
             processed_rows.append(row_data)
 
     result_df = pd.DataFrame(processed_rows)
-
-    # filter by corpus if specified
     if corpus:
         result_df = result_df[result_df['Corpus'].str.upper() == corpus.upper()]
+
+    return result_df
+
+
+def format_for_plotting_quality(raw_df: pd.DataFrame, pre_df: pd.DataFrame,
+                                metrics: Union[str, List[str]] = None,
+                                corpus: str = None) -> pd.DataFrame:
+    """
+    Format raw stats DataFrame for HDI plotting (quality metrics).
+    Defaults to metrics: ["bertscore", "sbert", "pinc"].
+
+    Note: This function excludes the 'Threat Model' column, as quality assessments do not
+    rely on threat model information. It also drops duplicate rows.
+
+    Args:
+        raw_df: DataFrame with raw statistical entries for post values.
+        pre_df: DataFrame with pre-values.
+        metrics: Metrics to process.
+        corpus: Optional corpus to filter by.
+
+    Returns:
+        DataFrame formatted for plotting with deduplicated rows and without the threat model column.
+    """
+    if metrics is None:
+        metrics = ["bertscore", "sbert", "pinc"]
+    if isinstance(metrics, str):
+        metrics = [metrics]
+
+    processed_rows = []
+
+    for metric in metrics:
+        post_col = [col for col in raw_df.columns
+                    if clean_column_name(col) == clean_column_name(metric)][0]
+        pre_col = [col for col in pre_df.columns
+                   if clean_column_name(col) == clean_column_name(metric)][0]
+
+        for idx, row in raw_df.iterrows():
+            mean, std, ci_lower, ci_upper = parse_stat_entry(row[post_col])
+
+            # For quality metrics, filter only on Corpus since threat model is not applicable
+            pre_val = float(pre_df[pre_df['Corpus'] == row['Corpus']][pre_col].iloc[0])
+            rope_ranges = calculate_rope_ranges(metric, pre_val, std, row['Corpus'])
+
+            row_data = {
+                'Corpus': row['Corpus'],
+                'Defense Model': row['Defense Model'],
+                'Metric': clean_column_name(metric),
+                'Post Mean': mean,
+                'CI Lower': ci_lower,
+                'CI Upper': ci_upper,
+                'Pre ROPE Lower': rope_ranges['pre_rope'][0],
+                'Pre ROPE Upper': rope_ranges['pre_rope'][1],
+            }
+
+            if rope_ranges['ideal_rope'] is not None:
+                row_data.update({
+                    'Ideal ROPE Lower': rope_ranges['ideal_rope'][0],
+                    'Ideal ROPE Upper': rope_ranges['ideal_rope'][1],
+                    'Ideal Value': rope_ranges['ideal_value']
+                })
+            else:
+                row_data.update({
+                    'Ideal ROPE Lower': None,
+                    'Ideal ROPE Upper': None,
+                    'Ideal Value': None
+                })
+
+            processed_rows.append(row_data)
+
+    result_df = pd.DataFrame(processed_rows)
+    if corpus:
+        result_df = result_df[result_df['Corpus'].str.upper() == corpus.upper()]
+
+    # deduplicate the rows
+    result_df = result_df.drop_duplicates()
 
     return result_df
 
@@ -467,7 +615,7 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
 
 
 def plot_pivoted_bayesian_hdi_row(stats_df, metrics_list, corpus, threat_model=None,
-                                  arrow_offset=0.1, arrow_end_height=0.3, dpi=800,
+                                  arrow_offset=0, arrow_end_height=0.3, dpi=800,
                                   save_name=None):
     """
     Plots a row of pivoted Bayesian HDI interval plots for multiple metrics.
@@ -691,3 +839,156 @@ def plot_entropy_distributions(
         plt.savefig(save_name, format='jpg', bbox_inches='tight')
 
     return fig, axes
+
+
+def parse_metric_cell(cell_str: str) -> tuple:
+    """parses a cell containing mean ± std [hdi_lower, hdi_upper]."""
+    pattern = r'([\d.]+)\s*±\s*([\d.]+)\s*\[([\d.]+),\s*([\d.]+)\]'
+    match = re.match(pattern, cell_str)
+
+    if match:
+        mean = float(match.group(1))
+        std = float(match.group(2))
+        hdi_lower = float(match.group(3))
+        hdi_upper = float(match.group(4))
+        return mean, std, hdi_lower, hdi_upper
+    return None, None, None, None
+
+
+def format_cell(mean: float, hdi_lower: float, hdi_upper: float) -> str:
+    """formats a cell with mean and HDI range."""
+    return f"{mean:.3f} [{hdi_lower:.3f}, {hdi_upper:.3f}]"
+
+
+def standardize_model_names(df: pd.DataFrame) -> pd.DataFrame:
+    """standardizes the threat model and defense model names."""
+    # standardize threat model names
+    threat_model_map = {
+        'logreg': 'Logistic Regression',
+        'svm': 'SVM',
+        'roberta': 'RoBERTa'
+    }
+
+    # standardize defense model names - matching exact strings from input
+    defense_model_map = {
+        'Gemma-2': 'Gemma-2',
+        'Llama-3.1': 'Llama-3.1',
+        'Ministral': 'Ministral',
+        'Claude-3.5': 'Claude-3.5',
+        'GPT-4o': 'GPT-4o'
+    }
+
+    df = df.copy()
+    if 'Threat Model' in df.columns:
+        df['Threat Model'] = df['Threat Model'].map(
+            lambda x: threat_model_map.get(x, x))
+    if 'Defense Model' in df.columns:
+        df['Defense Model'] = df['Defense Model'].map(
+            lambda x: defense_model_map.get(x, x))
+    return df
+
+
+def sort_dataframe(df: pd.DataFrame, include_threat_model: bool = True) -> pd.DataFrame:
+    """sorts the dataframe by threat model and/or defense model in the specified order."""
+    # define sort orders
+    threat_model_order = ['Logistic Regression', 'SVM', 'RoBERTa']
+    defense_model_order = ['Gemma-2', 'Llama-3.1', 'Ministral', 'Claude-3.5', 'GPT-4o']
+
+    df = df.copy()
+
+    # create categorical columns for sorting
+    df['Defense Model'] = pd.Categorical(
+        df['Defense Model'],
+        categories=defense_model_order,
+        ordered=True
+    )
+
+    if include_threat_model and 'Threat Model' in df.columns:
+        df['Threat Model'] = pd.Categorical(
+            df['Threat Model'],
+            categories=threat_model_order,
+            ordered=True
+        )
+        return df.sort_values(['Threat Model', 'Defense Model'])
+
+    return df.sort_values('Defense Model')
+
+
+def parse_results_df(df: pd.DataFrame) -> tuple:
+    """Parses the results dataframe into four separate dataframes:
+    - ebg_df: Metrics for EBG corpus (includes threat model information)
+    - rj_df: Metrics for RJ corpus (includes threat model information)
+    - ebg_quality_df: Quality metrics for EBG corpus (without threat model), columns reordered as:
+                      'Defense Model', 'BERTScore ↑', 'SBERT ↑', 'PINC ↑'
+    - rj_quality_df: Quality metrics for RJ corpus (without threat model), columns reordered as:
+                      'Defense Model', 'BERTScore ↑', 'SBERT ↑', 'PINC ↑'
+    """
+    # create empty lists to store parsed data
+    ebg_data = []
+    rj_data = []
+    ebg_quality_data = []
+    rj_quality_data = []
+
+    # standardize model names first
+    df = standardize_model_names(df)
+
+    for _, row in df.iterrows():
+        corpus = row['Corpus']
+        threat_model = row['Threat Model']
+        defense_model = row['Defense Model']  # use the original value if mapping fails
+
+        # parse metrics from the cells using the provided parse_metric_cell function
+        acc1_mean, _, acc1_lower, acc1_upper = parse_metric_cell(row['accuracy@1 ↓'])
+        acc5_mean, _, acc5_lower, acc5_upper = parse_metric_cell(row['accuracy@5 ↓'])
+        conf_mean, _, conf_lower, conf_upper = parse_metric_cell(row['true_class_confidence ↓'])
+        ent_mean, _, ent_lower, ent_upper = parse_metric_cell(row['entropy ↑'])
+        pinc_mean, _, pinc_lower, pinc_upper = parse_metric_cell(row['pinc ↑'])
+        bert_mean, _, bert_lower, bert_upper = parse_metric_cell(row['bertscore ↑'])
+        sbert_mean, _, sbert_lower, sbert_upper = parse_metric_cell(row['sbert ↑'])
+
+        # create metrics row with threat model included
+        metrics_row = {
+            'Threat Model': threat_model,
+            'Defense Model': defense_model,
+            'Accuracy@1 ↓': format_cell(acc1_mean, acc1_lower, acc1_upper),
+            'Accuracy@5 ↓': format_cell(acc5_mean, acc5_lower, acc5_upper),
+            'True Class Confidence ↓': format_cell(conf_mean, conf_lower, conf_upper),
+            'Entropy ↑': format_cell(ent_mean, ent_lower, ent_upper)
+        }
+
+        # create quality metrics row without threat model info
+        quality_row = {
+            'Defense Model': defense_model,
+            'PINC ↑': format_cell(pinc_mean, pinc_lower, pinc_upper),
+            'BERTScore ↑': format_cell(bert_mean, bert_lower, bert_upper),
+            'SBERT ↑': format_cell(sbert_mean, sbert_lower, sbert_upper)
+        }
+
+        # append rows to respective lists based on corpus value
+        if corpus == 'EBG':
+            ebg_data.append(metrics_row)
+            ebg_quality_data.append(quality_row)
+        elif corpus == 'RJ':
+            rj_data.append(metrics_row)
+            rj_quality_data.append(quality_row)
+
+    # create DataFrames
+    ebg_df = pd.DataFrame(ebg_data)
+    rj_df = pd.DataFrame(rj_data)
+    ebg_quality_df = pd.DataFrame(ebg_quality_data).drop_duplicates()
+    rj_quality_df = pd.DataFrame(rj_quality_data).drop_duplicates()
+
+    # sort dataframes with consistent ordering
+    ebg_df = sort_dataframe(ebg_df, include_threat_model=True)
+    rj_df = sort_dataframe(rj_df, include_threat_model=True)
+    ebg_quality_df = sort_dataframe(ebg_quality_df, include_threat_model=False)
+    rj_quality_df = sort_dataframe(rj_quality_df, include_threat_model=False)
+
+    # Reorder quality metric columns: Defense Model, BERTScore, SBERT, PINC
+    quality_order = ['Defense Model', 'BERTScore ↑', 'SBERT ↑', 'PINC ↑']
+    ebg_quality_df = ebg_quality_df[quality_order]
+    rj_quality_df = rj_quality_df[quality_order]
+
+    return ebg_df.reset_index(drop=True), rj_df.reset_index(drop=True), ebg_quality_df.reset_index(drop=True), rj_quality_df.reset_index(drop=True)
+
+
