@@ -135,7 +135,7 @@ Dict[str, float]:
             pre_values.update({
                 'pinc': 0.0,
                 'bertscore': 1.0,
-                'sbert': 1.0
+                'meteor': 1.0
             })
             return pre_values
 
@@ -198,7 +198,7 @@ def get_defense_tables_with_stats(
 
     # define metrics to analyze
     run_metrics = ['accuracy@1', 'accuracy@5', 'true_class_confidence']
-    sample_metrics = ['entropy', 'pinc', 'bertscore', 'sbert']
+    sample_metrics = ['entropy', 'pinc', 'bertscore', 'meteor']
 
     if debug_mode and debug_metrics:
         run_metrics = [m for m in run_metrics if m in debug_metrics]
@@ -219,11 +219,11 @@ def get_defense_tables_with_stats(
                     'Corpus': corpus.upper(),
                     'Threat Model': threat_model_key,
                     **{f"{k} ↓": v for k, v in pre_values.items() if
-                       k not in ['entropy', 'pinc', 'bertscore', 'sbert']},
+                       k not in ['entropy', 'pinc', 'bertscore', 'meteor']},
                     'entropy ↑': pre_values.get('entropy', 0.0),
                     'pinc ↑': 0.0,
                     'bertscore ↑': 1.0,
-                    'sbert ↑': 1.0
+                    'meteor ↑': 1.0
                 })
 
             for rq in rqs:
@@ -343,14 +343,13 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
                                                                             []).extend(
                     bertscore_f1s)
 
-            # handle SBERT scores
-            if 'sbert' in quality_data and 'sbert_similarity_scores' in quality_data[
-                'sbert']:
-                sbert_scores = [float(x) for x in
-                                quality_data['sbert']['sbert_similarity_scores']]
-                stats_dict[config_key].sample_level_observations.setdefault('sbert',
+            # handle METEOR scores
+            if 'meteor' in quality_data and 'meteor_scores' in quality_data['meteor']:
+                meteor_scores = [float(x) for x in
+                                quality_data['meteor']['meteor_scores']]
+                stats_dict[config_key].sample_level_observations.setdefault('meteor',
                                                                             []).extend(
-                    sbert_scores)
+                    meteor_scores)
 
     # process all sample-level metrics after collecting all samples
     # handle entropy
@@ -392,16 +391,16 @@ def _extract_metrics(results: Dict, corpus: str, rq: str, threat_model_key: str,
             stats_dict[config_key].quality_estimates['bertscore'].ci_upper
         )
 
-    # handle SBERT
-    if 'sbert' in sample_metrics and 'sbert' in stats_dict[
+    # handle METEOR
+    if 'meteor' in sample_metrics and 'meteor' in stats_dict[
         config_key].sample_level_observations:
-        sbert_values = stats_dict[config_key].sample_level_observations['sbert']
-        stats_dict[config_key].add_observations('sbert', 'quality', 1.0, sbert_values)
-        row['sbert ↑'] = format_estimate(
-            stats_dict[config_key].quality_estimates['sbert'].post_mean,
-            stats_dict[config_key].quality_estimates['sbert'].std,
-            stats_dict[config_key].quality_estimates['sbert'].ci_lower,
-            stats_dict[config_key].quality_estimates['sbert'].ci_upper
+        meteor_values = stats_dict[config_key].sample_level_observations['meteor']
+        stats_dict[config_key].add_observations('meteor', 'quality', 1.0, meteor_values)
+        row['meteor ↑'] = format_estimate(
+            stats_dict[config_key].quality_estimates['meteor'].post_mean,
+            stats_dict[config_key].quality_estimates['meteor'].std,
+            stats_dict[config_key].quality_estimates['meteor'].ci_lower,
+            stats_dict[config_key].quality_estimates['meteor'].ci_upper
         )
 
     return row
@@ -522,7 +521,7 @@ def main():
                         'entropy',
                         'pinc',
                         'bertscore',
-                        'sbert']
+                        'meteor']
 
         print("Running in debug mode...")
         print("Models: Ministral (defense) vs RoBERTa (threat)")
