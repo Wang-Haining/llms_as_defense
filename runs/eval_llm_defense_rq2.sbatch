@@ -1,8 +1,8 @@
 #!/bin/sh
 #SBATCH --job-name=eval_llm_defense_rq2
 #SBATCH --account=group-jasonclark
-#SBATCH --partition=gpuunsafe
-#SBATCH --gres=gpu:a40:1
+#SBATCH --partition=nextgen-gpu
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 #SBATCH --time=2-00:00:00
