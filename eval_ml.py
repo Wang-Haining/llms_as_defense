@@ -8,7 +8,7 @@ The implementation includes two attribution models:
 
 Directory Structure:
 results/{save_path}/              # or other supplied subdirectory
-├── {corpus}/                     # rj, ebg, or lcmc
+├── {corpus}/                     # rj or ebg
 │   ├── {task}/                  # e.g., no_protection, imitation, obfuscation
 │   │   ├── logreg/
 │   │   │   ├── predictions.npz  # contains y_true, y_pred_probs
@@ -49,14 +49,13 @@ from typing import Dict, List
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model._sgd_fast import Regression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (FunctionTransformer, Normalizer,
                                    StandardScaler)
 from sklearn.svm import SVC
 
 from utils import (load_corpus, vectorize_koppel512,
-                   vectorize_writeprints_static)
+                   vectorize_writeprints_static, CORPUS_TASK_MAP)
 
 # setup logging
 logging.basicConfig(
@@ -64,13 +63,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# define scenarios
-CORPUS_TASK_MAP = {
-    'rj': ['no_protection', 'imitation', 'obfuscation', 'special_english'],
-    'ebg': ['no_protection', 'imitation', 'obfuscation'],
-    'lcmc': ['no_protection']
-}
 
 
 class LogisticRegressionPredictor:
@@ -197,7 +189,7 @@ class MLModel:
 
     def set_corpus(self, corpus: str):
         """Update pipeline with corpus-specific parameters"""
-        if corpus not in ['rj', 'ebg', 'lcmc']:
+        if corpus not in ['rj', 'ebg']:
             raise ValueError(f"unrecognized corpus type: {corpus}")
         self.corpus = corpus
         self._initialize_pipeline(corpus)
@@ -336,7 +328,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--corpus",
         type=str,
-        choices=['rj', 'ebg', 'lcmc'],
+        choices=['rj', 'ebg'],
         help="Specific corpus to evaluate (default: all)"
     )
     parser.add_argument(
