@@ -19,7 +19,8 @@ Output:
 import argparse
 import logging
 import os
-from typing import Dict
+import numpy as np
+from typing import Dict, List, Tuple
 
 from utils import (CORPUS_TASK_MAP, LogisticRegressionPredictor, SVMPredictor,
                    calculate_metrics, load_corpus)
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 def calculate_human_performance(
         corpus: str,
         task: str,
-        models_dir: str = "threat_models",
+        models_dir: str = "threat_models"
 ) -> Dict:
     """
     Calculate performance metrics for human transformations.
@@ -47,8 +48,11 @@ def calculate_human_performance(
     Returns:
         Dictionary containing metrics for both LogisticRegression and SVM models
     """
-    # load test data for the specified task
+    # load data for the task being evaluated
     _, _, test_text, test_labels = load_corpus(corpus, task)
+
+    # also load the no_protection data to ensure label encoding consistency
+    train_text, train_labels, _, _ = load_corpus(corpus, "no_protection")
 
     # get base models trained on 'no_protection' data
     logreg_model_path = os.path.join(models_dir, corpus, "no_protection", "logreg", "model")
@@ -60,7 +64,20 @@ def calculate_human_performance(
     try:
         logreg = LogisticRegressionPredictor(logreg_model_path)
         logreg_probs = logreg.predict_proba(test_text)
-        results["logreg"] = calculate_metrics(test_labels, logreg_probs)
+        # ensure labels are within bounds (in case different tasks have different authors)
+        if max(test_labels) >= logreg_probs.shape[1]:
+            logger.warning(f"Label mismatch in {corpus}-{task} for LogisticRegression")
+            # create a version of test_labels that only uses authors present in training
+            valid_labels = np.array([l if l < logreg_probs.shape[1] else -1 for l in test_labels])
+            # filter out invalid labels (-1)
+            mask = valid_labels >= 0
+            if np.any(mask):
+                results["logreg"] = calculate_metrics(valid_labels[mask], logreg_probs[mask])
+            else:
+                logger.error(f"No valid labels for {corpus}-{task} with LogisticRegression")
+                results["logreg"] = None
+        else:
+            results["logreg"] = calculate_metrics(test_labels, logreg_probs)
     except Exception as e:
         logger.error(f"Error evaluating LogisticRegression on {corpus}-{task}: {str(e)}")
         results["logreg"] = None
@@ -69,7 +86,20 @@ def calculate_human_performance(
     try:
         svm = SVMPredictor(svm_model_path)
         svm_probs = svm.predict_proba(test_text)
-        results["svm"] = calculate_metrics(test_labels, svm_probs)
+        # ensure labels are within bounds (in case different tasks have different authors)
+        if max(test_labels) >= svm_probs.shape[1]:
+            logger.warning(f"Label mismatch in {corpus}-{task} for SVM")
+            # create a version of test_labels that only uses authors present in training
+            valid_labels = np.array([l if l < svm_probs.shape[1] else -1 for l in test_labels])
+            # filter out invalid labels (-1)
+            mask = valid_labels >= 0
+            if np.any(mask):
+                results["svm"] = calculate_metrics(valid_labels[mask], svm_probs[mask])
+            else:
+                logger.error(f"No valid labels for {corpus}-{task} with SVM")
+                results["svm"] = None
+        else:
+            results["svm"] = calculate_metrics(test_labels, svm_probs)
     except Exception as e:
         logger.error(f"Error evaluating SVM on {corpus}-{task}: {str(e)}")
         results["svm"] = None
@@ -78,7 +108,7 @@ def calculate_human_performance(
 
 def calculate_baseline_performance(
         corpus: str,
-        models_dir: str = "threat_models",
+        models_dir: str = "threat_models"
 ) -> Dict:
     """
     Calculate baseline performance metrics for 'no_protection' scenario.
@@ -94,7 +124,7 @@ def calculate_baseline_performance(
     _, _, test_text, test_labels = load_corpus(corpus, "no_protection")
 
     # get base models trained on 'no_protection' data
-    logreg_model_path = os.path.join(models_dir,corpus, "no_protection", "logreg", "model")
+    logreg_model_path = os.path.join(models_dir, corpus, "no_protection", "logreg", "model")
     svm_model_path = os.path.join(models_dir, corpus, "no_protection", "svm", "model")
 
     results = {"logreg": {}, "svm": {}}
@@ -118,6 +148,36 @@ def calculate_baseline_performance(
         results["svm"] = None
 
     return results
+
+def load_roberta_evaluation(
+        corpus: str,
+        task: str,
+        evaluation_dir: str = "roberta_evaluations"
+) -> Dict:
+    """
+    Load pre-computed RoBERTa evaluation results.
+
+    Args:
+        corpus: Corpus name ('rj' or 'ebg')
+        task: Task name ('no_protection', 'imitation', etc.)
+        evaluation_dir: Directory containing RoBERTa evaluation results
+
+    Returns:
+        Dictionary with RoBERTa metrics or None if not found
+    """
+    try:
+        eval_path = os.path.join(evaluation_dir, f"{corpus}_{task}.npz")
+        if os.path.exists(eval_path):
+            data = np.load(eval_path)
+            y_true = data['y_true']
+            y_pred_probs = data['y_pred_probs']
+            return calculate_metrics(y_true, y_pred_probs)
+        else:
+            logger.warning(f"No RoBERTa evaluation file found for {corpus}-{task}")
+            return None
+    except Exception as e:
+        logger.error(f"Error loading RoBERTa evaluation for {corpus}-{task}: {str(e)}")
+        return None
 
 def format_metrics(metrics: Dict) -> str:
     """format metrics for display, rounding to 3 decimal places"""
@@ -147,11 +207,17 @@ def main(args):
     for corpus in corpora:
         baseline_results = calculate_baseline_performance(
             corpus=corpus,
-            models_dir=args.models_dir,
+            models_dir=args.models_dir
         )
 
         print(f"{corpus:<10} {'no_protection':<20} {'LogReg':<10} {format_metrics(baseline_results['logreg'])}")
         print(f"{corpus:<10} {'no_protection':<20} {'SVM':<10} {format_metrics(baseline_results['svm'])}")
+
+        # Add RoBERTa results if available
+        if args.include_roberta:
+            roberta_results = load_roberta_evaluation(corpus, "no_protection")
+            print(f"{corpus:<10} {'no_protection':<20} {'RoBERTa':<10} {format_metrics(roberta_results)}")
+
         print("-"*100)
 
     # evaluate human performance for each strategy
@@ -164,11 +230,17 @@ def main(args):
                 metrics = calculate_human_performance(
                     corpus=corpus,
                     task=task,
-                    models_dir=args.models_dir,
+                    models_dir=args.models_dir
                 )
 
                 print(f"{corpus:<10} {task:<20} {'LogReg':<10} {format_metrics(metrics['logreg'])}")
                 print(f"{corpus:<10} {task:<20} {'SVM':<10} {format_metrics(metrics['svm'])}")
+
+                # Add RoBERTa results if available
+                if args.include_roberta:
+                    roberta_results = load_roberta_evaluation(corpus, task)
+                    print(f"{corpus:<10} {task:<20} {'RoBERTa':<10} {format_metrics(roberta_results)}")
+
                 print("-"*100)
 
             except Exception as e:
@@ -192,6 +264,12 @@ if __name__ == "__main__":
         type=str,
         default="threat_models",
         help="Base directory containing saved models"
+    )
+
+    parser.add_argument(
+        "--include_roberta",
+        action="store_true",
+        help="Include RoBERTa model evaluation results if available"
     )
 
     args = parser.parse_args()
