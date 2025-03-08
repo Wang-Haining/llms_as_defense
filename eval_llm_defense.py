@@ -47,14 +47,14 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 
 from eval_text_quality import evaluate_quality
 from roberta import RobertaPredictor
 from utils import (CORPORA, LLMS, RQS, LogisticRegressionPredictor,
-                   SVMPredictor, load_corpus)
+                   SVMPredictor, calculate_metrics, load_corpus)
 
 # configure logging
 logging.basicConfig(
@@ -62,41 +62,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-def compute_accuracy_at_k(y_true: np.ndarray, y_pred_probs: np.ndarray, k: int) -> float:
-    """Compute top-k accuracy."""
-    n_samples = len(y_true)
-    top_k_correct = 0
-    for true_label, probs in zip(y_true, y_pred_probs):
-        top_k_indices = np.argsort(probs)[-k:]
-        if true_label in top_k_indices:
-            top_k_correct += 1
-    return float(top_k_correct / n_samples)
-
-
-def compute_true_class_confidence(y_true: np.ndarray, y_pred_probs: np.ndarray) -> float:
-    """Compute average confidence for the true class."""
-    true_class_probs = np.array(
-        [probs[true_label] for true_label, probs in zip(y_true, y_pred_probs)]
-    )
-    return float(np.mean(true_class_probs))
-
-
-def compute_entropy(y_pred_probs: np.ndarray) -> float:
-    """Compute mean entropy of predictions (no standard deviation)."""
-    entropies = -np.sum(y_pred_probs * np.log2(y_pred_probs + 1e-10), axis=1)
-    return float(np.mean(entropies))
-
-
-def calculate_metrics(y_true: np.ndarray, y_pred_probs: np.ndarray) -> dict:
-    """Calculate the chosen attribution metrics."""
-    metrics = {}
-    for k in [1, 5]:
-        metrics[f'accuracy@{k}'] = compute_accuracy_at_k(y_true, y_pred_probs, k)
-    metrics['true_class_confidence'] = compute_true_class_confidence(y_true, y_pred_probs)
-    metrics['entropy'] = compute_entropy(y_pred_probs)
-    return metrics
 
 
 class DefenseEvaluator:
