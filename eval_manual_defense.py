@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Calculate human performance metrics for various strategies (imitation, obfuscation, etc.)
 across different corpora and threat models.
@@ -9,13 +8,12 @@ This script evaluates the effectiveness of manual intervention strategies by:
 3. Calculating performance metrics: accuracy@1, accuracy@5, true class confidence, entropy
 
 Usage:
-    python calculate_human_performance.py
+    python eval_manual_defense.py --corpus rj
+    python eval_manual_defense.py --corpus ebg
+    python eval_manual_defense.py  # evaluate all corpora
 
 Output:
     Printed metrics for each corpus, task, and threat model combination
-
-Note:
-    This script does not save any files and is meant for analysis purposes.
 """
 
 import argparse
@@ -36,7 +34,7 @@ logger = logging.getLogger(__name__)
 def calculate_human_performance(
         corpus: str,
         task: str,
-        models_dir: str = "results",
+        models_dir: str = "threat_models",
         save_path: str = "baselines"
 ) -> Dict:
     """
@@ -82,7 +80,7 @@ def calculate_human_performance(
 
 def calculate_baseline_performance(
         corpus: str,
-        models_dir: str = "results",
+        models_dir: str = "threat_models",
         save_path: str = "baselines"
 ) -> Dict:
     """
@@ -137,7 +135,12 @@ def format_metrics(metrics: Dict) -> str:
 
 def main(args):
     # determine what to evaluate
-    corpora = list(CORPUS_TASK_MAP.keys()) if args.all else ["rj"]
+    if args.corpus:
+        if args.corpus not in CORPUS_TASK_MAP:
+            raise ValueError(f"Invalid corpus: {args.corpus}")
+        corpora = [args.corpus]
+    else:
+        corpora = list(CORPUS_TASK_MAP.keys())
 
     # print header
     print("\n" + "="*100)
@@ -184,23 +187,26 @@ if __name__ == "__main__":
         description="Calculate human performance metrics across different corpora and tasks"
     )
 
+    # corpus selection
+    parser.add_argument(
+        "--corpus",
+        type=str,
+        choices=['rj', 'ebg'],
+        help="Specific corpus to evaluate (default: all corpora)"
+    )
+
     # path arguments
     parser.add_argument(
         "--save_path",
         type=str,
         default="baselines",
-        help="Subdirectory under results for saved models"
+        help="Subdirectory under models_dir for saved models"
     )
     parser.add_argument(
         "--models_dir",
         type=str,
-        default="results",
+        default="threat_models",
         help="Base directory containing saved models"
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Evaluate all corpora (default: only RJ corpus)"
     )
 
     args = parser.parse_args()
