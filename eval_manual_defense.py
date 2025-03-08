@@ -35,7 +35,6 @@ def calculate_human_performance(
         corpus: str,
         task: str,
         models_dir: str = "threat_models",
-        save_path: str = "baselines"
 ) -> Dict:
     """
     Calculate performance metrics for human transformations.
@@ -44,7 +43,6 @@ def calculate_human_performance(
         corpus: The corpus to evaluate ('rj' or 'ebg')
         task: The task/strategy to evaluate (e.g., 'imitation', 'obfuscation')
         models_dir: Directory containing saved models
-        save_path: Subdirectory under models_dir where models are saved
 
     Returns:
         Dictionary containing metrics for both LogisticRegression and SVM models
@@ -53,8 +51,8 @@ def calculate_human_performance(
     _, _, test_text, test_labels = load_corpus(corpus, task)
 
     # get base models trained on 'no_protection' data
-    logreg_model_path = os.path.join(models_dir, save_path, corpus, "no_protection", "logreg", "model")
-    svm_model_path = os.path.join(models_dir, save_path, corpus, "no_protection", "svm", "model")
+    logreg_model_path = os.path.join(models_dir, corpus, "no_protection", "logreg", "model")
+    svm_model_path = os.path.join(models_dir, corpus, "no_protection", "svm", "model")
 
     results = {"logreg": {}, "svm": {}}
 
@@ -81,7 +79,6 @@ def calculate_human_performance(
 def calculate_baseline_performance(
         corpus: str,
         models_dir: str = "threat_models",
-        save_path: str = "baselines"
 ) -> Dict:
     """
     Calculate baseline performance metrics for 'no_protection' scenario.
@@ -89,7 +86,6 @@ def calculate_baseline_performance(
     Args:
         corpus: The corpus to evaluate ('rj' or 'ebg')
         models_dir: Directory containing saved models
-        save_path: Subdirectory under models_dir where models are saved
 
     Returns:
         Dictionary containing metrics for both LogisticRegression and SVM models
@@ -98,8 +94,8 @@ def calculate_baseline_performance(
     _, _, test_text, test_labels = load_corpus(corpus, "no_protection")
 
     # get base models trained on 'no_protection' data
-    logreg_model_path = os.path.join(models_dir, save_path, corpus, "no_protection", "logreg", "model")
-    svm_model_path = os.path.join(models_dir, save_path, corpus, "no_protection", "svm", "model")
+    logreg_model_path = os.path.join(models_dir,corpus, "no_protection", "logreg", "model")
+    svm_model_path = os.path.join(models_dir, corpus, "no_protection", "svm", "model")
 
     results = {"logreg": {}, "svm": {}}
 
@@ -152,7 +148,6 @@ def main(args):
         baseline_results = calculate_baseline_performance(
             corpus=corpus,
             models_dir=args.models_dir,
-            save_path=args.save_path
         )
 
         print(f"{corpus:<10} {'no_protection':<20} {'LogReg':<10} {format_metrics(baseline_results['logreg'])}")
@@ -170,7 +165,6 @@ def main(args):
                     corpus=corpus,
                     task=task,
                     models_dir=args.models_dir,
-                    save_path=args.save_path
                 )
 
                 print(f"{corpus:<10} {task:<20} {'LogReg':<10} {format_metrics(metrics['logreg'])}")
@@ -182,25 +176,16 @@ def main(args):
                 print(f"{corpus:<10} {task:<20} {'ERROR':<10} {str(e)}")
                 print("-"*100)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Calculate human performance metrics across different corpora and tasks"
     )
-
-    # corpus selection
     parser.add_argument(
         "--corpus",
         type=str,
         choices=['rj', 'ebg'],
         help="Specific corpus to evaluate (default: all corpora)"
-    )
-
-    # path arguments
-    parser.add_argument(
-        "--save_path",
-        type=str,
-        default="baselines",
-        help="Subdirectory under models_dir for saved models"
     )
     parser.add_argument(
         "--models_dir",
