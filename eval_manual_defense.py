@@ -3,14 +3,26 @@ Calculate human performance metrics for various strategies (imitation, obfuscati
 across different corpora and threat models.
 
 This script evaluates the effectiveness of manual intervention strategies by:
-1. Loading the threat models (LogisticRegression and SVM) trained on baseline data
+1. Loading the threat models (LogisticRegression, SVM, and RoBERTa) trained on baseline data
 2. Making predictions on manually transformed test samples
 3. Calculating performance metrics: accuracy@1, accuracy@5, true class confidence, entropy
 
+Key differences between corpora:
+- EBG corpus has the same 45 authors across all strategies (fixed cohort)
+- RJ corpus has different cohorts in different strategies:
+  * no_protection: 21 authors
+  * imitation: 17 authors
+  * obfuscation: 27 authors
+  * special_english (simplification): 18 authors
+
+This script handles these differences by:
+1. For EBG: Direct evaluation using models trained on no_protection
+2. For RJ: Label validation and filtering to ensure correct metrics calculation
+3. For RoBERTa on RJ: Using strategy-specific models trained separately
+
 Usage:
-    python eval_manual_defense.py --corpus rj
-    python eval_manual_defense.py --corpus ebg
-    python eval_manual_defense.py  # evaluate all corpora
+    python eval_manual_defense.py --corpus rj  # only on rj and using svm/logreg
+    python eval_manual_defense.py --include_roberta  # evaluate all corpora with RoBERTa
 
 Output:
     Printed metrics for each corpus, task, and threat model combination
@@ -20,10 +32,19 @@ import argparse
 import logging
 import os
 import numpy as np
-from typing import Dict, List, Tuple
+import torch
+from pathlib import Path
+from typing import Dict
 
 from utils import (CORPUS_TASK_MAP, LogisticRegressionPredictor, SVMPredictor,
                    calculate_metrics, load_corpus)
+
+# Import RoBERTa evaluation function
+try:
+    from evaluate_roberta_models import evaluate_roberta
+    ROBERTA_AVAILABLE = True
+except ImportError:
+    ROBERTA_AVAILABLE = False
 
 # setup logging
 logging.basicConfig(
@@ -31,6 +52,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
 
 def calculate_human_performance(
         corpus: str,
@@ -106,6 +128,7 @@ def calculate_human_performance(
 
     return results
 
+
 def calculate_baseline_performance(
         corpus: str,
         models_dir: str = "threat_models"
@@ -149,6 +172,7 @@ def calculate_baseline_performance(
 
     return results
 
+
 def load_roberta_evaluation(
         corpus: str,
         task: str,
@@ -173,11 +197,18 @@ def load_roberta_evaluation(
             y_pred_probs = data['y_pred_probs']
             return calculate_metrics(y_true, y_pred_probs)
         else:
-            logger.warning(f"No RoBERTa evaluation file found for {corpus}-{task}")
-            return None
+            logger.info(f"No saved evaluation found for {corpus}-{task}, trying direct evaluation")
+
+            # If we have the evaluate_roberta module, use it for direct evaluation
+            if ROBERTA_AVAILABLE:
+                return evaluate_roberta(corpus, task)
+            else:
+                logger.warning(f"RoBERTa evaluation module not available")
+                return None
     except Exception as e:
         logger.error(f"Error loading RoBERTa evaluation for {corpus}-{task}: {str(e)}")
         return None
+
 
 def format_metrics(metrics: Dict) -> str:
     """format metrics for display, rounding to 3 decimal places"""
@@ -189,6 +220,7 @@ def format_metrics(metrics: Dict) -> str:
             f"Conf: {metrics['true_class_confidence']:.3f}, "
             f"Entropy: {metrics['entropy']:.3f}")
 
+
 def main(args):
     # determine what to evaluate
     if args.corpus:
@@ -197,6 +229,12 @@ def main(args):
         corpora = [args.corpus]
     else:
         corpora = list(CORPUS_TASK_MAP.keys())
+
+    # Check for CUDA availability if using RoBERTa
+    if args.include_roberta:
+        logger.info(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            logger.info(f"Using GPU: {torch.cuda.get_device_name(0)}")
 
     # print header
     print("\n" + "="*100)
@@ -265,7 +303,6 @@ if __name__ == "__main__":
         default="threat_models",
         help="Base directory containing saved models"
     )
-
     parser.add_argument(
         "--include_roberta",
         action="store_true",
