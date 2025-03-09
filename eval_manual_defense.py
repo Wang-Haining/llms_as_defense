@@ -3,7 +3,7 @@ Calculate human performance metrics for various strategies (imitation, obfuscati
 across different corpora and threat models.
 
 This script evaluates the effectiveness of manual intervention strategies by:
-1. Loading the threat models (LogisticRegression, SVM, and RoBERTa) trained on baseline data
+1. Loading the threat models (LogisticRegression, SVM, and RoBERTa) trained on appropriate data
 2. Making predictions on manually transformed test samples
 3. Calculating performance metrics: accuracy@1, accuracy@5, true class confidence, entropy
 
@@ -17,8 +17,7 @@ Key differences between corpora:
 
 This script handles these differences by:
 1. For EBG: Direct evaluation using models trained on no_protection
-2. For RJ: Label validation and filtering to ensure correct metrics calculation
-3. For RoBERTa on RJ: Using strategy-specific models trained separately
+2. For RJ: Using strategy-specific models trained separately for each threat model type
 
 Usage:
     python eval_manual_defense.py --corpus rj  # only on rj and using svm/logreg
@@ -133,7 +132,6 @@ def evaluate_roberta(corpus: str, task: str, models_dir: str = "threat_models"):
 
     try:
         # Load data for the task being evaluated
-        from utils import load_corpus
         _, _, test_text, test_labels = load_corpus(corpus, task)
 
         # Load model and get predictions
@@ -179,55 +177,40 @@ def calculate_human_performance(
     # load data for the task being evaluated
     _, _, test_text, test_labels = load_corpus(corpus, task)
 
-    # also load the no_protection data to ensure label encoding consistency
-    train_text, train_labels, _, _ = load_corpus(corpus, "no_protection")
-
-    # get base models trained on 'no_protection' data
-    logreg_model_path = os.path.join(models_dir, corpus, "no_protection", "logreg", "model")
-    svm_model_path = os.path.join(models_dir, corpus, "no_protection", "svm", "model")
-
     results = {"logreg": {}, "svm": {}}
+
+    # Determine which model to use based on corpus and task
+    if corpus == "rj" and task != "no_protection":
+        # For RJ with manual strategies, use task-specific models
+        logreg_model_path = os.path.join(models_dir, corpus, task, "logreg", "model")
+        svm_model_path = os.path.join(models_dir, corpus, task, "svm", "model")
+    else:
+        # For EBG or RJ 'no_protection', use the models trained on 'no_protection'
+        logreg_model_path = os.path.join(models_dir, corpus, "no_protection", "logreg", "model")
+        svm_model_path = os.path.join(models_dir, corpus, "no_protection", "svm", "model")
 
     # evaluate with logistic regression model
     try:
-        logreg = LogisticRegressionPredictor(logreg_model_path)
-        logreg_probs = logreg.predict_proba(test_text)
-        # ensure labels are within bounds (in case different tasks have different authors)
-        if max(test_labels) >= logreg_probs.shape[1]:
-            logger.warning(f"Label mismatch in {corpus}-{task} for LogisticRegression")
-            # create a version of test_labels that only uses authors present in training
-            valid_labels = np.array([l if l < logreg_probs.shape[1] else -1 for l in test_labels])
-            # filter out invalid labels (-1)
-            mask = valid_labels >= 0
-            if np.any(mask):
-                results["logreg"] = calculate_metrics(valid_labels[mask], logreg_probs[mask])
-            else:
-                logger.error(f"No valid labels for {corpus}-{task} with LogisticRegression")
-                results["logreg"] = None
-        else:
+        if os.path.exists(logreg_model_path):
+            logreg = LogisticRegressionPredictor(logreg_model_path)
+            logreg_probs = logreg.predict_proba(test_text)
             results["logreg"] = calculate_metrics(test_labels, logreg_probs)
+        else:
+            logger.warning(f"LogisticRegression model not found at {logreg_model_path}")
+            results["logreg"] = None
     except Exception as e:
         logger.error(f"Error evaluating LogisticRegression on {corpus}-{task}: {str(e)}")
         results["logreg"] = None
 
     # evaluate with SVM model
     try:
-        svm = SVMPredictor(svm_model_path)
-        svm_probs = svm.predict_proba(test_text)
-        # ensure labels are within bounds (in case different tasks have different authors)
-        if max(test_labels) >= svm_probs.shape[1]:
-            logger.warning(f"Label mismatch in {corpus}-{task} for SVM")
-            # create a version of test_labels that only uses authors present in training
-            valid_labels = np.array([l if l < svm_probs.shape[1] else -1 for l in test_labels])
-            # filter out invalid labels (-1)
-            mask = valid_labels >= 0
-            if np.any(mask):
-                results["svm"] = calculate_metrics(valid_labels[mask], svm_probs[mask])
-            else:
-                logger.error(f"No valid labels for {corpus}-{task} with SVM")
-                results["svm"] = None
-        else:
+        if os.path.exists(svm_model_path):
+            svm = SVMPredictor(svm_model_path)
+            svm_probs = svm.predict_proba(test_text)
             results["svm"] = calculate_metrics(test_labels, svm_probs)
+        else:
+            logger.warning(f"SVM model not found at {svm_model_path}")
+            results["svm"] = None
     except Exception as e:
         logger.error(f"Error evaluating SVM on {corpus}-{task}: {str(e)}")
         results["svm"] = None
