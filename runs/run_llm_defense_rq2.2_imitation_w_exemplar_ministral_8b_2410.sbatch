@@ -12,8 +12,8 @@
 #SBATCH --mail-type=ALL
 
 
-MODEL="google/gemma-2-9b-it"
-RQ="mistralai/Ministral-8B-Instruct-2410"
+MODEL="mistralai/Ministral-8B-Instruct-2410"
+RQ="rq2.2_imitation_w_exemplar"
 PROVIDER="local"
 SLEEP_TIME=30
 CORPORA=("ebg" "rj")
