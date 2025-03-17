@@ -16,7 +16,15 @@ source ~/.bashrc
 . .venv/bin/activate
 
 # define research questions (rq3)
-RQS=("rq3.1_obfuscation_w_persona" "rq3.2_imitation_w_500words" "rq3.2_imitation_w_1000words" "rq3.2_imitation_w_2500words" "rq3.3_simplification_w_vocabulary" "rq3.3_simplification_w_exemplar" "rq3.3_simplification_w_vocabulary_and_exemplar")
+RQS=(
+    "rq3.1_obfuscation_w_persona"
+    "rq3.2_imitation_w_500words"
+    "rq3.2_imitation_w_1000words"
+    "rq3.2_imitation_w_2500words"
+    "rq3.3_simplification_w_vocabulary"
+    "rq3.3_simplification_w_exemplar"
+    "rq3.3_simplification_w_vocabulary_and_exemplar"
+)
 SLEEP_TIME=30
 
 # loop through corpora and research questions
