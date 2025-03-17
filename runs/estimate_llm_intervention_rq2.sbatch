@@ -15,7 +15,7 @@ module load CUDA/12.2.0
 source ~/.bashrc
 . .venv/bin/activate
 
-# define research questions (rq1)
+# define research questions (rq2)
 RQS=("rq2.1_obfuscation" "rq2.2_imitation" "rq2.2_imitation_w_exemplar" "rq2.3_simplification")
 SLEEP_TIME=30
 

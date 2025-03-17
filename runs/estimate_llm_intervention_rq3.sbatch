@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=estimate_llm_intervention_rq3.1
+#SBATCH --job-name=estimate_llm_intervention_rq3
 #SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=16
@@ -15,8 +15,16 @@ module load CUDA/12.2.0
 source ~/.bashrc
 . .venv/bin/activate
 
-# define research questions (rq1)
-RQS=("rq3.1_obfuscation_w_persona")
+# define research questions (rq3)
+RQS=(
+    "rq3.1_obfuscation_w_persona"
+    "rq3.2_imitation_w_500words"
+    "rq3.2_imitation_w_1000words"
+    "rq3.2_imitation_w_2500words"
+    "rq3.3_simplification_w_vocabulary"
+    "rq3.3_simplification_w_exemplar"
+    "rq3.3_simplification_w_vocabulary_and_exemplar"
+)
 SLEEP_TIME=30
 
 # loop through corpora and research questions
