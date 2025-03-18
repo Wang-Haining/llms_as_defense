@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=eval_llm_defense_rq3.1
+#SBATCH --job-name=eval_llm_defense_rq3
 #SBATCH --account=group-jasonclark
 #SBATCH --partition=nextgen-gpu
 #SBATCH --gres=gpu:h100:1
