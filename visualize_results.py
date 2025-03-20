@@ -495,7 +495,7 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                 fontsize=16, fontfamily='Times New Roman')
         return ax
 
-    # Determine whether we are plotting quality metrics (i.e. no "Threat Model" column)
+    # determine whether we are plotting quality metrics (i.e. no "Threat Model" column)
     is_quality = "Threat Model" not in df.columns
 
     if not is_quality:
@@ -521,7 +521,7 @@ def plot_single_bayesian_hdi(ax, stats_df, metric, corpus, threat_model=None,
                     position += 1
             current_pos += group_width + group_gap
     else:
-        # Quality metrics: group solely by defense model.
+        # quality metrics: group solely by defense model.
         defense_model_order = list(model_colors.keys())
         df["Defense Model"] = pd.Categorical(df["Defense Model"],
                                              categories=defense_model_order,
