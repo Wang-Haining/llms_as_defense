@@ -595,7 +595,7 @@ def main():
     parser.add_argument(
         '--output',
         type=str,
-        default=f'comparison_results_{datetime.now().strftime("%Y%m%d")}',
+        default='results/comparison_results_rq3.1_rq2.1',
         help='Output directory for results'
     )
 
