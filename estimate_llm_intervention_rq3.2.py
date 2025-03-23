@@ -987,86 +987,86 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
 
     logger.info(f"Summary report saved to {report_path}")
 
-    def parse_arguments():
-        """Parse command line arguments."""
-        parser = argparse.ArgumentParser(
-            description="Analyze the effect of exemplar length on LLM imitation defense performance",
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter
-        )
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Analyze the effect of exemplar length on LLM imitation defense performance",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-        parser.add_argument(
-            '--base_dir',
-            type=str,
-            default='defense_evaluation',
-            help='Base directory containing evaluation results'
-        )
-        parser.add_argument(
-            '--output_dir',
-            type=str,
-            default='results/exemplar_length_analysis_rq3.2',
-            help='Directory to save analysis results'
-        )
-        parser.add_argument(
-            '--corpus',
-            type=str,
-            choices=CORPORA,
-            help='Specific corpus to analyze (default: all)'
-        )
-        parser.add_argument(
-            '--model',
-            type=str,
-            help='Specific LLM to analyze (default: all)'
-        )
-        parser.add_argument(
-            '--threat_model',
-            type=str,
-            choices=THREAT_MODELS,
-            help='Specific threat model to analyze (default: all)'
-        )
-        parser.add_argument(
-            '--metric',
-            type=str,
-            choices=METRICS,
-            help='Specific metric to analyze (default: all)'
-        )
+    parser.add_argument(
+        '--base_dir',
+        type=str,
+        default='defense_evaluation',
+        help='Base directory containing evaluation results'
+    )
+    parser.add_argument(
+        '--output_dir',
+        type=str,
+        default='results/exemplar_length_analysis',
+        help='Directory to save analysis results'
+    )
+    parser.add_argument(
+        '--corpus',
+        type=str,
+        choices=CORPORA,
+        help='Specific corpus to analyze (default: all)'
+    )
+    parser.add_argument(
+        '--model',
+        type=str,
+        help='Specific LLM to analyze (default: all)'
+    )
+    parser.add_argument(
+        '--threat_model',
+        type=str,
+        choices=THREAT_MODELS,
+        help='Specific threat model to analyze (default: all)'
+    )
+    parser.add_argument(
+        '--metric',
+        type=str,
+        choices=METRICS,
+        help='Specific metric to analyze (default: all)'
+    )
 
-        return parser.parse_args()
+    return parser.parse_args()
 
-    def main():
-        """Main entry point for script."""
-        args = parse_arguments()
+def main():
+    """Main entry point for script."""
+    args = parse_arguments()
 
-        logger.info("Starting exemplar length analysis")
-        logger.info(f"Base directory: {args.base_dir}")
-        logger.info(f"Output directory: {args.output_dir}")
+    logger.info("Starting exemplar length analysis")
+    logger.info(f"Base directory: {args.base_dir}")
+    logger.info(f"Output directory: {args.output_dir}")
 
-        # Create output directory
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Prepare data
-        logger.info("Preparing data for analysis")
-        data = prepare_data(args.base_dir)
+    # Prepare data
+    logger.info("Preparing data for analysis")
+    data = prepare_data(args.base_dir)
 
-        # Save raw data
-        data.to_csv(output_dir / "raw_data.csv", index=False)
+    # Save raw data
+    data.to_csv(output_dir / "raw_data.csv", index=False)
 
-        # Run analysis
-        logger.info("Running analysis")
-        results_df = run_full_analysis(
-            data=data,
-            output_dir=str(output_dir),
-            filter_corpus=args.corpus,
-            filter_model=args.model,
-            filter_threat_model=args.threat_model,
-            filter_metric=args.metric
-        )
+    # Run analysis
+    logger.info("Running analysis")
+    results_df = run_full_analysis(
+        data=data,
+        output_dir=str(output_dir),
+        filter_corpus=args.corpus,
+        filter_model=args.model,
+        filter_threat_model=args.threat_model,
+        filter_metric=args.metric
+    )
 
-        # Create summary report
-        logger.info("Creating summary report")
-        create_summary_report(results_df, str(output_dir))
+    # Create summary report
+    logger.info("Creating summary report")
+    create_summary_report(results_df, str(output_dir))
 
-        logger.info("Analysis complete")
+    logger.info("Analysis complete")
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
