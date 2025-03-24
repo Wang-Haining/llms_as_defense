@@ -1,0 +1,17 @@
+# Significant Deteriorations with Longer Exemplars
+
+- Gpt-4O | LOGREG | accuracy@1: Effect size = 0.8340, p = 1.0000
+- Gpt-4O | LOGREG | accuracy@5: Effect size = 0.6397, p = 1.0000
+- Gpt-4O | LOGREG | true_class_confidence: Effect size = 0.5545, p = 1.0000
+- Gpt-4O | LOGREG | pinc: Effect size = -0.0757, p = 1.0000
+- Ministral | SVM | entropy: Effect size = -0.2868, p = 0.9988
+- Gpt-4O | SVM | accuracy@1: Effect size = 0.9214, p = 1.0000
+- Gpt-4O | SVM | accuracy@5: Effect size = 0.8410, p = 1.0000
+- Gpt-4O | SVM | pinc: Effect size = -0.0757, p = 1.0000
+- Gemma-2 | ROBERTA | entropy: Effect size = -0.8714, p = 0.9989
+- Gpt-4O | ROBERTA | entropy: Effect size = -0.3163, p = 0.9999
+- Gpt-4O | ROBERTA | pinc: Effect size = -0.0755, p = 1.0000
+- Ministral | LOGREG | true_class_confidence: Effect size = 0.3764, p = 0.9801
+- Gemma-2 | SVM | accuracy@5: Effect size = 0.2467, p = 0.9798
+- Claude-3.5 | SVM | accuracy@5: Effect size = 0.3453, p = 0.9990
+- Gpt-4O | SVM | entropy: Effect size = -0.4299, p = 0.9990

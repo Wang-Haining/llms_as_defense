@@ -1,0 +1,2 @@
+Corpus,Threat Model,LLM,Metric,Higher is Better,Data Points,Mean Value,Slope,Slope HDI Lower,Slope HDI Upper,P(Improvement),Effect per 1000 words,Effect (500→2500),In ROPE,Conclusion
+EBG,ROBERTA,Gemma-2,entropy,True,15,2.618360249201457,-0.24862693345319253,-0.485124716456068,-0.028579848401877418,0.02225,-1.3654225943158673,-2.7308451886317346,0.004125,Significant Deterioration with Longer Exemplars
