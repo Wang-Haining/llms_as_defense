@@ -263,19 +263,111 @@ def analyze_exemplar_length_effect(
     x = df['exemplar_length'].values
     y = df[metric].values
 
-    # Rest of the function stays the same...
+    # Scale inputs for numerical stability
+    x_mean = np.mean(x)
+    x_range = np.linspace(min(x), max(x), 100)
+    x_scaled = x / 1000  # Scale to per 1000 words
 
-    # Change P(Improvement) to a more Bayesian term
-    # For "higher is better" metrics (entropy, bertscore, pinc)
-    if higher_is_better:
-        posterior_prob_beneficial = float(np.mean(beta_samples > 0))
-        direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
+    # For entropy, scale the output too (it's bounded between 0 and log2(num_classes))
+    y_mean = np.mean(y)
+    if metric == 'entropy':
+        # Assuming 100 classes as a default
+        max_entropy = np.log2(100)
+        y_scaled = y / max_entropy
     else:
-        # For "lower is better" metrics (accuracy@1, accuracy@5, true_class_confidence)
-        posterior_prob_beneficial = float(np.mean(beta_samples < 0))
-        direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+        y_scaled = y
+        max_entropy = 1.0  # Not used for other metrics
 
-    # Calculate effect size
+    # Build a Bayesian linear regression model
+    with pm.Model() as model:
+        # Priors
+        alpha = pm.Normal("alpha", mu=0, sigma=1)
+        beta = pm.Normal("beta", mu=0, sigma=0.1)
+        sigma = pm.HalfNormal("sigma", sigma=0.1)
+
+        # Expected value
+        mu = alpha + beta * x_scaled
+
+        # Likelihood
+        if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+            # For percentage metrics, use a Beta likelihood
+            theta = pm.math.invlogit(mu)  # Transform to (0, 1)
+            likelihood = pm.Beta("likelihood", alpha=theta * 100,
+                                 beta=(1 - theta) * 100, observed=y)
+        elif metric == 'entropy':
+            # For entropy (scaled to 0-1), use a bounded normal
+            likelihood = pm.TruncatedNormal("likelihood", mu=mu, sigma=sigma, lower=0,
+                                            upper=1, observed=y_scaled)
+        else:
+            # For other metrics like bertscore, pinc, use normal likelihood
+            likelihood = pm.Normal("likelihood", mu=mu, sigma=sigma, observed=y_scaled)
+
+        # Inference
+        trace = pm.sample(2000, tune=1000, target_accept=0.9, return_inferencedata=True)
+
+        # Predictions
+        alpha_samples = trace.posterior["alpha"].values.flatten()
+        beta_samples = trace.posterior["beta"].values.flatten()
+
+        # Compute mean and HDI for beta
+        beta_mean = float(np.mean(beta_samples))
+        beta_std = float(np.std(beta_samples))
+        beta_hdi = az.hdi(trace.posterior.beta.values.flatten(), hdi_prob=0.95)
+
+        # Compute posterior probability of improvement
+        if higher_is_better:
+            posterior_prob_beneficial = float(np.mean(beta_samples > 0))
+            direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
+        else:
+            posterior_prob_beneficial = float(np.mean(beta_samples < 0))
+            direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+
+        # Region of Practical Equivalence (ROPE) analysis
+        rope_bounds = (-0.01, 0.01)  # Effect size considered negligible
+        in_rope = float(np.mean(
+            (beta_samples >= rope_bounds[0]) & (beta_samples <= rope_bounds[1])))
+
+        # Determine significance
+        if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (
+                beta_hdi[0] > 0 and beta_hdi[1] > 0):
+            significance = "Credible Effect"
+        else:
+            significance = "Not Credible"
+
+        # Generate predictions for the plot
+        pred_samples = []
+        for i in range(100):  # Use 100 posterior samples
+            idx = np.random.randint(0, len(alpha_samples))
+            a, b = alpha_samples[idx], beta_samples[idx]
+
+            if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+                pred = 1 / (1 + np.exp(-(a + b * (x_range / 1000))))
+            elif metric == 'entropy':
+                pred = (a + b * (x_range / 1000)) * max_entropy
+                pred = np.clip(pred, 0, max_entropy)
+            else:
+                pred = a + b * (x_range / 1000)
+            pred_samples.append(pred)
+
+        pred_samples = np.array(pred_samples)
+        y_pred_mean = np.mean(pred_samples, axis=0)
+        y_pred_hdi = az.hdi(pred_samples, hdi_prob=0.95)
+        y_pred_hdi_lower = y_pred_hdi[0, :]
+        y_pred_hdi_upper = y_pred_hdi[1, :]
+
+        # Determine conclusion
+        if in_rope > 0.95:
+            conclusion = "Practically Equivalent"
+        elif significance == "Credible Effect":
+            if (higher_is_better and beta_mean > 0) or (
+                    not higher_is_better and beta_mean < 0):
+                conclusion = "Significant Improvement"
+            else:
+                conclusion = "Significant Deterioration"
+        else:
+            conclusion = "Inconclusive"
+
+    # Calculate effect sizes
     effect_per_1000_words = beta_mean
     effect_2000_words = beta_mean * 2
 
@@ -284,13 +376,7 @@ def analyze_exemplar_length_effect(
         effect_per_1000_words *= max_entropy
         effect_2000_words *= max_entropy
 
-    # Determine statistical credibility
-    if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (beta_hdi[0] > 0 and beta_hdi[1] > 0):
-        significance = "Credible Effect"
-    else:
-        significance = "Not Credible"
-
-    # Return updated results dictionary with the new terminology
+    # Return results dictionary
     return {
         "corpus": corpus,
         "threat_model": threat_model,
@@ -305,6 +391,7 @@ def analyze_exemplar_length_effect(
             "std": beta_std,
             "hdi": beta_hdi.tolist(),
             "posterior_prob_beneficial": posterior_prob_beneficial,
+            "prob_improvement": posterior_prob_beneficial,  # Backward compatibility
             "direction": direction,
             "significance": significance,
             "effect_per_1000_words": effect_per_1000_words,
