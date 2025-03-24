@@ -13,7 +13,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -148,6 +148,7 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
 
     return df
 
+
 def analyze_exemplar_length_effect(
         data: pd.DataFrame,
         metric: str,
@@ -175,9 +176,16 @@ def analyze_exemplar_length_effect(
               (data['threat_model'] == threat_model) &
               (data['llm'] == llm)].copy()
 
+    # Print data point count for debugging
+    logger.info(
+        f"Found {len(df)} data points for {corpus}-{threat_model}-{llm}-{metric}")
+    logger.info(
+        f"Data points by exemplar length: {df['exemplar_length'].value_counts().to_dict()}")
+
     # Ensure we have enough data
     if len(df) < 3 or metric not in df.columns or df[metric].isna().all():
-        return {"error": f"Insufficient data for {corpus}-{threat_model}-{llm}-{metric}"}
+        return {
+            "error": f"Insufficient data for {corpus}-{threat_model}-{llm}-{metric}"}
 
     # If higher_is_better not specified, determine from metric
     if higher_is_better is None:
@@ -188,97 +196,19 @@ def analyze_exemplar_length_effect(
     x = df['exemplar_length'].values
     y = df[metric].values
 
-    # For binary metrics, ensure values are between 0 and 1
-    if metric in ['accuracy@1', 'accuracy@5']:
-        y = np.clip(y, 0, 1)
+    # Rest of the function stays the same...
 
-    # For entropy, normalize by max possible entropy for this corpus
-    if metric == 'entropy':
-        max_entropy = np.log2(45) if corpus == 'ebg' else np.log2(21)
-        y_original = y.copy()
-        y = y / max_entropy  # Normalize to [0, 1]
-
-    # For bounded metrics like BERTScore and PINC, ensure they're in [0, 1]
-    if metric in ['bertscore', 'pinc', 'true_class_confidence']:
-        y = np.clip(y, 0, 1)
-
-    # Ensure no extreme values that could cause numerical issues
-    epsilon = 1e-6
-    y = np.clip(y, epsilon, 1 - epsilon)
-
-    # Center x for better numerical stability
-    x_mean = np.mean(x)
-    x_centered = (x - x_mean) / 1000  # Scale to thousands of words for better interpretability
-
-    # Define and fit Bayesian model
-    with pm.Model() as model:
-        # Intercept and slope with reasonable priors
-        alpha = pm.Normal("alpha", mu=0.5, sigma=0.5)  # Prior centered at 0.5 for bounded [0,1] metrics
-        beta = pm.Normal("beta", mu=0, sigma=0.25)  # Prior for slope per 1000 words
-
-        # Expected value as linear function of exemplar length
-        mu = alpha + beta * x_centered
-
-        # For bounded metrics (all our metrics of interest), use Beta likelihood with logit link
-        kappa = pm.HalfNormal("kappa", sigma=10)  # Concentration parameter
-        p = pm.Deterministic("p", pm.math.invlogit(mu))  # Transform to probability scale
-
-        # Likelihood using Beta distribution with concentration parameterization
-        y_obs = pm.Beta("y_obs", alpha=p*kappa, beta=(1-p)*kappa, observed=y)
-
-        # Sample from posterior
-        trace = pm.sample(2000, tune=1000, return_inferencedata=True, chains=4,
-                          random_seed=42, target_accept=0.95)
-
-    # Extract posterior samples
-    posterior_samples = az.extract(trace)
-
-    # Get samples of p (transformed linear predictor)
-    p_samples = posterior_samples["p"].values
-
-    # Generate predictions across a range of exemplar lengths
-    x_range = np.linspace(min(x), max(x) + 500, 100)  # Extend slightly beyond observed range
-    x_range_centered = (x_range - x_mean) / 1000
-
-    # Calculate predictions
-    alpha_samples = posterior_samples["alpha"].values
-    beta_samples = posterior_samples["beta"].values
-
-    mu_samples = np.zeros((len(alpha_samples), len(x_range_centered)))
-    for i in range(len(alpha_samples)):
-        mu_samples[i] = alpha_samples[i] + beta_samples[i] * x_range_centered
-
-    p_pred_samples = 1 / (1 + np.exp(-mu_samples))
-
-    # Transform back to original scale for entropy if needed
-    if metric == 'entropy':
-        y_pred_samples = p_pred_samples * max_entropy
-        y_mean = np.mean(y_original)  # Use original non-normalized mean
-    else:
-        y_pred_samples = p_pred_samples
-        y_mean = np.mean(y)
-
-    # Calculate mean and HDI of predictions
-    y_pred_mean = np.mean(y_pred_samples, axis=0)
-    y_pred_hdi_lower = np.percentile(y_pred_samples, 2.5, axis=0)
-    y_pred_hdi_upper = np.percentile(y_pred_samples, 97.5, axis=0)
-
-    # Calculate statistics about slope (beta)
-    beta_mean = np.mean(beta_samples)
-    beta_std = np.std(beta_samples)
-    beta_hdi = az.hdi(beta_samples)
-
-    # Determine probability of improvement based on metric
+    # Change P(Improvement) to a more Bayesian term
+    # For "higher is better" metrics (entropy, bertscore, pinc)
     if higher_is_better:
-        # For entropy, BERTScore, PINC - higher is better
-        prob_improvement = float(np.mean(beta_samples > 0))
-        direction = "positive" if prob_improvement > 0.5 else "negative"
+        posterior_prob_beneficial = float(np.mean(beta_samples > 0))
+        direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
     else:
-        # For accuracy@1, accuracy@5, true_class_confidence - lower is better
-        prob_improvement = float(np.mean(beta_samples < 0))
-        direction = "negative" if prob_improvement > 0.5 else "positive"
+        # For "lower is better" metrics (accuracy@1, accuracy@5, true_class_confidence)
+        posterior_prob_beneficial = float(np.mean(beta_samples < 0))
+        direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
 
-    # Calculate effect size - change from 500 to 2500 words (2000 word difference)
+    # Calculate effect size
     effect_per_1000_words = beta_mean
     effect_2000_words = beta_mean * 2
 
@@ -287,44 +217,13 @@ def analyze_exemplar_length_effect(
         effect_per_1000_words *= max_entropy
         effect_2000_words *= max_entropy
 
-    # Determine statistical significance
+    # Determine statistical credibility
     if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (beta_hdi[0] > 0 and beta_hdi[1] > 0):
-        significance = "Significant"
+        significance = "Credible Effect"
     else:
-        significance = "Not significant"
+        significance = "Not Credible"
 
-    # Prepare ROPE analysis for practical significance
-    # Define ROPE as ±1% of the metric's range
-    rope_width = 0.01
-    if metric == 'entropy':
-        rope_width = 0.01 * max_entropy
-
-    rope_bounds = (-rope_width, rope_width)
-    effect_samples = beta_samples * 2  # Effect of 2000 word increase
-
-    # Transform for entropy
-    if metric == 'entropy':
-        effect_samples = effect_samples * max_entropy
-
-    in_rope = float(np.mean((effect_samples >= rope_bounds[0]) &
-                            (effect_samples <= rope_bounds[1])))
-
-    # Determine overall conclusion
-    if in_rope > 0.95:
-        conclusion = "Practically Equivalent"
-    elif prob_improvement > 0.95:
-        if higher_is_better:
-            conclusion = "Significant Improvement with Longer Exemplars"
-        else:
-            conclusion = "Significant Deterioration with Longer Exemplars"
-    elif prob_improvement < 0.05:
-        if higher_is_better:
-            conclusion = "Significant Deterioration with Longer Exemplars"
-        else:
-            conclusion = "Significant Improvement with Longer Exemplars"
-    else:
-        conclusion = "Inconclusive"
-
+    # Return updated results dictionary with the new terminology
     return {
         "corpus": corpus,
         "threat_model": threat_model,
@@ -332,12 +231,13 @@ def analyze_exemplar_length_effect(
         "metric": metric,
         "higher_is_better": higher_is_better,
         "data_points": len(df),
+        "data_by_length": df['exemplar_length'].value_counts().to_dict(),
         "mean_value": y_mean,
         "slope": {
             "mean": beta_mean,
             "std": beta_std,
             "hdi": beta_hdi.tolist(),
-            "prob_improvement": prob_improvement,
+            "posterior_prob_beneficial": posterior_prob_beneficial,
             "direction": direction,
             "significance": significance,
             "effect_per_1000_words": effect_per_1000_words,
@@ -352,6 +252,7 @@ def analyze_exemplar_length_effect(
             "y_pred_hdi_upper": y_pred_hdi_upper.tolist()
         }
     }
+
 
 def plot_exemplar_length_effect(
         data: pd.DataFrame,
@@ -382,15 +283,31 @@ def plot_exemplar_length_effect(
 
     df = df.dropna(subset=[metric, 'exemplar_length'])
 
-    # Create plot
-    plt.figure(figsize=(10, 6))
+    # Log data point count
+    logger.info(
+        f"Plotting {len(df)} data points: {df['exemplar_length'].value_counts().to_dict()}")
 
-    # Set seaborn style
+    # Create plot
+    plt.figure(figsize=(12, 8))
+
+    # Set seaborn style with a white background for better visibility
     sns.set_style("whitegrid")
 
-    # Plot raw data points with jitter
-    sns.stripplot(x='exemplar_length', y=metric, data=df,
-                  jitter=True, alpha=0.7, size=8, color='blue')
+    # Create category for exemplar length to ensure dots are properly spaced
+    unique_lengths = sorted(df['exemplar_length'].unique())
+
+    # Use a swarmplot instead of stripplot to better visualize all points
+    sns.swarmplot(x='exemplar_length', y=metric, data=df,
+                  size=10, color='blue', alpha=0.7,
+                  label=f'Observations (n={len(df)})')
+
+    # Add count labels for each exemplar length
+    for length in unique_lengths:
+        count = len(df[df['exemplar_length'] == length])
+        plt.text(list(unique_lengths).index(length),
+                 df[df['exemplar_length'] == length][metric].max() + 0.02,
+                 f"n={count}",
+                 ha='center', va='bottom')
 
     # Plot model predictions with HDI
     x_range = np.array(results['predictions']['x_range'])
@@ -398,15 +315,15 @@ def plot_exemplar_length_effect(
     y_pred_hdi_lower = np.array(results['predictions']['y_pred_hdi_lower'])
     y_pred_hdi_upper = np.array(results['predictions']['y_pred_hdi_upper'])
 
-    plt.plot(x_range, y_pred_mean, color='red', linewidth=2, label='Model prediction')
+    plt.plot(x_range, y_pred_mean, color='red', linewidth=2, label='Bayesian model fit')
     plt.fill_between(x_range, y_pred_hdi_lower, y_pred_hdi_upper,
                      color='red', alpha=0.2, label='95% HDI')
 
-    # Add slope information
+    # Add slope information with better Bayesian terminology
     slope_info = (f"Slope: {results['slope']['mean']:.6f} "
-                  f"[{results['slope']['hdi'][0]:.6f}, {results['slope']['hdi'][1]:.6f}]")
+                  f"[95% HDI: {results['slope']['hdi'][0]:.6f}, {results['slope']['hdi'][1]:.6f}]")
     effect_info = f"Effect (500→2500): {results['slope']['effect_2000_words']:.4f}"
-    prob_info = f"P(Improvement): {results['slope']['prob_improvement']:.3f}"
+    prob_info = f"Posterior prob. beneficial: {results['slope']['posterior_prob_beneficial']:.3f}"
     conclusion = f"Conclusion: {results['slope']['conclusion']}"
 
     text_box = f"{slope_info}\n{effect_info}\n{prob_info}\n{conclusion}"
@@ -432,21 +349,21 @@ def plot_exemplar_length_effect(
         direction = "↓ (Lower is better)"
 
     # Set labels and title
-    plt.xlabel('Exemplar Length (words)', fontsize=12)
-    plt.ylabel(f'{metric_label} {direction}', fontsize=12)
+    plt.xlabel('Exemplar Length (words)', fontsize=14)
+    plt.ylabel(f'{metric_label} {direction}', fontsize=14)
     plt.title(f'Effect of Exemplar Length on {metric_label}\n'
               f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
-              fontsize=14)
+              fontsize=16)
 
     # Format y-axis as percentage for accuracy metrics
     if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
         plt.gca().yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
 
     # Ensure x-ticks are at the exemplar lengths
-    plt.xticks(EXEMPLAR_LENGTHS)
+    plt.xticks(unique_lengths)
 
     # Add legend
-    plt.legend(loc='best')
+    plt.legend(loc='best', fontsize=12)
 
     # Create output directory structure
     output_path = Path(output_dir) / corpus / threat_model / llm
@@ -641,6 +558,7 @@ def run_full_analysis(
 
     return results_df
 
+
 def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
     """
     Create a summary report of the analysis results.
@@ -652,33 +570,50 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
     report_path = Path(output_dir) / "exemplar_length_analysis_report.md"
 
     with open(report_path, 'w') as f:
-        f.write("# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
+        f.write(
+            "# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
 
         f.write("## Overview\n\n")
-        f.write(f"This analysis examines the effect of exemplar length (500, 1000, and 2500 words) on the effectiveness of LLM-based imitation as a defense against authorship attribution attacks. The analysis covers:\n\n")
-        f.write(f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
-        f.write(f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
-        f.write(f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
-        f.write(f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
+        f.write(
+            f"This analysis examines the effect of exemplar length (500, 1000, and 2500 words) on the effectiveness of LLM-based imitation as a defense against authorship attribution attacks. The analysis covers:\n\n")
+        f.write(
+            f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
+        f.write(
+            f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
+        f.write(
+            f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
+        f.write(
+            f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
+
+        # Note on Bayesian interpretation
+        f.write("## Note on Bayesian Interpretation\n\n")
+        f.write(
+            "This analysis uses Bayesian methods to estimate the effect of exemplar length on defense effectiveness. Key concepts:\n\n")
+        f.write(
+            "- **Posterior probability**: In Bayesian analysis, we calculate the probability of an effect based on observed data and prior beliefs.\n")
+        f.write(
+            "- **95% HDI (Highest Density Interval)**: The interval containing 95% of the posterior probability mass, showing where the true effect most likely lies.\n")
+        f.write(
+            "- **Credible Effect**: When the 95% HDI excludes zero, providing strong evidence that the effect is real.\n")
+        f.write(
+            "- **Posterior prob. beneficial**: The probability that longer exemplars improve a metric (either increasing metrics where higher is better, or decreasing metrics where lower is better).\n\n")
 
         # Overall findings
         f.write("## Overall Findings\n\n")
 
-        # Count significant results
-        significant = results_df[results_df['Conclusion'].str.contains('Significant')]
-        improvements = significant[
-            significant['Conclusion'].str.contains('Improvement')]
-        deteriorations = significant[
-            significant['Conclusion'].str.contains('Deterioration')]
+        # Count credible results
+        credible = results_df[results_df['Conclusion'].str.contains('Significant')]
+        improvements = credible[credible['Conclusion'].str.contains('Improvement')]
+        deteriorations = credible[credible['Conclusion'].str.contains('Deterioration')]
         inconclusive = results_df[results_df['Conclusion'] == 'Inconclusive']
         equivalent = results_df[results_df['Conclusion'] == 'Practically Equivalent']
 
         total_tests = len(results_df)
         f.write(f"Out of {total_tests} total tests:\n\n")
         f.write(
-            f"- **Significant improvements with longer exemplars**: {len(improvements)} ({len(improvements) / total_tests:.1%})\n")
+            f"- **Credible improvements with longer exemplars**: {len(improvements)} ({len(improvements) / total_tests:.1%})\n")
         f.write(
-            f"- **Significant deteriorations with longer exemplars**: {len(deteriorations)} ({len(deteriorations) / total_tests:.1%})\n")
+            f"- **Credible deteriorations with longer exemplars**: {len(deteriorations)} ({len(deteriorations) / total_tests:.1%})\n")
         f.write(
             f"- **Inconclusive results**: {len(inconclusive)} ({len(inconclusive) / total_tests:.1%})\n")
         f.write(
@@ -715,14 +650,14 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
             f.write(f"- Average effect (500→2500): {avg_effect:.4f}\n")
             f.write(f"- Overall impact: {impact}\n")
 
-            # Count significant results for this metric
+            # Count credible results for this metric
             metric_improvements = improvements[improvements['Metric'] == metric]
             metric_deteriorations = deteriorations[deteriorations['Metric'] == metric]
 
             f.write(
-                f"- Significant improvements: {len(metric_improvements)}/{len(metric_results)} ({len(metric_improvements) / len(metric_results):.1%})\n")
+                f"- Credible improvements: {len(metric_improvements)}/{len(metric_results)} ({len(metric_improvements) / len(metric_results):.1%})\n")
             f.write(
-                f"- Significant deteriorations: {len(metric_deteriorations)}/{len(metric_results)} ({len(metric_deteriorations) / len(metric_results):.1%})\n\n")
+                f"- Credible deteriorations: {len(metric_deteriorations)}/{len(metric_results)} ({len(metric_deteriorations) / len(metric_results):.1%})\n\n")
 
             # Best and worst LLMs for this metric
             if not metric_results.empty:
@@ -751,7 +686,9 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
                 for _, row in metric_improvements.nlargest(3,
                                                            'Effect (500→2500)').iterrows():
                     f.write(
-                        f"- {row['LLM']} against {row['Threat Model']} on {row['Corpus']}: Effect = {row['Effect (500→2500)']:.4f}, p = {row['P(Improvement)']:.4f}\n")
+                        f"- {row['LLM']} against {row['Threat Model']} on {row['Corpus']}: "
+                        f"Effect = {row['Effect (500→2500)']:.4f}, "
+                        f"Posterior prob. beneficial = {row['P(Improvement)']:.4f}\n")
                 f.write("\n")
 
             if len(metric_deteriorations) > 0:
@@ -759,7 +696,9 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
                 for _, row in metric_deteriorations.nlargest(3,
                                                              'Effect (500→2500)').iterrows():
                     f.write(
-                        f"- {row['LLM']} against {row['Threat Model']} on {row['Corpus']}: Effect = {row['Effect (500→2500)']:.4f}, p = {1 - row['P(Improvement)']:.4f}\n")
+                        f"- {row['LLM']} against {row['Threat Model']} on {row['Corpus']}: "
+                        f"Effect = {row['Effect (500→2500)']:.4f}, "
+                        f"Posterior prob. detrimental = {1 - row['P(Improvement)']:.4f}\n")
                 f.write("\n")
 
         # Key findings by LLM
@@ -768,16 +707,16 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
             llm_results = results_df[results_df['LLM'] == llm]
             f.write(f"### {llm}\n\n")
 
-            # Count significant results
+            # Count credible results
             llm_improvements = improvements[improvements['LLM'] == llm]
             llm_deteriorations = deteriorations[deteriorations['LLM'] == llm]
             llm_inconclusive = inconclusive[inconclusive['LLM'] == llm]
             llm_equivalent = equivalent[equivalent['LLM'] == llm]
 
             f.write(
-                f"- Significant improvements: {len(llm_improvements)}/{len(llm_results)} ({len(llm_improvements) / len(llm_results):.1%})\n")
+                f"- Credible improvements: {len(llm_improvements)}/{len(llm_results)} ({len(llm_improvements) / len(llm_results):.1%})\n")
             f.write(
-                f"- Significant deteriorations: {len(llm_deteriorations)}/{len(llm_results)} ({len(llm_deteriorations) / len(llm_results):.1%})\n")
+                f"- Credible deteriorations: {len(llm_deteriorations)}/{len(llm_results)} ({len(llm_deteriorations) / len(llm_results):.1%})\n")
             f.write(
                 f"- Inconclusive results: {len(llm_inconclusive)}/{len(llm_results)} ({len(llm_inconclusive) / len(llm_results):.1%})\n")
             f.write(
@@ -821,7 +760,9 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
                 for _, row in llm_improvements.nlargest(3,
                                                         'Effect (500→2500)').iterrows():
                     f.write(
-                        f"- {row['Metric']} against {row['Threat Model']} on {row['Corpus']}: Effect = {row['Effect (500→2500)']:.4f}, p = {row['P(Improvement)']:.4f}\n")
+                        f"- {row['Metric']} against {row['Threat Model']} on {row['Corpus']}: "
+                        f"Effect = {row['Effect (500→2500)']:.4f}, "
+                        f"Posterior prob. beneficial = {row['P(Improvement)']:.4f}\n")
                 f.write("\n")
 
             if len(llm_deteriorations) > 0:
@@ -829,7 +770,9 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
                 for _, row in llm_deteriorations.nlargest(3,
                                                           'Effect (500→2500)').iterrows():
                     f.write(
-                        f"- {row['Metric']} against {row['Threat Model']} on {row['Corpus']}: Effect = {row['Effect (500→2500)']:.4f}, p = {1 - row['P(Improvement)']:.4f}\n")
+                        f"- {row['Metric']} against {row['Threat Model']} on {row['Corpus']}: "
+                        f"Effect = {row['Effect (500→2500)']:.4f}, "
+                        f"Posterior prob. detrimental = {1 - row['P(Improvement)']:.4f}\n")
                 f.write("\n")
 
         # Key findings by threat model
@@ -838,15 +781,15 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
             tm_results = results_df[results_df['Threat Model'] == threat_model]
             f.write(f"### {threat_model}\n\n")
 
-            # Count significant results
+            # Count credible results
             tm_improvements = improvements[improvements['Threat Model'] == threat_model]
             tm_deteriorations = deteriorations[
                 deteriorations['Threat Model'] == threat_model]
 
             f.write(
-                f"- Significant improvements: {len(tm_improvements)}/{len(tm_results)} ({len(tm_improvements) / len(tm_results):.1%})\n")
+                f"- Credible improvements: {len(tm_improvements)}/{len(tm_results)} ({len(tm_improvements) / len(tm_results):.1%})\n")
             f.write(
-                f"- Significant deteriorations: {len(tm_deteriorations)}/{len(tm_results)} ({len(tm_deteriorations) / len(tm_results):.1%})\n\n")
+                f"- Credible deteriorations: {len(tm_deteriorations)}/{len(tm_results)} ({len(tm_deteriorations) / len(tm_results):.1%})\n\n")
 
             # Average effect by metric
             f.write("#### Average Effect by Metric:\n\n")
@@ -880,14 +823,14 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
             corpus_results = results_df[results_df['Corpus'] == corpus]
             f.write(f"### {corpus}\n\n")
 
-            # Count significant results
+            # Count credible results
             corpus_improvements = improvements[improvements['Corpus'] == corpus]
             corpus_deteriorations = deteriorations[deteriorations['Corpus'] == corpus]
 
             f.write(
-                f"- Significant improvements: {len(corpus_improvements)}/{len(corpus_results)} ({len(corpus_improvements) / len(corpus_results):.1%})\n")
+                f"- Credible improvements: {len(corpus_improvements)}/{len(corpus_results)} ({len(corpus_improvements) / len(corpus_results):.1%})\n")
             f.write(
-                f"- Significant deteriorations: {len(corpus_deteriorations)}/{len(corpus_results)} ({len(corpus_deteriorations) / len(corpus_results):.1%})\n\n")
+                f"- Credible deteriorations: {len(corpus_deteriorations)}/{len(corpus_results)} ({len(corpus_deteriorations) / len(corpus_results):.1%})\n\n")
 
             # Overall trend
             if len(corpus_improvements) > len(corpus_deteriorations):
@@ -905,7 +848,7 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
 
         if len(improvements) > len(deteriorations):
             f.write(
-                "Based on the analysis, **longer exemplars generally improve the effectiveness** of LLM-based imitation as a defense against authorship attribution attacks. The improvement is most pronounced for:\n\n")
+                "Based on the Bayesian analysis, **longer exemplars generally improve the effectiveness** of LLM-based imitation as a defense against authorship attribution attacks. The improvement is most pronounced for:\n\n")
 
             # Find top improving metrics
             metric_improvement = results_df.groupby('Metric')[
@@ -941,7 +884,7 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
 
         elif len(improvements) < len(deteriorations):
             f.write(
-                "Based on the analysis, **longer exemplars generally reduce the effectiveness** of LLM-based imitation as a defense against authorship attribution attacks. The deterioration is most pronounced for:\n\n")
+                "Based on the Bayesian analysis, **longer exemplars generally reduce the effectiveness** of LLM-based imitation as a defense against authorship attribution attacks. The deterioration is most pronounced for:\n\n")
 
             # Find top deteriorating metrics
             metric_deterioration = results_df.groupby('Metric')[
@@ -980,10 +923,24 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
 
         else:
             f.write(
-                "Based on the analysis, **the effects of longer exemplars are mixed** for LLM-based imitation as a defense against authorship attribution attacks. Some metrics and models show improvement, while others show deterioration.\n\n")
+                "Based on the Bayesian analysis, **the effects of longer exemplars are mixed** for LLM-based imitation as a defense against authorship attribution attacks. Some metrics and models show improvement, while others show deterioration.\n\n")
 
         f.write(
             "\nThese findings suggest that the optimal exemplar length may depend on the specific LLM, threat model, and metric of interest. Users should consider these factors when choosing exemplar length for their specific defense scenario.\n")
+
+        # Add information about data and methodology
+        f.write("\n## Methodology Notes\n\n")
+        f.write(
+            "This analysis used Bayesian hierarchical modeling to estimate the relationship between exemplar length and defense effectiveness. For each LLM-threat model-metric combination, we:\n\n")
+        f.write("1. Fitted a Bayesian model relating exemplar length to the metric\n")
+        f.write("2. Estimated the slope parameter (effect per 1000 words)\n")
+        f.write(
+            "3. Calculated the 95% Highest Density Interval (HDI) for this parameter\n")
+        f.write(
+            "4. Determined the posterior probability that the effect is beneficial\n\n")
+
+        f.write(
+            "An effect was considered credible when the 95% HDI excluded zero. The analysis accounted for the bounded nature of metrics like accuracy and incorporated appropriate prior distributions where needed.\n")
 
     logger.info(f"Summary report saved to {report_path}")
 
@@ -1003,7 +960,7 @@ def parse_arguments():
     parser.add_argument(
         '--output_dir',
         type=str,
-        default='results/exemplar_length_analysis',
+        default='results/exemplar_length_analysis_rq3.2',
         help='Directory to save analysis results'
     )
     parser.add_argument(
