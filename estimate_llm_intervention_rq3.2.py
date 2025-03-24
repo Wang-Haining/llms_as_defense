@@ -13,7 +13,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import numpy as np
 import pandas as pd
@@ -36,6 +36,54 @@ LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
 CORPORA = ['ebg', 'rj']
 EXEMPLAR_LENGTHS = [500, 1000, 2500]
 
+
+def get_actual_exemplar_lengths(base_dir: str) -> Dict[str, List[int]]:
+    """
+    Extract the actual word counts from each exemplar prompt file
+
+    Args:
+        base_dir: Base directory containing evaluation results
+
+    Returns:
+        Dictionary mapping RQ directories to lists of actual word counts
+    """
+    actual_lengths = {}
+
+    for length in [500, 1000, 2500]:
+        rq = f"rq3.2_imitation_w_{length}words"
+        prompt_dir = Path('prompts') / rq
+
+        if not prompt_dir.exists():
+            logger.warning(f"Prompt directory not found: {prompt_dir}")
+            continue
+
+        actual_counts = []
+
+        # Read all prompt files and extract actual word counts
+        for prompt_file in prompt_dir.glob("prompt*.json"):
+            try:
+                with open(prompt_file) as f:
+                    prompt_data = json.load(f)
+
+                # Get the actual word count from metadata
+                if "metadata" in prompt_data and "word_count" in prompt_data["metadata"]:
+                    actual_counts.append(prompt_data["metadata"]["word_count"])
+                else:
+                    # Alternative: count words in the exemplar text
+                    # This would require parsing the exemplar from the user prompt
+                    pass
+
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing {prompt_file}")
+                continue
+
+        if actual_counts:
+            actual_lengths[rq] = actual_counts
+            avg_count = sum(actual_counts) / len(actual_counts)
+            logger.info(f"RQ {rq}: found {len(actual_counts)} prompts with average word count {avg_count:.1f}")
+
+    return actual_lengths
+
 def normalize_llm_name(model_name: str) -> str:
     """Standardize LLM names for consistency."""
     name = model_name.lower()
@@ -51,6 +99,7 @@ def normalize_llm_name(model_name: str) -> str:
         return 'gpt-4o'
     return name
 
+
 def prepare_data(base_dir: str) -> pd.DataFrame:
     """
     Extract and organize data from evaluation results.
@@ -63,10 +112,24 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
     """
     data = []
 
-    # Process each exemplar length
-    for length in EXEMPLAR_LENGTHS:
-        rq = f"rq3.2_imitation_w_{length}words"
+    # Get actual exemplar lengths
+    actual_exemplar_lengths = get_actual_exemplar_lengths(base_dir)
+
+    # Process each exemplar length category
+    for target_length in [500, 1000, 2500]:
+        rq = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
+
+        # Get the actual length statistics for this RQ
+        if rq in actual_exemplar_lengths:
+            # Use mean length for this category
+            actual_length = sum(actual_exemplar_lengths[rq]) / len(
+                actual_exemplar_lengths[rq])
+        else:
+            # Fallback to target length if actual lengths not available
+            actual_length = target_length
+
+        logger.info(f"Using actual exemplar length {actual_length:.1f} for {rq}")
 
         for corpus in CORPORA:
             corpus_path = Path(base_dir) / corpus / rq_main / rq
@@ -74,7 +137,7 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                 logger.warning(f"Path not found: {corpus_path}")
                 continue
 
-            logger.info(f"Processing {corpus} with exemplar length {length}")
+            logger.info(f"Processing {corpus} with exemplar length {actual_length:.1f}")
 
             for model_dir in corpus_path.glob("*"):
                 if not model_dir.is_dir():
@@ -104,13 +167,13 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                         # Extract attribution metrics
                         post = tm_results['attribution']['post']
 
-                        # Create initial entry
+                        # Create initial entry with actual length
                         entry = {
                             'corpus': corpus,
                             'llm': llm,
                             'threat_model': threat_model,
                             'seed': seed,
-                            'exemplar_length': length,
+                            'exemplar_length': actual_length,  # Use actual length here
                             'accuracy@1': post.get('accuracy@1'),
                             'accuracy@5': post.get('accuracy@5'),
                             'true_class_confidence': post.get('true_class_confidence'),
@@ -132,19 +195,23 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                                     entry['pinc'] = np.mean(pinc_scores)
 
                             # Add BERTScore
-                            if 'bertscore' in quality and 'bertscore_f1_avg' in quality['bertscore']:
-                                entry['bertscore'] = quality['bertscore']['bertscore_f1_avg']
+                            if 'bertscore' in quality and 'bertscore_f1_avg' in quality[
+                                'bertscore']:
+                                entry['bertscore'] = quality['bertscore'][
+                                    'bertscore_f1_avg']
 
                             # Add METEOR
-                            if 'meteor' in quality and 'meteor_avg' in quality['meteor']:
+                            if 'meteor' in quality and 'meteor_avg' in quality[
+                                'meteor']:
                                 entry['meteor'] = quality['meteor']['meteor_avg']
 
                         data.append(entry)
 
     df = pd.DataFrame(data)
-    logger.info(f"Collected {len(df)} data points across {df['corpus'].nunique()} corpora, "
-                f"{df['llm'].nunique()} LLMs, {df['threat_model'].nunique()} threat models, "
-                f"and {df['exemplar_length'].nunique()} exemplar lengths")
+    logger.info(
+        f"Collected {len(df)} data points across {df['corpus'].nunique()} corpora, "
+        f"{df['llm'].nunique()} LLMs, {df['threat_model'].nunique()} threat models, "
+        f"and {df['exemplar_length'].nunique()} exemplar lengths")
 
     return df
 
@@ -1024,6 +1091,7 @@ def main():
     create_summary_report(results_df, str(output_dir))
 
     logger.info("Analysis complete")
+
 
 if __name__ == "__main__":
     main()
