@@ -61,6 +61,12 @@ def extract_exemplar_and_count(llm_output_file: str) -> dict:
     with open(llm_output_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    # If the loaded JSON is a list, take the first element.
+    if isinstance(data, list):
+        if len(data) == 0:
+            raise ValueError(f"Empty list in {llm_output_file}")
+        data = data[0]
+
     user_text = data.get("user", "")
     if not user_text:
         raise ValueError(f"No 'user' field found in {llm_output_file}")
@@ -85,6 +91,7 @@ def extract_exemplar_and_count(llm_output_file: str) -> dict:
         "word_count": word_count,
         "file": llm_output_file
     }
+
 
 
 def normalize_llm_name(model_name: str) -> str:
