@@ -727,17 +727,19 @@ def plot_exemplar_length_effect(
     sns.set_style("whitegrid")
 
     # Create category for exemplar length to ensure dots are properly spaced
+    # Convert exemplar_length to categorical for proper swarmplot behavior
+    df['exemplar_length_cat'] = df['exemplar_length'].astype('category')
     unique_lengths = sorted(df['exemplar_length'].unique())
 
-    # Use a swarmplot instead of stripplot to better visualize all points
-    sns.swarmplot(x='exemplar_length', y=metric, data=df,
+    # Use a swarmplot with categorical x values
+    sns.swarmplot(x='exemplar_length_cat', y=metric, data=df,
                   size=10, color='blue', alpha=0.7,
                   label=f'Observations (n={len(df)})')
 
     # Add count labels for each exemplar length
-    for length in unique_lengths:
+    for i, length in enumerate(unique_lengths):
         count = len(df[df['exemplar_length'] == length])
-        plt.text(list(unique_lengths).index(length),
+        plt.text(i,
                  df[df['exemplar_length'] == length][metric].max() + 0.02,
                  f"n={count}",
                  ha='center', va='bottom')
@@ -792,8 +794,8 @@ def plot_exemplar_length_effect(
     if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
         plt.gca().yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
 
-    # Ensure x-ticks are at the exemplar lengths
-    plt.xticks(unique_lengths)
+    # Ensure x-ticks are at the exemplar lengths and properly labeled
+    plt.xticks(range(len(unique_lengths)), labels=unique_lengths)
 
     # Add legend
     plt.legend(loc='best', fontsize=12)
@@ -808,6 +810,7 @@ def plot_exemplar_length_effect(
     plt.close()
 
     logger.info(f"Saved plot to {file_path}")
+
 
 def run_full_analysis(
         data: pd.DataFrame,
