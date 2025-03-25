@@ -37,19 +37,30 @@ CORPORA = ['ebg', 'rj']
 EXEMPLAR_LENGTHS = [500, 1000, 2500]
 
 
-def get_actual_exemplar_lengths_by_prompt(prompts_base_dir: str) -> Dict[str, Dict[int, float]]:
+def get_actual_exemplar_lengths_by_prompt(prompts_base_dir: str) -> Dict[
+    str, Dict[int, float]]:
     """
     Extract the actual word counts from each prompt file and build a nested dictionary.
 
-    Returns:
-        {
-          "rq3.2_imitation_w_500words": { seed_int: actual_word_count, ... },
-          "rq3.2_imitation_w_1000words": { ... },
-          "rq3.2_imitation_w_2500words": { ... }
-        }
+    For each RQ folder (e.g., "rq3.2_imitation_w_500words"), we collect a map of seed -> word_count.
+
+    Assumes prompt files are named like "promptNN.json" or "promptNNNN.json", etc.,
+    where "promptNN" is the 'stem'. We remove the 'prompt' prefix and parse the rest as an integer.
+
+    Example:
+      "prompt05.json" -> seed=5
+      "prompt42.json" -> seed=42
+      "prompt00.json" -> seed=0
     """
-    actual_lengths = {}
-    for length in EXEMPLAR_LENGTHS:
+    import json
+    from pathlib import Path
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    actual_lengths: Dict[str, Dict[int, float]] = {}
+
+    for length in [500, 1000, 2500]:
         rq = f"rq3.2_imitation_w_{length}words"
         prompt_dir = Path(prompts_base_dir) / rq
         if not prompt_dir.exists():
@@ -59,20 +70,32 @@ def get_actual_exemplar_lengths_by_prompt(prompts_base_dir: str) -> Dict[str, Di
         per_seed = {}
         for prompt_file in prompt_dir.glob("prompt*.json"):
             try:
-                with open(prompt_file) as f:
+                with open(prompt_file, "r") as f:
                     prompt_data = json.load(f)
-                # Assuming prompt files are named like "prompt_0.json", "prompt_1.json", etc.
-                stem = prompt_file.stem  # e.g. "prompt_0"
-                seed_str = stem.split("_")[-1]
+
+                stem = prompt_file.stem  # e.g. "prompt05"
+                # remove "prompt" prefix
+                seed_str = stem.replace("prompt", "")  # e.g. "05"
+                # handle leading zeros ("05" -> "5", "00" -> "0", etc.)
+                seed_str = seed_str.lstrip("0") or "0"
                 seed_int = int(seed_str)
-                if "metadata" in prompt_data and "word_count" in prompt_data["metadata"]:
-                    per_seed[seed_int] = prompt_data["metadata"]["word_count"]
+
+                # Now parse the word_count
+                if "metadata" in prompt_data and "word_count" in prompt_data[
+                    "metadata"]:
+                    per_seed[seed_int] = float(prompt_data["metadata"]["word_count"])
+                else:
+                    # Fallback or custom logic if "word_count" missing
+                    logger.warning(f"No 'metadata.word_count' in {prompt_file}")
             except Exception as e:
                 logger.error(f"Error processing {prompt_file}: {e}")
+
         if per_seed:
             actual_lengths[rq] = per_seed
             avg_count = sum(per_seed.values()) / len(per_seed)
-            logger.info(f"RQ {rq}: found {len(per_seed)} prompts with average word count {avg_count:.1f}")
+            logger.info(
+                f"RQ {rq}: found {len(per_seed)} prompts with average word count {avg_count:.1f}")
+
     return actual_lengths
 
 
