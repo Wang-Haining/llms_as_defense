@@ -586,12 +586,11 @@ def analyze_exemplar_length_effect(
 
 
 def plot_exemplar_length_effect(
-    data: pd.DataFrame,
-    results: Dict,
-    output_dir: str,
-    format: str = 'png'
+        data: pd.DataFrame,
+        results: Dict,
+        output_dir: str,
+        format: str = 'png'
 ) -> None:
-
     corpus = results['corpus']
     threat_model = results['threat_model']
     llm = results['llm']
@@ -603,86 +602,155 @@ def plot_exemplar_length_effect(
               (data['llm'] == llm)].copy()
     df = df.dropna(subset=[metric, 'exemplar_length'])
 
+    # Create figure and axes
     plt.figure(figsize=(12, 8))
     sns.set_style("whitegrid")
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    sns.stripplot(
-        x='exemplar_length',
-        y=metric,
-        data=df,
-        size=10,
-        color='blue',
-        alpha=0.5,
-        jitter=0.3,
-        ax=ax
-    )
-    ax.plot([], [], color='blue', label=f'Observations (n={len(df)})')
-
-    data_min, data_max = df[metric].min(), df[metric].max()
-    data_range = data_max - data_min
-    for length in sorted(df['exemplar_length'].unique()):
-        subset = df[df['exemplar_length'] == length]
-        count = len(subset)
-        max_y = subset[metric].max()
-        offset = 0.02 * data_range
-        ax.text(length, max_y + offset, f"n={count}", ha='center', va='bottom')
-
-    x_range = np.array(results['predictions']['x_range'])
-    y_pred_mean = np.array(results['predictions']['y_pred_mean'])
-    y_pred_hdi_lower = np.array(results['predictions']['y_pred_hdi_lower'])
-    y_pred_hdi_upper = np.array(results['predictions']['y_pred_hdi_upper'])
-
-    ax.plot(x_range, y_pred_mean, color='red', linewidth=2, label='Bayesian model fit')
-    ax.fill_between(x_range, y_pred_hdi_lower, y_pred_hdi_upper,
-                    color='red', alpha=0.2, label='95% HDI')
-
-    slope_info = (
-        f"Slope: {results['slope']['mean']:.6f} "
-        f"[95% HDI: {results['slope']['hdi'][0]:.6f}, {results['slope']['hdi'][1]:.6f}]"
-    )
-    effect_info = f"Effect (500→2500): {results['slope']['effect_2000_words']:.4f}"
-    prob_info = f"Posterior prob. beneficial: {results['slope']['posterior_prob_beneficial']:.3f}"
-    conclusion = f"Conclusion: {results['slope']['conclusion']}"
-    text_box = f"{slope_info}\n{effect_info}\n{prob_info}\n{conclusion}"
-
-    ax.annotate(text_box, xy=(0.05, 0.05), xycoords='axes fraction',
-                bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8))
-
-    metric_label = metric
-    if metric == 'accuracy@1':
-        metric_label = 'Top-1 Accuracy'
-    elif metric == 'accuracy@5':
-        metric_label = 'Top-5 Accuracy'
-    elif metric == 'true_class_confidence':
-        metric_label = 'True Class Confidence'
-    elif metric == 'entropy':
-        metric_label = 'Prediction Entropy'
-
-    direction_str = "↑ (Higher is better)" if higher_is_better else "↓ (Lower is better)"
-    ax.set_xlabel('Exemplar Length (words)', fontsize=14)
-    ax.set_ylabel(f'{metric_label} {direction_str}', fontsize=14)
-    ax.set_title(
-        f'Effect of Exemplar Length on {metric_label}\n'
-        f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
-        fontsize=16
-    )
-
-    if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
-        import matplotlib.ticker as mticker
-        ax.yaxis.set_major_formatter(mticker.PercentFormatter(1.0))
-
+    # Get unique exemplar lengths
     unique_lengths = sorted(df['exemplar_length'].unique())
-    ax.set_xticks(unique_lengths)
-    ax.set_xticklabels([str(int(l)) for l in unique_lengths])
-    ax.legend(loc='best', fontsize=12)
 
+    # Check if there's only one unique length
+    if len(unique_lengths) <= 1:
+        logger.warning(
+            f"Only one exemplar length ({unique_lengths}) found for {corpus}-{threat_model}-{llm}-{metric}. Cannot analyze length effect.")
+
+        # Create a simple bar plot instead of a regression
+        sns.barplot(
+            x='llm',  # Use LLM name as x-axis
+            y=metric,
+            data=df,
+            ax=ax,
+            ci=95,
+            capsize=0.2
+        )
+
+        # Add data points
+        sns.stripplot(
+            x='llm',
+            y=metric,
+            data=df,
+            size=8,
+            color='blue',
+            alpha=0.5,
+            jitter=True,
+            ax=ax
+        )
+
+        # Set title and labels
+        metric_label = metric
+        if metric == 'accuracy@1':
+            metric_label = 'Top-1 Accuracy'
+        elif metric == 'accuracy@5':
+            metric_label = 'Top-5 Accuracy'
+        elif metric == 'true_class_confidence':
+            metric_label = 'True Class Confidence'
+        elif metric == 'entropy':
+            metric_label = 'Prediction Entropy'
+
+        direction_str = "↑ (Higher is better)" if higher_is_better else "↓ (Lower is better)"
+        ax.set_xlabel('LLM', fontsize=14)
+        ax.set_ylabel(f'{metric_label} {direction_str}', fontsize=14)
+        ax.set_title(
+            f'{metric_label} with Exemplar Length = {unique_lengths[0]}\n'
+            f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
+            fontsize=16
+        )
+
+        # Format y-axis for percentage metrics
+        if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+            import matplotlib.ticker as mticker
+            ax.yaxis.set_major_formatter(mticker.PercentFormatter(1.0))
+
+        # Add annotation about insufficient data
+        ax.annotate(
+            f"Single exemplar length ({unique_lengths[0]}) - Cannot analyze length effect",
+            xy=(0.5, 0.01),
+            xycoords='axes fraction',
+            ha='center',
+            va='bottom',
+            bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8)
+        )
+
+    else:
+        # Original code for multiple exemplar lengths
+        sns.stripplot(
+            x='exemplar_length',
+            y=metric,
+            data=df,
+            size=10,
+            color='blue',
+            alpha=0.5,
+            jitter=0.3,
+            ax=ax
+        )
+        ax.plot([], [], color='blue', label=f'Observations (n={len(df)})')
+
+        data_min, data_max = df[metric].min(), df[metric].max()
+        data_range = data_max - data_min
+        for length in unique_lengths:
+            subset = df[df['exemplar_length'] == length]
+            count = len(subset)
+            max_y = subset[metric].max()
+            offset = 0.02 * data_range
+            ax.text(length, max_y + offset, f"n={count}", ha='center', va='bottom')
+
+        x_range = np.array(results['predictions']['x_range'])
+        y_pred_mean = np.array(results['predictions']['y_pred_mean'])
+        y_pred_hdi_lower = np.array(results['predictions']['y_pred_hdi_lower'])
+        y_pred_hdi_upper = np.array(results['predictions']['y_pred_hdi_upper'])
+
+        ax.plot(x_range, y_pred_mean, color='red', linewidth=2,
+                label='Bayesian model fit')
+        ax.fill_between(x_range, y_pred_hdi_lower, y_pred_hdi_upper,
+                        color='red', alpha=0.2, label='95% HDI')
+
+        slope_info = (
+            f"Slope: {results['slope']['mean']:.6f} "
+            f"[95% HDI: {results['slope']['hdi'][0]:.6f}, {results['slope']['hdi'][1]:.6f}]"
+        )
+        effect_info = f"Effect (500→2500): {results['slope']['effect_2000_words']:.4f}"
+        prob_info = f"Posterior prob. beneficial: {results['slope']['posterior_prob_beneficial']:.3f}"
+        conclusion = f"Conclusion: {results['slope']['conclusion']}"
+        text_box = f"{slope_info}\n{effect_info}\n{prob_info}\n{conclusion}"
+
+        ax.annotate(text_box, xy=(0.05, 0.05), xycoords='axes fraction',
+                    bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8))
+
+        metric_label = metric
+        if metric == 'accuracy@1':
+            metric_label = 'Top-1 Accuracy'
+        elif metric == 'accuracy@5':
+            metric_label = 'Top-5 Accuracy'
+        elif metric == 'true_class_confidence':
+            metric_label = 'True Class Confidence'
+        elif metric == 'entropy':
+            metric_label = 'Prediction Entropy'
+
+        direction_str = "↑ (Higher is better)" if higher_is_better else "↓ (Lower is better)"
+        ax.set_xlabel('Exemplar Length (words)', fontsize=14)
+        ax.set_ylabel(f'{metric_label} {direction_str}', fontsize=14)
+        ax.set_title(
+            f'Effect of Exemplar Length on {metric_label}\n'
+            f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
+            fontsize=16
+        )
+
+        if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+            import matplotlib.ticker as mticker
+            ax.yaxis.set_major_formatter(mticker.PercentFormatter(1.0))
+
+        ax.set_xticks(unique_lengths)
+        ax.set_xticklabels([str(int(l)) for l in unique_lengths])
+        ax.legend(loc='best', fontsize=12)
+
+    # Save the plot
     output_path = Path(output_dir) / corpus / threat_model / llm
     output_path.mkdir(parents=True, exist_ok=True)
     file_path = output_path / f"{metric}_exemplar_effect.{format}"
     plt.savefig(file_path, bbox_inches='tight', dpi=300)
     plt.close()
-    print(f"Saved plot to {file_path}")
+    logger.info(f"Saved plot to {file_path}")
 
 
 def run_full_analysis(
@@ -695,9 +763,16 @@ def run_full_analysis(
 ) -> pd.DataFrame:
     results = []
     corpora_to_analyze = [filter_corpus] if filter_corpus else CORPORA
-    threat_models_to_analyze = [filter_threat_model] if filter_threat_model else THREAT_MODELS
+    threat_models_to_analyze = [
+        filter_threat_model] if filter_threat_model else THREAT_MODELS
     llms_to_analyze = [filter_model] if filter_model else LLMS
     metrics_to_analyze = [filter_metric] if filter_metric else METRICS
+
+    # Keep track of skipped combinations
+    skipped_due_to_data = 0
+    skipped_due_to_variation = 0
+    failed_analyses = 0
+    successful_analyses = 0
 
     for corpus in corpora_to_analyze:
         for threat_model in threat_models_to_analyze:
@@ -707,16 +782,96 @@ def run_full_analysis(
                         (data['corpus'] == corpus) &
                         (data['threat_model'] == threat_model) &
                         (data['llm'] == llm)
-                    ]
-                    if len(subset) < 3 or metric not in subset.columns or subset[metric].isna().all():
-                        logger.warning(f"Skipping {corpus}-{threat_model}-{llm}-{metric}: insufficient data")
-                        continue
-                    logger.info(f"Analyzing {corpus}-{threat_model}-{llm}-{metric}")
+                        ]
 
+                    # Check for sufficient data
+                    if len(subset) < 3 or metric not in subset.columns or subset[
+                        metric].isna().all():
+                        logger.warning(
+                            f"Skipping {corpus}-{threat_model}-{llm}-{metric}: insufficient data")
+                        skipped_due_to_data += 1
+                        continue
+
+                    # Check for variation in exemplar lengths
+                    unique_lengths = subset['exemplar_length'].unique()
+                    if len(unique_lengths) <= 1:
+                        logger.warning(
+                            f"Skipping analysis for {corpus}-{threat_model}-{llm}-{metric}: only one exemplar length ({unique_lengths[0]})")
+                        skipped_due_to_variation += 1
+
+                        # Still plot the data, but don't analyze the length effect
+                        try:
+                            dummy_results = {
+                                "corpus": corpus,
+                                "threat_model": threat_model,
+                                "llm": llm,
+                                "metric": metric,
+                                "higher_is_better": metric in ['entropy', 'bertscore',
+                                                               'pinc', 'meteor'],
+                                "data_points": len(subset),
+                                "data_by_length": subset[
+                                    'exemplar_length'].value_counts().to_dict(),
+                                "mean_value": subset[metric].mean(),
+                                "is_binary": False,
+                                "slope": {
+                                    "mean": 0,
+                                    "std": 0,
+                                    "hdi": [0, 0],
+                                    "posterior_prob_beneficial": 0.5,
+                                    "prob_improvement": 0.5,
+                                    "direction": "neutral",
+                                    "significance": "Not Credible",
+                                    "effect_per_1000_words": 0,
+                                    "effect_2000_words": 0,
+                                    "in_rope": 1.0,
+                                    "conclusion": "Insufficient Data"
+                                },
+                                "predictions": {
+                                    "x_range": unique_lengths.tolist(),
+                                    "y_pred_mean": [subset[metric].mean()] * len(
+                                        unique_lengths),
+                                    "y_pred_hdi_lower": [subset[
+                                                             metric].mean() - 0.1] * len(
+                                        unique_lengths),
+                                    "y_pred_hdi_upper": [subset[
+                                                             metric].mean() + 0.1] * len(
+                                        unique_lengths)
+                                }
+                            }
+
+                            results.append({
+                                'Corpus': corpus.upper(),
+                                'Threat Model': threat_model.upper(),
+                                'LLM': llm.title(),
+                                'Metric': metric,
+                                'Higher is Better': dummy_results['higher_is_better'],
+                                'Data Points': dummy_results['data_points'],
+                                'Mean Value': dummy_results['mean_value'],
+                                'Slope': 0,
+                                'Slope HDI Lower': 0,
+                                'Slope HDI Upper': 0,
+                                'P(Improvement)': 0.5,
+                                'Effect per 1000 words': 0,
+                                'Effect (500→2500)': 0,
+                                'In ROPE': 1.0,
+                                'Conclusion': "Insufficient Data"
+                            })
+
+                            plot_exemplar_length_effect(data, dummy_results, output_dir)
+                        except Exception as e:
+                            logger.error(
+                                f"Error creating plot for single-length data {corpus}-{threat_model}-{llm}-{metric}: {e}")
+
+                        continue
+
+                    # Regular analysis for multiple exemplar lengths
+                    logger.info(f"Analyzing {corpus}-{threat_model}-{llm}-{metric}")
                     try:
-                        analysis = analyze_exemplar_length_effect(data, metric, corpus, threat_model, llm)
+                        analysis = analyze_exemplar_length_effect(data, metric, corpus,
+                                                                  threat_model, llm)
                         if 'error' in analysis:
                             logger.warning(f"Analysis failed: {analysis['error']}")
+                            failed_analyses += 1
                             continue
 
                         results.append({
@@ -731,29 +886,50 @@ def run_full_analysis(
                             'Slope HDI Lower': analysis['slope']['hdi'][0],
                             'Slope HDI Upper': analysis['slope']['hdi'][1],
                             'P(Improvement)': analysis['slope']['prob_improvement'],
-                            'Effect per 1000 words': analysis['slope']['effect_per_1000_words'],
+                            'Effect per 1000 words': analysis['slope'][
+                                'effect_per_1000_words'],
                             'Effect (500→2500)': analysis['slope']['effect_2000_words'],
                             'In ROPE': analysis['slope']['in_rope'],
                             'Conclusion': analysis['slope']['conclusion']
                         })
 
                         plot_exemplar_length_effect(data, analysis, output_dir)
+                        successful_analyses += 1
 
                     except Exception as e:
-                        logger.error(f"Error analyzing {corpus}-{threat_model}-{llm}-{metric}: {e}")
+                        logger.error(
+                            f"Error analyzing {corpus}-{threat_model}-{llm}-{metric}: {e}")
+                        failed_analyses += 1
 
     results_df = pd.DataFrame(results)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(Path(output_dir) / "exemplar_length_analysis_results.csv", index=False)
+    results_df.to_csv(Path(output_dir) / "exemplar_length_analysis_results.csv",
+                      index=False)
+
+    # Log summary of analysis status
+    logger.info(f"Analysis summary:")
+    logger.info(f"  - Successful analyses: {successful_analyses}")
+    logger.info(f"  - Skipped due to insufficient data: {skipped_due_to_data}")
+    logger.info(
+        f"  - Skipped due to lack of length variation: {skipped_due_to_variation}")
+    logger.info(f"  - Failed analyses: {failed_analyses}")
+    logger.info(f"  - Total results recorded: {len(results_df)}")
     logger.info(f"Analysis complete. Results saved to {output_dir}")
+
     return results_df
 
 
 def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
     from pathlib import Path
     report_path = Path(output_dir) / "exemplar_length_analysis_report.md"
+
+    # Filter out rows with "Insufficient Data" conclusion
+    valid_results = results_df[results_df['Conclusion'] != "Insufficient Data"]
+    insufficient_data = results_df[results_df['Conclusion'] == "Insufficient Data"]
+
     with open(report_path, 'w') as f:
-        f.write("# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
+        f.write(
+            "# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
         f.write("## Overview\n\n")
         f.write(
             "This analysis examines the effect of *actual* exemplar length on the effectiveness "
@@ -761,25 +937,99 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
             "the exemplar text from each seed_{seed}.json, count its words, and model how that length "
             "impacts various metrics.\n\n"
         )
-        f.write(f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
-        f.write(f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
-        f.write(f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
-        f.write(f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
+        f.write(
+            f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
+        f.write(
+            f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
+        f.write(
+            f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
+        f.write(
+            f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
 
-        # Additional details
-        credible = results_df[results_df['Conclusion'].str.contains('Significant')]
-        improvements = credible[credible['Conclusion'].str.contains('Improvement')]
-        deteriorations = credible[credible['Conclusion'].str.contains('Deterioration')]
-        inconclusive = results_df[results_df['Conclusion'] == 'Inconclusive']
-        equivalent = results_df[results_df['Conclusion'] == 'Practically Equivalent']
+        # Data availability summary
+        f.write("## Data Availability\n\n")
+        f.write(f"Out of {len(results_df)} total test combinations:\n\n")
+        f.write(
+            f"- **Valid for exemplar length analysis**: {len(valid_results)} ({len(valid_results) / len(results_df):.1%})\n")
+        f.write(
+            f"- **Insufficient exemplar length variation**: {len(insufficient_data)} ({len(insufficient_data) / len(results_df):.1%})\n\n")
 
-        total_tests = len(results_df)
-        f.write("## Overall Findings\n\n")
-        f.write(f"Out of {total_tests} total tests:\n\n")
-        f.write(f"- **Credible improvements with longer exemplars**: {len(improvements)} ({len(improvements) / total_tests:.1%})\n")
-        f.write(f"- **Credible deteriorations with longer exemplars**: {len(deteriorations)} ({len(deteriorations) / total_tests:.1%})\n")
-        f.write(f"- **Inconclusive results**: {len(inconclusive)} ({len(inconclusive) / total_tests:.1%})\n")
-        f.write(f"- **Practically equivalent results**: {len(equivalent)} ({len(equivalent) / total_tests:.1%})\n\n")
+        f.write(
+            "Many combinations have only a single exemplar length, making it impossible to analyze the effect of length variation.\n\n")
+
+        # If we have valid results, show the findings
+        if not valid_results.empty:
+            # Additional details for valid analyses
+            credible = valid_results[
+                valid_results['Conclusion'].str.contains('Significant')]
+            improvements = credible[credible['Conclusion'].str.contains('Improvement')]
+            deteriorations = credible[
+                credible['Conclusion'].str.contains('Deterioration')]
+            inconclusive = valid_results[valid_results['Conclusion'] == 'Inconclusive']
+            equivalent = valid_results[
+                valid_results['Conclusion'] == 'Practically Equivalent']
+
+            total_valid = len(valid_results)
+            f.write("## Overall Findings (among valid analyses)\n\n")
+            f.write(f"Out of {total_valid} valid analyses:\n\n")
+
+            if total_valid > 0:
+                f.write(
+                    f"- **Credible improvements with longer exemplars**: {len(improvements)} ({len(improvements) / total_valid:.1%})\n")
+                f.write(
+                    f"- **Credible deteriorations with longer exemplars**: {len(deteriorations)} ({len(deteriorations) / total_valid:.1%})\n")
+                f.write(
+                    f"- **Inconclusive results**: {len(inconclusive)} ({len(inconclusive) / total_valid:.1%})\n")
+                f.write(
+                    f"- **Practically equivalent results**: {len(equivalent)} ({len(equivalent) / total_valid:.1%})\n\n")
+
+                # Add more detailed findings if there are any credible effects
+                if len(improvements) > 0 or len(deteriorations) > 0:
+                    f.write("### Significant Effects\n\n")
+                    if len(improvements) > 0:
+                        f.write("#### Improvements with Longer Exemplars\n\n")
+                        for _, row in improvements.iterrows():
+                            f.write(
+                                f"- {row['LLM']} | {row['Metric']} | {row['Threat Model']}: "
+                                f"Effect size = {row['Effect (500→2500)']:.4f}, "
+                                f"P(beneficial) = {row['P(Improvement)']:.4f}\n")
+                        f.write("\n")
+
+                    if len(deteriorations) > 0:
+                        f.write("#### Deteriorations with Longer Exemplars\n\n")
+                        for _, row in deteriorations.iterrows():
+                            f.write(
+                                f"- {row['LLM']} | {row['Metric']} | {row['Threat Model']}: "
+                                f"Effect size = {row['Effect (500→2500)']:.4f}, "
+                                f"P(detrimental) = {1 - row['P(Improvement)']:.4f}\n")
+                        f.write("\n")
+            else:
+                f.write(
+                    "No valid analyses with multiple exemplar lengths were found.\n\n")
+        else:
+            f.write("## Overall Findings\n\n")
+            f.write(
+                "No valid analyses with multiple exemplar lengths were found. All combinations have only a single exemplar length, making it impossible to analyze length effects.\n\n")
+
+        # Conclusion
+        f.write("\n## Conclusion\n\n")
+        if not valid_results.empty and (
+                len(improvements) > 0 or len(deteriorations) > 0):
+            f.write(
+                "Based on the available data with varying exemplar lengths, there are some significant effects observed. However, the majority of data points have insufficient variation in exemplar length to draw firm conclusions about the effect of exemplar length on defense effectiveness.\n")
+
+            if len(improvements) > len(deteriorations):
+                f.write(
+                    "\nThere is a tendency toward improvement with longer exemplars, but more data with varying exemplar lengths would be needed to confirm this pattern.\n")
+            elif len(deteriorations) > len(improvements):
+                f.write(
+                    "\nThere is a tendency toward deterioration with longer exemplars, but more data with varying exemplar lengths would be needed to confirm this pattern.\n")
+            else:
+                f.write(
+                    "\nThe effects of longer exemplars appear mixed, with equal numbers of improvements and deteriorations observed.\n")
+        else:
+            f.write(
+                "The current dataset does not have sufficient variation in exemplar lengths to draw conclusions about the effect of exemplar length on defense effectiveness. Future experiments should include a wider range of exemplar lengths for each combination of corpus, threat model, LLM, and metric.\n")
 
     logger.info(f"Summary report saved to {report_path}")
 
