@@ -102,13 +102,7 @@ def normalize_llm_name(model_name: str) -> str:
 
 def prepare_data(base_dir: str) -> pd.DataFrame:
     """
-    Extract and organize data from evaluation results.
-
-    Args:
-        base_dir: Base directory containing evaluation results
-
-    Returns:
-        DataFrame with columns for corpus, llm, threat_model, exemplar_length, and metrics
+    Extract and organize data from evaluation results, including binary success/failure outcomes.
     """
     data = []
 
@@ -122,11 +116,9 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
 
         # Get the actual length statistics for this RQ
         if rq in actual_exemplar_lengths:
-            # Use mean length for this category
             actual_length = sum(actual_exemplar_lengths[rq]) / len(
                 actual_exemplar_lengths[rq])
         else:
-            # Fallback to target length if actual lengths not available
             actual_length = target_length
 
         logger.info(f"Using actual exemplar length {actual_length:.1f} for {rq}")
@@ -158,13 +150,13 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                     logger.error(f"Error parsing {eval_file}")
                     continue
 
-                # Extract metrics for each seed and threat model
+                # For each seed, process the evaluation results
                 for seed, seed_results in results.items():
                     for threat_model, tm_results in seed_results.items():
-                        if threat_model not in THREAT_MODELS or 'attribution' not in tm_results:
+                        if threat_model not in THREAT_MODELS:
                             continue
 
-                        # Extract attribution metrics
+                        # Extract aggregated attribution metrics
                         post = tm_results['attribution']['post']
 
                         # Create initial entry with actual length
@@ -173,7 +165,7 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                             'llm': llm,
                             'threat_model': threat_model,
                             'seed': seed,
-                            'exemplar_length': actual_length,  # Use actual length here
+                            'exemplar_length': actual_length,
                             'accuracy@1': post.get('accuracy@1'),
                             'accuracy@5': post.get('accuracy@5'),
                             'true_class_confidence': post.get('true_class_confidence'),
@@ -200,12 +192,32 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                                 entry['bertscore'] = quality['bertscore'][
                                     'bertscore_f1_avg']
 
-                            # Add METEOR
-                            if 'meteor' in quality and 'meteor_avg' in quality[
-                                'meteor']:
-                                entry['meteor'] = quality['meteor']['meteor_avg']
-
                         data.append(entry)
+
+                        # Now try to extract binary outcomes from example_metrics
+                        # Look for a corresponding seed file with example_metrics
+                        seed_file = model_dir / f"seed_{seed}.json"
+                        if seed_file.exists():
+                            try:
+                                with open(seed_file) as f:
+                                    detailed_data = json.load(f)
+
+                                if 'example_metrics' in detailed_data:
+                                    # Extract binary outcomes
+                                    binary_acc1 = [
+                                        1 if ex['transformed_rank'] == 0 else 0
+                                        for ex in detailed_data['example_metrics']]
+                                    binary_acc5 = [
+                                        1 if ex['transformed_rank'] < 5 else 0
+                                        for ex in detailed_data['example_metrics']]
+
+                                    # Add to entry
+                                    entry['binary_acc1'] = binary_acc1
+                                    entry['binary_acc5'] = binary_acc5
+
+                            except Exception as e:
+                                logger.error(
+                                    f"Error processing seed file {seed_file}: {e}")
 
     df = pd.DataFrame(data)
     logger.info(
@@ -258,6 +270,156 @@ def analyze_exemplar_length_effect(
     if higher_is_better is None:
         higher_is_better = metric in ['entropy', 'bertscore', 'pinc', 'meteor']
 
+    # For accuracy metrics, use binary outcomes if available
+    binary_key = f'binary_{metric.replace("@", "")}'
+    if metric in ['accuracy@1', 'accuracy@5'] and binary_key in df.columns:
+        # Unpack binary outcomes into a flatter structure
+        binary_rows = []
+        for _, row in df.iterrows():
+            if binary_key in row and isinstance(row[binary_key], list):
+                for outcome in row[binary_key]:
+                    binary_rows.append({
+                        'corpus': row['corpus'],
+                        'llm': row['llm'],
+                        'threat_model': row['threat_model'],
+                        'seed': row['seed'],
+                        'exemplar_length': row['exemplar_length'],
+                        'binary_outcome': outcome
+                    })
+
+        # Create a new dataframe with binary outcomes
+        binary_df = pd.DataFrame(binary_rows)
+        if len(binary_df) == 0:
+            logger.warning(
+                f"No binary outcomes found for {metric}, falling back to aggregate values")
+        else:
+            logger.info(f"Using {len(binary_df)} binary outcomes for {metric}")
+
+            # Extract x and y, dropping NaNs
+            binary_df = binary_df.dropna(subset=['binary_outcome', 'exemplar_length'])
+            x = binary_df['exemplar_length'].values
+            y = binary_df['binary_outcome'].values
+
+            # Scale inputs for numerical stability
+            x_mean = np.mean(x)
+            x_range = np.linspace(min(x), max(x), 100)
+            x_scaled = x / 1000  # Scale to per 1000 words
+
+            # Build a Bayesian logistic regression model for binary outcomes
+            with pm.Model() as model:
+                # Priors
+                alpha = pm.Normal("alpha", mu=0, sigma=1)
+                beta = pm.Normal("beta", mu=0, sigma=0.1)
+
+                # Expected value
+                mu = alpha + beta * x_scaled
+                theta = pm.math.invlogit(mu)  # Transform to (0, 1)
+
+                # Bernoulli likelihood for binary outcomes
+                likelihood = pm.Bernoulli("likelihood", p=theta, observed=y)
+
+                # Inference
+                trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
+                          cores=4, return_inferencedata=True)
+
+                # Predictions
+                alpha_samples = trace.posterior["alpha"].values.flatten()
+                beta_samples = trace.posterior["beta"].values.flatten()
+
+                # Compute mean and HDI for beta
+                beta_mean = float(np.mean(beta_samples))
+                beta_std = float(np.std(beta_samples))
+                beta_hdi = az.hdi(trace.posterior.beta.values.flatten(), hdi_prob=0.95)
+
+                # Compute posterior probability of improvement
+                if higher_is_better:
+                    posterior_prob_beneficial = float(np.mean(beta_samples > 0))
+                    direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
+                else:
+                    posterior_prob_beneficial = float(np.mean(beta_samples < 0))
+                    direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+
+                # Region of Practical Equivalence (ROPE) analysis
+                rope_bounds = (-0.01, 0.01)  # Effect size considered negligible
+                in_rope = float(np.mean(
+                    (beta_samples >= rope_bounds[0]) & (
+                                beta_samples <= rope_bounds[1])))
+
+                # Determine significance
+                if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (
+                        beta_hdi[0] > 0 and beta_hdi[1] > 0):
+                    significance = "Credible Effect"
+                else:
+                    significance = "Not Credible"
+
+                # Generate predictions for the plot
+                pred_samples = []
+                for i in range(100):  # Use 100 posterior samples
+                    idx = np.random.randint(0, len(alpha_samples))
+                    a, b = alpha_samples[idx], beta_samples[idx]
+
+                    # For binary outcomes, predict probability
+                    logit = a + b * (x_range / 1000)
+                    pred = 1 / (1 + np.exp(-logit))
+                    pred_samples.append(pred)
+
+                pred_samples = np.array(pred_samples)
+                y_pred_mean = np.mean(pred_samples, axis=0)
+                y_pred_hdi = az.hdi(pred_samples, hdi_prob=0.95)
+                y_pred_hdi_lower = y_pred_hdi[0, :]
+                y_pred_hdi_upper = y_pred_hdi[1, :]
+
+                # Determine conclusion
+                if in_rope > 0.95:
+                    conclusion = "Practically Equivalent"
+                elif significance == "Credible Effect":
+                    if (higher_is_better and beta_mean > 0) or (
+                            not higher_is_better and beta_mean < 0):
+                        conclusion = "Significant Improvement"
+                    else:
+                        conclusion = "Significant Deterioration"
+                else:
+                    conclusion = "Inconclusive"
+
+                # Calculate effect sizes
+                effect_per_1000_words = beta_mean
+                effect_2000_words = beta_mean * 2
+
+                # Return results dictionary
+                return {
+                    "corpus": corpus,
+                    "threat_model": threat_model,
+                    "llm": llm,
+                    "metric": metric,
+                    "higher_is_better": higher_is_better,
+                    "data_points": len(binary_df),
+                    "data_by_length": binary_df[
+                        'exemplar_length'].value_counts().to_dict(),
+                    "mean_value": np.mean(y),
+                    "is_binary": True,
+                    "slope": {
+                        "mean": beta_mean,
+                        "std": beta_std,
+                        "hdi": beta_hdi.tolist(),
+                        "posterior_prob_beneficial": posterior_prob_beneficial,
+                        "prob_improvement": posterior_prob_beneficial,
+                        # Backward compatibility
+                        "direction": direction,
+                        "significance": significance,
+                        "effect_per_1000_words": effect_per_1000_words,
+                        "effect_2000_words": effect_2000_words,
+                        "in_rope": in_rope,
+                        "conclusion": conclusion
+                    },
+                    "predictions": {
+                        "x_range": x_range.tolist(),
+                        "y_pred_mean": y_pred_mean.tolist(),
+                        "y_pred_hdi_lower": y_pred_hdi_lower.tolist(),
+                        "y_pred_hdi_upper": y_pred_hdi_upper.tolist()
+                    }
+                }
+
+    # For non-binary metrics or if binary data not available
     # Extract x and y, dropping NaNs
     df = df.dropna(subset=[metric, 'exemplar_length'])
     x = df['exemplar_length'].values
@@ -303,7 +465,8 @@ def analyze_exemplar_length_effect(
             likelihood = pm.Normal("likelihood", mu=mu, sigma=sigma, observed=y_scaled)
 
         # Inference
-        trace = pm.sample(2000, tune=1000, target_accept=0.9, return_inferencedata=True)
+        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
+                          cores=4, return_inferencedata=True)
 
         # Predictions
         alpha_samples = trace.posterior["alpha"].values.flatten()
@@ -386,6 +549,7 @@ def analyze_exemplar_length_effect(
         "data_points": len(df),
         "data_by_length": df['exemplar_length'].value_counts().to_dict(),
         "mean_value": y_mean,
+        "is_binary": False,
         "slope": {
             "mean": beta_mean,
             "std": beta_std,
