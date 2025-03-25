@@ -313,6 +313,276 @@ def extract_exemplar_length(file_path):
         return None
 
 
+def prepare_data(
+        evaluation_base_dir: str,
+        llm_outputs_base_dir: str,
+        debug: bool = False
+) -> pd.DataFrame:
+    """
+    Combine metrics from defense_evaluation with actual exemplar text from llm_outputs.
+
+    Instead of using the target length from the folder name, look for the prompt_index
+    in each seed_{seed}.json file, then locate the corresponding prompt file to extract
+    the actual exemplar length.
+    """
+    data = []
+    total_rows = 0
+    missing_eval_files = 0
+    missing_llm_files = 0
+    parse_errors = 0
+
+    for target_length in [500, 1000, 2500]:
+        rq_folder = f"rq3.2_imitation_w_{target_length}words"
+        rq_main = "rq3"
+
+        for corpus in CORPORA:
+            eval_rq_path = Path(evaluation_base_dir) / corpus / rq_main / rq_folder
+            llm_rq_path = Path(llm_outputs_base_dir) / corpus / rq_main / rq_folder
+            prompt_path = Path('prompts') / rq_folder
+
+            if debug:
+                logger.info(f"[DEBUG] Checking corpus={corpus}, RQ folder={rq_folder}")
+                logger.info(
+                    f"[DEBUG] eval_rq_path={eval_rq_path}, llm_rq_path={llm_rq_path}")
+                logger.info(f"[DEBUG] prompt_path={prompt_path}")
+
+            if not eval_rq_path.exists() or not llm_rq_path.exists():
+                if debug:
+                    logger.warning(
+                        f"[DEBUG] Required paths not found: eval={eval_rq_path.exists()}, llm={llm_rq_path.exists()}")
+                missing_eval_files += int(not eval_rq_path.exists())
+                missing_llm_files += int(not llm_rq_path.exists())
+                continue
+
+            for model_dir in eval_rq_path.glob("*"):
+                if not model_dir.is_dir():
+                    continue
+
+                model_name = model_dir.name  # e.g. "gemma-2-9b-it"
+                llm_eval_dir = model_dir  # evaluation metrics folder
+                llm_out_dir = llm_rq_path / model_name  # corresponding folder in llm_outputs
+
+                if not llm_out_dir.exists():
+                    if debug:
+                        logger.warning(
+                            f"[DEBUG] No matching LLM output dir for {llm_out_dir}")
+                    missing_llm_files += 1
+                    continue
+
+                eval_file = llm_eval_dir / "evaluation.json"
+                if not eval_file.exists():
+                    if debug:
+                        logger.warning(
+                            f"[DEBUG] evaluation.json not found: {eval_file}")
+                    missing_eval_files += 1
+                    continue
+
+                # Load evaluation data
+                try:
+                    with open(eval_file, "r") as f:
+                        evaluation_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    if debug:
+                        logger.error(f"[DEBUG] Error parsing {eval_file}: {e}")
+                    parse_errors += 1
+                    continue
+
+                # Process each seed
+                for seed_str, seed_results in evaluation_data.items():
+                    llm_seed_file = llm_out_dir / f"seed_{seed_str}.json"
+
+                    if not llm_seed_file.exists():
+                        if debug:
+                            logger.warning(
+                                f"[DEBUG] Missing LLM seed file: {llm_seed_file}")
+                        missing_llm_files += 1
+                        continue
+
+                    # First, get prompt_index from the seed file
+                    try:
+                        with open(llm_seed_file, "r", encoding="utf-8") as f:
+                            seed_data = json.load(f)
+
+                        # Handle list or single object
+                        if isinstance(seed_data, list) and len(seed_data) > 0:
+                            prompt_index = seed_data[0].get("prompt_index")
+                        elif isinstance(seed_data, dict):
+                            prompt_index = seed_data.get("prompt_index")
+                        else:
+                            prompt_index = None
+
+                        # If prompt_index is available, try to find the corresponding prompt file
+                        actual_exemplar_length = None
+                        if prompt_index is not None:
+                            prompt_file = prompt_path / f"prompt{prompt_index:02d}.json"
+                            if prompt_file.exists():
+                                if debug:
+                                    logger.info(
+                                        f"[DEBUG] Found prompt file {prompt_file}")
+                                with open(prompt_file, "r", encoding="utf-8") as f:
+                                    prompt_data = json.load(f)
+                                exemplar_text = extract_exemplar_from_prompt(
+                                    prompt_data)
+                                if exemplar_text:
+                                    tokenizer = MosesTokenizer(lang='en')
+                                    tokens = tokenizer.tokenize(exemplar_text,
+                                                                escape=False)
+                                    actual_exemplar_length = len(tokens)
+                                    if debug:
+                                        logger.info(
+                                            f"[DEBUG] Extracted exemplar length: {actual_exemplar_length}")
+
+                        # If we couldn't get the exemplar length from prompt file,
+                        # fall back to extracting it from the seed file
+                        if actual_exemplar_length is None:
+                            actual_exemplar_length = extract_exemplar_length(
+                                str(llm_seed_file))
+
+                        # If we still don't have an exemplar length, use target length as fallback
+                        if actual_exemplar_length is None:
+                            if debug:
+                                logger.warning(
+                                    f"[DEBUG] Using target length as fallback for {llm_seed_file}")
+                            actual_exemplar_length = target_length
+
+                    except Exception as e:
+                        if debug:
+                            logger.warning(
+                                f"[DEBUG] Error extracting exemplar info from {llm_seed_file}: {e}")
+                        parse_errors += 1
+                        actual_exemplar_length = target_length  # fallback
+
+                    # Extract metrics for each threat model
+                    for threat_model, tm_data in seed_results.items():
+                        if threat_model not in THREAT_MODELS:
+                            continue
+
+                        if "attribution" not in tm_data or "post" not in tm_data[
+                            "attribution"]:
+                            if debug:
+                                logger.warning(
+                                    f"[DEBUG] Missing attribution data for {threat_model} in seed {seed_str}")
+                            continue
+
+                        post = tm_data["attribution"]["post"]
+
+                        row = {
+                            "corpus": corpus,
+                            "llm": normalize_llm_name(model_name),
+                            "threat_model": threat_model,
+                            "seed": seed_str,
+                            "exemplar_length": float(actual_exemplar_length),
+                            "target_length": float(target_length),
+                            # keep track of target length too
+                            "prompt_index": prompt_index,
+                            # store prompt_index if available
+                            "accuracy@1": post.get("accuracy@1"),
+                            "accuracy@5": post.get("accuracy@5"),
+                            "true_class_confidence": post.get("true_class_confidence"),
+                            "entropy": post.get("entropy")
+                        }
+
+                        # Extract quality metrics if available
+                        if "quality" in tm_data:
+                            q = tm_data["quality"]
+                            if "pinc" in q:
+                                pinc_scores = []
+                                for k in range(1, 5):
+                                    key = f"pinc_{k}_avg"
+                                    if key in q["pinc"]:
+                                        pinc_scores.append(q["pinc"][key])
+                                if pinc_scores:
+                                    row["pinc"] = float(np.mean(pinc_scores))
+
+                            if "bertscore" in q and "bertscore_f1_avg" in q[
+                                "bertscore"]:
+                                row["bertscore"] = q["bertscore"]["bertscore_f1_avg"]
+
+                        # Extract binary metrics if available
+                        try:
+                            eval_seed_file = llm_eval_dir / f"seed_{seed_str}.json"
+                            if eval_seed_file.exists():
+                                with open(eval_seed_file, "r") as f:
+                                    detailed_eval_data = json.load(f)
+                                if "example_metrics" in detailed_eval_data:
+                                    binary_acc1 = [
+                                        1 if ex["transformed_rank"] == 0 else 0
+                                        for ex in detailed_eval_data["example_metrics"]
+                                    ]
+                                    binary_acc5 = [
+                                        1 if ex["transformed_rank"] < 5 else 0
+                                        for ex in detailed_eval_data["example_metrics"]
+                                    ]
+                                    row["binary_acc1"] = binary_acc1
+                                    row["binary_acc5"] = binary_acc5
+                        except Exception as e:
+                            if debug:
+                                logger.warning(
+                                    f"[DEBUG] Error extracting binary metrics from {eval_seed_file}: {e}")
+
+                        data.append(row)
+                        total_rows += 1
+
+    df = pd.DataFrame(data)
+    if df.empty:
+        logger.error(
+            "No data collected. Please check that evaluation and LLM output files exist and have the expected structure.")
+        return df
+
+    logger.info(
+        f"Collected {len(df)} data points across "
+        f"{df['corpus'].nunique()} corpora, "
+        f"{df['llm'].nunique()} LLMs, "
+        f"{df['threat_model'].nunique()} threat models, "
+        f"and {df['exemplar_length'].nunique()} distinct exemplar lengths."
+    )
+    logger.info(
+        f"Missing eval files: {missing_eval_files}, missing llm files: {missing_llm_files}, parse_errors: {parse_errors}"
+    )
+    if debug:
+        logger.info(
+            f"[DEBUG] total_rows processed = {total_rows}, final df size = {len(df)}")
+
+        # Log distribution of exemplar lengths
+        logger.info(f"[DEBUG] Exemplar length distribution:")
+        for corpus in df['corpus'].unique():
+            for llm in df['llm'].unique():
+                for threat_model in df['threat_model'].unique():
+                    subset = df[(df['corpus'] == corpus) &
+                                (df['llm'] == llm) &
+                                (df['threat_model'] == threat_model)]
+                    if not subset.empty:
+                        logger.info(f"[DEBUG] {corpus}-{threat_model}-{llm}: "
+                                    f"lengths = {sorted(subset['exemplar_length'].unique())}, "
+                                    f"count = {subset.groupby('exemplar_length').size().to_dict()}")
+
+    return df
+
+
+def extract_exemplar_from_prompt(prompt_data):
+    """Extract exemplar text from a prompt JSON object"""
+    if not isinstance(prompt_data, dict):
+        return None
+
+    # Extract the user instruction which contains the exemplar
+    user_instruction = prompt_data.get("user", "")
+    if not user_instruction:
+        return None
+
+    # Try to extract the exemplar between "expected to mimic:" and "Please rewrite"
+    mimic_start = user_instruction.find("expected to mimic:")
+    if mimic_start == -1:
+        return None
+
+    mimic_start += len("expected to mimic:")
+    rewrite_start = user_instruction.find("Please rewrite", mimic_start)
+    if rewrite_start == -1:
+        return None
+
+    exemplar_text = user_instruction[mimic_start:rewrite_start].strip()
+    return exemplar_text
+
+
 def extract_binary_metrics(file_path):
     """
     Extract binary metrics from an evaluation seed file.
