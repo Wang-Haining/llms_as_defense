@@ -238,6 +238,9 @@ def analyze_exemplar_length_effect(
     """
     Analyze the effect of exemplar length on a metric using Bayesian modeling.
 
+    Uses robust Bayesian methods following Kruschke's approach for modeling
+    binary and continuous outcomes.
+
     Args:
         data: DataFrame with evaluation data
         metric: Metric to analyze
@@ -302,232 +305,345 @@ def analyze_exemplar_length_effect(
             # Scale inputs for numerical stability
             x_mean = np.mean(x)
             x_range = np.linspace(min(x), max(x), 100)
-            x_scaled = x / 1000  # Scale to per 1000 words
+            x_scaled = (x - x_mean) / 1000.0  # Center and scale
 
-            # Build a Bayesian logistic regression model for binary outcomes
+            # Build a robust Bayesian logistic regression model for binary outcomes
             with pm.Model() as model:
-                # Priors
-                alpha = pm.Normal("alpha", mu=0, sigma=1)
-                beta = pm.Normal("beta", mu=0, sigma=0.1)
+                try:
+                    # More robust priors following Kruschke's recommendations
+                    # Normal prior for intercept with appropriate scale
+                    alpha = pm.Normal("alpha", mu=0, sigma=2)
 
-                # Expected value
-                mu = alpha + beta * x_scaled
-                theta = pm.math.invlogit(mu)  # Transform to (0, 1)
+                    # Cauchy prior for slope - more robust to outliers and heavy tails
+                    beta = pm.Cauchy("beta", alpha=0, beta=0.5)
 
-                # Bernoulli likelihood for binary outcomes
-                likelihood = pm.Bernoulli("likelihood", p=theta, observed=y)
+                    # Linear predictor (log-odds)
+                    eta = alpha + beta * x_scaled
 
-                # Inference
-                trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
-                          cores=4, return_inferencedata=True)
+                    # Convert log-odds to probability
+                    theta = pm.Deterministic("theta", pm.math.invlogit(eta))
 
-                # Predictions
-                alpha_samples = trace.posterior["alpha"].values.flatten()
-                beta_samples = trace.posterior["beta"].values.flatten()
+                    # Bernoulli likelihood for binary outcomes
+                    likelihood = pm.Bernoulli("likelihood", p=theta, observed=y)
 
-                # Compute mean and HDI for beta
-                beta_mean = float(np.mean(beta_samples))
-                beta_std = float(np.std(beta_samples))
-                beta_hdi = az.hdi(trace.posterior.beta.values.flatten(), hdi_prob=0.95)
+                    # Inference with robust settings
+                    trace = pm.sample(
+                        2000,
+                        tune=1000,
+                        chains=4,
+                        random_seed=42,
+                        target_accept=0.95,  # Higher target_accept for stability
+                        return_inferencedata=True,
+                        cores=4
+                    )
 
-                # Compute posterior probability of improvement
-                if higher_is_better:
-                    posterior_prob_beneficial = float(np.mean(beta_samples > 0))
-                    direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
-                else:
-                    posterior_prob_beneficial = float(np.mean(beta_samples < 0))
-                    direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+                    # Predictions
+                    alpha_samples = trace.posterior["alpha"].values.flatten()
+                    beta_samples = trace.posterior["beta"].values.flatten()
 
-                # Region of Practical Equivalence (ROPE) analysis
-                rope_bounds = (-0.01, 0.01)  # Effect size considered negligible
-                in_rope = float(np.mean(
-                    (beta_samples >= rope_bounds[0]) & (
-                                beta_samples <= rope_bounds[1])))
+                    # Calculate scaled x_range for predictions
+                    x_range_scaled = (x_range - x_mean) / 1000.0
 
-                # Determine significance
-                if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (
-                        beta_hdi[0] > 0 and beta_hdi[1] > 0):
-                    significance = "Credible Effect"
-                else:
-                    significance = "Not Credible"
+                    # Compute mean and HDI for beta
+                    beta_mean = float(np.mean(beta_samples))
+                    beta_std = float(np.std(beta_samples))
+                    beta_hdi = az.hdi(beta_samples, hdi_prob=0.95)
 
-                # Generate predictions for the plot
-                pred_samples = []
-                for i in range(100):  # Use 100 posterior samples
-                    idx = np.random.randint(0, len(alpha_samples))
-                    a, b = alpha_samples[idx], beta_samples[idx]
-
-                    # For binary outcomes, predict probability
-                    logit = a + b * (x_range / 1000)
-                    pred = 1 / (1 + np.exp(-logit))
-                    pred_samples.append(pred)
-
-                pred_samples = np.array(pred_samples)
-                y_pred_mean = np.mean(pred_samples, axis=0)
-                y_pred_hdi = az.hdi(pred_samples, hdi_prob=0.95)
-                y_pred_hdi_lower = y_pred_hdi[0, :]
-                y_pred_hdi_upper = y_pred_hdi[1, :]
-
-                # Determine conclusion
-                if in_rope > 0.95:
-                    conclusion = "Practically Equivalent"
-                elif significance == "Credible Effect":
-                    if (higher_is_better and beta_mean > 0) or (
-                            not higher_is_better and beta_mean < 0):
-                        conclusion = "Significant Improvement"
+                    # Compute posterior probability of improvement
+                    if higher_is_better:
+                        posterior_prob_beneficial = float(np.mean(beta_samples > 0))
+                        direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
                     else:
-                        conclusion = "Significant Deterioration"
-                else:
-                    conclusion = "Inconclusive"
+                        posterior_prob_beneficial = float(np.mean(beta_samples < 0))
+                        direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
 
-                # Calculate effect sizes
-                effect_per_1000_words = beta_mean
-                effect_2000_words = beta_mean * 2
+                    # Adjust ROPE based on the scale of the data (Kruschke's approach)
+                    # Define ROPE as 1% of the potential range for binary outcomes (0.01 on probability scale)
+                    effect_sd = beta_std
+                    rope_bounds = (-0.05 * effect_sd, 0.05 * effect_sd)
+                    in_rope = float(np.mean(
+                        (beta_samples >= rope_bounds[0]) & (
+                                    beta_samples <= rope_bounds[1])))
 
-                # Return results dictionary
-                return {
-                    "corpus": corpus,
-                    "threat_model": threat_model,
-                    "llm": llm,
-                    "metric": metric,
-                    "higher_is_better": higher_is_better,
-                    "data_points": len(binary_df),
-                    "data_by_length": binary_df[
-                        'exemplar_length'].value_counts().to_dict(),
-                    "mean_value": np.mean(y),
-                    "is_binary": True,
-                    "slope": {
-                        "mean": beta_mean,
-                        "std": beta_std,
-                        "hdi": beta_hdi.tolist(),
-                        "posterior_prob_beneficial": posterior_prob_beneficial,
-                        "prob_improvement": posterior_prob_beneficial,
-                        # Backward compatibility
-                        "direction": direction,
-                        "significance": significance,
-                        "effect_per_1000_words": effect_per_1000_words,
-                        "effect_2000_words": effect_2000_words,
-                        "in_rope": in_rope,
-                        "conclusion": conclusion
-                    },
-                    "predictions": {
-                        "x_range": x_range.tolist(),
-                        "y_pred_mean": y_pred_mean.tolist(),
-                        "y_pred_hdi_lower": y_pred_hdi_lower.tolist(),
-                        "y_pred_hdi_upper": y_pred_hdi_upper.tolist()
+                    # Determine significance using Kruschke's ROPE decision rules
+                    if (beta_hdi[0] > rope_bounds[1]) or (beta_hdi[1] < rope_bounds[0]):
+                        significance = "Credible Effect"
+                    elif (beta_hdi[0] >= rope_bounds[0]) and (
+                            beta_hdi[1] <= rope_bounds[1]):
+                        significance = "Practically Equivalent to Zero"
+                    else:
+                        significance = "Not Credible"
+
+                    # Generate predictions for the plot
+                    pred_samples = []
+                    for i in range(100):  # Use 100 posterior samples
+                        idx = np.random.randint(0, len(alpha_samples))
+                        a, b = alpha_samples[idx], beta_samples[idx]
+
+                        # For binary outcomes, predict probability
+                        logit = a + b * x_range_scaled
+                        pred = 1 / (1 + np.exp(-logit))
+                        pred_samples.append(pred)
+
+                    pred_samples = np.array(pred_samples)
+                    y_pred_mean = np.mean(pred_samples, axis=0)
+
+                    # Compute HDI for predictions
+                    y_pred_hdi = np.zeros((2, len(x_range)))
+                    for i in range(len(x_range)):
+                        y_pred_hdi[:, i] = az.hdi(pred_samples[:, i], hdi_prob=0.95)
+
+                    y_pred_hdi_lower = y_pred_hdi[0, :]
+                    y_pred_hdi_upper = y_pred_hdi[1, :]
+
+                    # Determine conclusion
+                    if in_rope > 0.95:
+                        conclusion = "Practically Equivalent"
+                    elif significance == "Credible Effect":
+                        if (higher_is_better and beta_mean > 0) or (
+                                not higher_is_better and beta_mean < 0):
+                            conclusion = "Significant Improvement"
+                        else:
+                            conclusion = "Significant Deterioration"
+                    else:
+                        conclusion = "Inconclusive"
+
+                    # Calculate effect sizes (scaled back to original units)
+                    # Effect per 1000 words
+                    effect_per_1000_words = beta_mean
+
+                    # Effect from 500 to 2500 words (2000 word difference)
+                    effect_2000_words = beta_mean * 2
+
+                    # Convert log-odds effects to probability for interpretation
+                    # Starting from average probability
+                    avg_prob = np.mean(y)
+                    avg_logit = np.log(avg_prob / (1 - avg_prob))
+
+                    # Effect in probability space
+                    prob_effect_1000 = expit(
+                        avg_logit + effect_per_1000_words) - avg_prob
+                    prob_effect_2000 = expit(avg_logit + effect_2000_words) - avg_prob
+
+                    # Return results dictionary with additional information
+                    return {
+                        "corpus": corpus,
+                        "threat_model": threat_model,
+                        "llm": llm,
+                        "metric": metric,
+                        "higher_is_better": higher_is_better,
+                        "data_points": len(binary_df),
+                        "data_by_length": binary_df[
+                            'exemplar_length'].value_counts().to_dict(),
+                        "mean_value": np.mean(y),
+                        "is_binary": True,
+                        "slope": {
+                            "mean": beta_mean,
+                            "std": beta_std,
+                            "hdi": beta_hdi.tolist(),
+                            "posterior_prob_beneficial": posterior_prob_beneficial,
+                            "prob_improvement": posterior_prob_beneficial,
+                            "direction": direction,
+                            "significance": significance,
+                            "effect_per_1000_words": effect_per_1000_words,
+                            "effect_2000_words": effect_2000_words,
+                            "prob_effect_1000": float(prob_effect_1000),
+                            "prob_effect_2000": float(prob_effect_2000),
+                            "in_rope": in_rope,
+                            "conclusion": conclusion
+                        },
+                        "predictions": {
+                            "x_range": x_range.tolist(),
+                            "y_pred_mean": y_pred_mean.tolist(),
+                            "y_pred_hdi_lower": y_pred_hdi_lower.tolist(),
+                            "y_pred_hdi_upper": y_pred_hdi_upper.tolist()
+                        }
                     }
-                }
 
-    # For non-binary metrics or if binary data not available
+                except Exception as e:
+                    logger.error(f"Error in binary model fitting: {str(e)}")
+                    logger.error(f"Binary values: {np.bincount(y)}")
+                    # If binary modeling fails, fall back to aggregate approach
+                    logger.warning("Falling back to aggregate modeling approach")
+
+    # For non-binary metrics or if binary data not available/failed
     # Extract x and y, dropping NaNs
     df = df.dropna(subset=[metric, 'exemplar_length'])
     x = df['exemplar_length'].values
     y = df[metric].values
 
+    # Get corpus-specific max entropy for proper scaling
+    if corpus.lower() == 'ebg':
+        max_entropy = np.log2(45)  # 45 authors in EBG
+    elif corpus.lower() == 'rj':
+        max_entropy = np.log2(21)  # 21 authors in RJ
+    else:
+        max_entropy = np.log2(100)  # Default fallback
+
     # Scale inputs for numerical stability
     x_mean = np.mean(x)
     x_range = np.linspace(min(x), max(x), 100)
-    x_scaled = x / 1000  # Scale to per 1000 words
+    x_scaled = (x - x_mean) / 1000.0  # Center and scale
 
-    # For entropy, scale the output too (it's bounded between 0 and log2(num_classes))
-    y_mean = np.mean(y)
+    # Special handling for bounded variables
     if metric == 'entropy':
-        # Assuming 100 classes as a default
-        max_entropy = np.log2(100)
+        # Scale entropy to 0-1 range
         y_scaled = y / max_entropy
+        y_mean = np.mean(y)
+    elif metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+        # Avoid exact 0 and 1 values that cause problems with Beta
+        y_scaled = np.clip(y, 0.001, 0.999)
+        y_mean = np.mean(y)
     else:
         y_scaled = y
-        max_entropy = 1.0  # Not used for other metrics
+        y_mean = np.mean(y)
 
-    # Build a Bayesian linear regression model
+    # Build a Bayesian linear regression model with robust priors
     with pm.Model() as model:
-        # Priors
-        alpha = pm.Normal("alpha", mu=0, sigma=1)
-        beta = pm.Normal("beta", mu=0, sigma=0.1)
-        sigma = pm.HalfNormal("sigma", sigma=0.1)
+        try:
+            # Priors - use more robust Student's t for regression coefficients
+            alpha = pm.Normal("alpha", mu=0, sigma=2)
+            beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
 
-        # Expected value
-        mu = alpha + beta * x_scaled
+            # Different sigma prior based on metric type
+            if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence',
+                          'entropy']:
+                # Bounded metrics need smaller sigma
+                sigma = pm.HalfStudentT("sigma", nu=3, sigma=0.1)
+            else:
+                # Less constrained for unbounded metrics
+                sigma = pm.HalfStudentT("sigma", nu=3, sigma=0.5)
 
-        # Likelihood
-        if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
-            # For percentage metrics, use a Beta likelihood
-            theta = pm.math.invlogit(mu)  # Transform to (0, 1)
-            likelihood = pm.Beta("likelihood", alpha=theta * 100,
-                                 beta=(1 - theta) * 100, observed=y)
-        elif metric == 'entropy':
-            # For entropy (scaled to 0-1), use a bounded normal
-            likelihood = pm.TruncatedNormal("likelihood", mu=mu, sigma=sigma, lower=0,
-                                            upper=1, observed=y_scaled)
-        else:
-            # For other metrics like bertscore, pinc, use normal likelihood
-            likelihood = pm.Normal("likelihood", mu=mu, sigma=sigma, observed=y_scaled)
+            # Expected value
+            mu = alpha + beta * x_scaled
 
-        # Inference
-        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
-                          cores=4, return_inferencedata=True)
-
-        # Predictions
-        alpha_samples = trace.posterior["alpha"].values.flatten()
-        beta_samples = trace.posterior["beta"].values.flatten()
-
-        # Compute mean and HDI for beta
-        beta_mean = float(np.mean(beta_samples))
-        beta_std = float(np.std(beta_samples))
-        beta_hdi = az.hdi(trace.posterior.beta.values.flatten(), hdi_prob=0.95)
-
-        # Compute posterior probability of improvement
-        if higher_is_better:
-            posterior_prob_beneficial = float(np.mean(beta_samples > 0))
-            direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
-        else:
-            posterior_prob_beneficial = float(np.mean(beta_samples < 0))
-            direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
-
-        # Region of Practical Equivalence (ROPE) analysis
-        rope_bounds = (-0.01, 0.01)  # Effect size considered negligible
-        in_rope = float(np.mean(
-            (beta_samples >= rope_bounds[0]) & (beta_samples <= rope_bounds[1])))
-
-        # Determine significance
-        if (beta_hdi[0] < 0 and beta_hdi[1] < 0) or (
-                beta_hdi[0] > 0 and beta_hdi[1] > 0):
-            significance = "Credible Effect"
-        else:
-            significance = "Not Credible"
-
-        # Generate predictions for the plot
-        pred_samples = []
-        for i in range(100):  # Use 100 posterior samples
-            idx = np.random.randint(0, len(alpha_samples))
-            a, b = alpha_samples[idx], beta_samples[idx]
-
+            # Likelihood - tailored to variable type
             if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
-                pred = 1 / (1 + np.exp(-(a + b * (x_range / 1000))))
+                # For percentage metrics, use a Beta likelihood with more stable parameterization
+                # Transform linear predictor to (0,1) interval
+                theta = pm.Deterministic("theta", pm.math.invlogit(mu))
+                # Use concentration parameterization
+                concentration = pm.HalfNormal("concentration", 10.0)
+                alpha_beta = pm.Deterministic("alpha_beta", theta * concentration)
+                beta_beta = pm.Deterministic("beta_beta", (1 - theta) * concentration)
+                # Beta likelihood with more stable parameterization
+                likelihood = pm.Beta("likelihood", alpha=alpha_beta, beta=beta_beta,
+                                     observed=y_scaled)
+
             elif metric == 'entropy':
-                pred = (a + b * (x_range / 1000)) * max_entropy
-                pred = np.clip(pred, 0, max_entropy)
+                # For entropy (scaled to 0-1), use a bounded normal with transformation
+                likelihood = pm.TruncatedNormal(
+                    "likelihood",
+                    mu=mu,
+                    sigma=sigma,
+                    lower=0,
+                    upper=1,
+                    observed=y_scaled
+                )
             else:
-                pred = a + b * (x_range / 1000)
-            pred_samples.append(pred)
+                # For other metrics like bertscore, pinc, use robust t-distributed likelihood
+                likelihood = pm.StudentT(
+                    "likelihood",
+                    nu=4,  # Degrees of freedom - more robust to outliers
+                    mu=mu,
+                    sigma=sigma,
+                    observed=y_scaled
+                )
 
-        pred_samples = np.array(pred_samples)
-        y_pred_mean = np.mean(pred_samples, axis=0)
-        y_pred_hdi = az.hdi(pred_samples, hdi_prob=0.95)
-        y_pred_hdi_lower = y_pred_hdi[0, :]
-        y_pred_hdi_upper = y_pred_hdi[1, :]
+            # Inference with robust settings
+            trace = pm.sample(
+                2000,
+                tune=1000,
+                chains=4,
+                random_seed=42,
+                target_accept=0.95,  # Higher target_accept for stability
+                return_inferencedata=True,
+                cores=4
+            )
 
-        # Determine conclusion
-        if in_rope > 0.95:
-            conclusion = "Practically Equivalent"
-        elif significance == "Credible Effect":
-            if (higher_is_better and beta_mean > 0) or (
-                    not higher_is_better and beta_mean < 0):
-                conclusion = "Significant Improvement"
+            # Predictions
+            alpha_samples = trace.posterior["alpha"].values.flatten()
+            beta_samples = trace.posterior["beta"].values.flatten()
+
+            # Calculate scaled x_range for predictions
+            x_range_scaled = (x_range - x_mean) / 1000.0
+
+            # Compute mean and HDI for beta
+            beta_mean = float(np.mean(beta_samples))
+            beta_std = float(np.std(beta_samples))
+            beta_hdi = az.hdi(beta_samples, hdi_prob=0.95)
+
+            # Compute posterior probability of improvement
+            if higher_is_better:
+                posterior_prob_beneficial = float(np.mean(beta_samples > 0))
+                direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
             else:
-                conclusion = "Significant Deterioration"
-        else:
-            conclusion = "Inconclusive"
+                posterior_prob_beneficial = float(np.mean(beta_samples < 0))
+                direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+
+            # Adjust ROPE based on effect size
+            effect_sd = beta_std
+            rope_bounds = (-0.1 * effect_sd, 0.1 * effect_sd)
+            in_rope = float(np.mean(
+                (beta_samples >= rope_bounds[0]) & (beta_samples <= rope_bounds[1])))
+
+            # Determine significance
+            if (beta_hdi[0] > rope_bounds[1]) or (beta_hdi[1] < rope_bounds[0]):
+                significance = "Credible Effect"
+            elif (beta_hdi[0] >= rope_bounds[0]) and (beta_hdi[1] <= rope_bounds[1]):
+                significance = "Practically Equivalent to Zero"
+            else:
+                significance = "Not Credible"
+
+            # Generate predictions for the plot
+            pred_samples = []
+            for i in range(100):  # Use 100 posterior samples
+                idx = np.random.randint(0, len(alpha_samples))
+                a, b = alpha_samples[idx], beta_samples[idx]
+
+                if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
+                    # Transform back from logit scale
+                    logit = a + b * x_range_scaled
+                    pred = 1 / (1 + np.exp(-logit))
+                elif metric == 'entropy':
+                    # Transform back to original entropy scale
+                    pred = (a + b * x_range_scaled) * max_entropy
+                    pred = np.clip(pred, 0, max_entropy)
+                else:
+                    # Direct linear relationship
+                    pred = a + b * x_range_scaled
+                pred_samples.append(pred)
+
+            pred_samples = np.array(pred_samples)
+            y_pred_mean = np.mean(pred_samples, axis=0)
+
+            # Compute HDI for predictions properly
+            y_pred_hdi = np.zeros((2, len(x_range)))
+            for i in range(len(x_range)):
+                y_pred_hdi[:, i] = az.hdi(pred_samples[:, i], hdi_prob=0.95)
+
+            y_pred_hdi_lower = y_pred_hdi[0, :]
+            y_pred_hdi_upper = y_pred_hdi[1, :]
+
+            # Determine conclusion
+            if in_rope > 0.95:
+                conclusion = "Practically Equivalent"
+            elif significance == "Credible Effect":
+                if (higher_is_better and beta_mean > 0) or (
+                        not higher_is_better and beta_mean < 0):
+                    conclusion = "Significant Improvement"
+                else:
+                    conclusion = "Significant Deterioration"
+            else:
+                conclusion = "Inconclusive"
+
+        except Exception as e:
+            logger.error(f"Model fitting error: {str(e)}")
+            logger.error(
+                f"Data summary: min={np.min(y)}, max={np.max(y)}, mean={np.mean(y)}")
+            return {
+                "error": f"Model fitting failed for {corpus}-{threat_model}-{llm}-{metric}: {str(e)}"
+            }
 
     # Calculate effect sizes
     effect_per_1000_words = beta_mean
