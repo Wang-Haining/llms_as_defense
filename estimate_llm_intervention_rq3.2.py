@@ -829,8 +829,10 @@ def parse_arguments():
         description="Analyze the effect of exemplar length on LLM imitation defense performance",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--evaluation_dir', type=str, default='defense_evaluation')
-    parser.add_argument('--llm_outputs_dir', type=str, default='llm_outputs')
+    parser.add_argument('--evaluation_dir', type=str, default='defense_evaluation',
+                        help='Base directory containing evaluation metrics')
+    parser.add_argument('--llm_outputs_dir', type=str, default='llm_outputs',
+                        help='Base directory containing LLM output prompts')
     parser.add_argument('--output_dir', type=str, default='results/exemplar_length_analysis_rq3.2',
                         help='Directory to save analysis results')
     parser.add_argument('--corpus', type=str, choices=CORPORA, help='Specific corpus to analyze (default: all)')
@@ -839,21 +841,22 @@ def parse_arguments():
     parser.add_argument('--metric', type=str, choices=METRICS, help='Specific metric to analyze (default: all)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable extra debug printing to diagnose length matching issues')
-
     return parser.parse_args()
 
 
 def main():
     args = parse_arguments()
     logger.info("Starting exemplar length analysis")
-    logger.info(f"Base directory: {args.base_dir}")
+    logger.info(f"Evaluation directory: {args.evaluation_dir}")
+    logger.info(f"LLM outputs directory: {args.llm_outputs_dir}")
     logger.info(f"Output directory: {args.output_dir}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Preparing data for analysis")
-    data = prepare_data(args.base_dir, debug=args.debug)
+    # Pass both base directories to prepare_data
+    data = prepare_data(args.evaluation_dir, args.llm_outputs_dir, debug=args.debug)
 
     # Save raw data
     data.to_csv(output_dir / "raw_data.csv", index=False)
