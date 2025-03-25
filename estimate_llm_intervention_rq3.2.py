@@ -756,19 +756,15 @@ def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
         f.write("# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
         f.write("## Overview\n\n")
         f.write(
-            f"This analysis examines the effect of *actual* exemplar length on the effectiveness "
-            f"of LLM-based imitation as a defense against authorship attribution attacks. We extract "
-            f"the exemplar text from each seed_{seed}.json, count its words, and model how that length "
-            f"impacts various metrics.\n\n"
+            "This analysis examines the effect of *actual* exemplar length on the effectiveness "
+            "of LLM-based imitation as a defense against authorship attribution attacks. We extract "
+            "the exemplar text from each seed_{seed}.json, count its words, and model how that length "
+            "impacts various metrics.\n\n"
         )
-        f.write(
-            f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
-        f.write(
-            f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
-        f.write(
-            f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
-        f.write(
-            f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
+        f.write(f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
+        f.write(f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
+        f.write(f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
+        f.write(f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
 
         # Additional details
         credible = results_df[results_df['Conclusion'].str.contains('Significant')]
