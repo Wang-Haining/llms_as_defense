@@ -79,102 +79,72 @@ def extract_exemplar_from_prompt(prompt_data):
     return exemplar_text
 
 
-def extract_binary_metrics(file_path):
-    """
-    Extract binary metrics from an evaluation seed file.
-
-    Returns a dictionary with binary metrics or None if extraction fails.
-    """
-    try:
-        with open(file_path, "r") as f:
-            data = json.load(f)
-
-        if "example_metrics" not in data:
-            return None
-
-        binary_acc1 = [
-            1 if ex["transformed_rank"] == 0 else 0
-            for ex in data["example_metrics"]
-        ]
-        binary_acc5 = [
-            1 if ex["transformed_rank"] < 5 else 0
-            for ex in data["example_metrics"]
-        ]
-
-        return {
-            "binary_acc1": binary_acc1,
-            "binary_acc5": binary_acc5
-        }
-    except Exception as e:
-        logger.error(f"Error extracting binary metrics from {file_path}: {e}")
-        return None
-
-
-def extract_exemplar_length(file_path):
-    """
-    Extract the exemplar text length from a seed file.
-    The file contains a list of dictionaries, each with an "original" key.
-
-    Returns the word count or None if extraction fails.
-    """
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Handle the case where the file contains a list of dictionaries
-        if isinstance(data, list) and len(data) > 0:
-            exemplar_text = data[0].get("original", "").strip()
-        # Handle the case where the file contains a single dictionary
-        elif isinstance(data, dict):
-            exemplar_text = data.get("original", "").strip()
-        else:
-            return None
-
-        if not exemplar_text:
-            return None
-
-        tokenizer = MosesTokenizer(lang='en')
-        tokens = tokenizer.tokenize(exemplar_text, escape=False)
-        return len(tokens)
-    except Exception as e:
-        logger.error(f"Error extracting exemplar length from {file_path}: {e}")
-        return None
-
-
 def prepare_data(
         evaluation_base_dir: str,
         llm_outputs_base_dir: str,
         debug: bool = False
 ) -> pd.DataFrame:
     """
-    Combine metrics from defense_evaluation with actual exemplar text from llm_outputs,
-    and connect to the original prompts to get the target exemplar length.
+    Combine metrics from defense_evaluation with exemplar text from prompt files.
 
     1) For each corpus, RQ folder (rq3.2_imitation_w_{length}words), and model_dir:
        - Parse evaluation.json in defense_evaluation to get metrics
-       - Parse seed_{seed}.json in llm_outputs to get the actual exemplar length
-       - Use prompt_index from seed file to get the target length from the folder name
-    2) Merge them into a single row with both metrics and lengths.
+       - Get prompt_index from seed_{seed}.json in llm_outputs if available
+       - Use prompt_index to find the original prompt file and extract just the exemplar text
+       - Calculate the actual exemplar length from the exemplar text
+    2) Merge them into a single row with both metrics and exemplar length.
     """
     data = []
     total_rows = 0
     missing_eval_files = 0
     missing_llm_files = 0
+    missing_prompt_files = 0
     parse_errors = 0
 
     for target_length in [500, 1000, 2500]:
         rq_folder = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
+        prompt_dir = Path("prompts") / rq_folder
+
+        # Cache prompt files content to avoid repeated disk reads
+        prompt_cache = {}
+        if prompt_dir.exists():
+            for prompt_file in prompt_dir.glob("*.json"):
+                try:
+                    with open(prompt_file, "r", encoding="utf-8") as f:
+                        prompt_data = json.load(f)
+                    # Extract index from filename
+                    idx_match = re.search(r'prompt(\d+)\.json', prompt_file.name)
+                    if idx_match:
+                        prompt_idx = int(idx_match.group(1))
+                        exemplar_text = extract_exemplar_from_prompt(prompt_data)
+                        if exemplar_text:
+                            tokenizer = MosesTokenizer(lang='en')
+                            tokens = tokenizer.tokenize(exemplar_text, escape=False)
+                            exemplar_length = len(tokens)
+                            prompt_cache[prompt_idx] = {
+                                'exemplar_text': exemplar_text,
+                                'exemplar_length': exemplar_length
+                            }
+                            if debug and prompt_idx < 3:  # Show first few exemplars for debugging
+                                logger.info(
+                                    f"[DEBUG] Prompt {prompt_idx} exemplar length: {exemplar_length}")
+                except Exception as e:
+                    if debug:
+                        logger.warning(
+                            f"[DEBUG] Error loading prompt file {prompt_file}: {e}")
+                    continue
 
         for corpus in CORPORA:
             eval_rq_path = Path(evaluation_base_dir) / corpus / rq_main / rq_folder
             llm_rq_path = Path(llm_outputs_base_dir) / corpus / rq_main / rq_folder
-            prompt_path = Path("prompts") / rq_folder
 
             if debug:
                 logger.info(f"[DEBUG] Checking corpus={corpus}, RQ folder={rq_folder}")
                 logger.info(
                     f"[DEBUG] eval_rq_path={eval_rq_path}, llm_rq_path={llm_rq_path}")
+                logger.info(
+                    f"[DEBUG] prompt_dir={prompt_dir}, cached prompts: {len(prompt_cache)}")
 
             if not eval_rq_path.exists():
                 if debug:
@@ -234,7 +204,7 @@ def prepare_data(
                         missing_llm_files += 1
                         continue
 
-                    # Extract exemplar length and prompt_index from LLM seed file
+                    # Get prompt_index from LLM seed file
                     try:
                         # Load the seed file content
                         with open(llm_seed_file, "r", encoding="utf-8") as f:
@@ -249,26 +219,24 @@ def prepare_data(
                             if debug:
                                 logger.warning(
                                     f"[DEBUG] Unexpected seed data format in {llm_seed_file}")
+                            parse_errors += 1
                             continue
 
-                        # Get actual exemplar length
-                        exemplar_text = seed_entry.get("original", "").strip()
-                        if not exemplar_text:
-                            if debug:
-                                logger.warning(
-                                    f"[DEBUG] No original text found in {llm_seed_file}")
-                            continue
-
-                        tokenizer = MosesTokenizer(lang='en')
-                        tokens = tokenizer.tokenize(exemplar_text, escape=False)
-                        actual_exemplar_length = len(tokens)
-
-                        # Get prompt_index if available (for target length)
+                        # Get prompt_index if available
                         prompt_index = seed_entry.get("prompt_index")
 
-                        # Use target length from folder name as fallback
-                        target_exemplar_length = target_length
-
+                        # Look up exemplar length from prompt cache using prompt_index
+                        if prompt_index is not None and prompt_index in prompt_cache:
+                            exemplar_length = float(
+                                prompt_cache[prompt_index]['exemplar_length'])
+                        else:
+                            # Fallback to target length if prompt_index is missing or not in cache
+                            if debug:
+                                logger.warning(
+                                    f"[DEBUG] Missing prompt_index or not in cache: {prompt_index}")
+                            missing_prompt_files += 1
+                            exemplar_length = float(
+                                target_length)  # Use target as fallback
                     except Exception as e:
                         if debug:
                             logger.warning(
@@ -295,8 +263,9 @@ def prepare_data(
                             "llm": normalize_llm_name(model_name),
                             "threat_model": threat_model,
                             "seed": seed_str,
-                            "exemplar_length": float(actual_exemplar_length),
-                            "target_length": float(target_exemplar_length),
+                            "exemplar_length": exemplar_length,
+                            "target_length": float(target_length),
+                            "prompt_index": prompt_index if prompt_index is not None else -1,
                             "accuracy@1": post.get("accuracy@1"),
                             "accuracy@5": post.get("accuracy@5"),
                             "true_class_confidence": post.get("true_class_confidence"),
@@ -360,18 +329,21 @@ def prepare_data(
         f"(across {df['target_length'].nunique()} target lengths)."
     )
     logger.info(
-        f"Missing eval files: {missing_eval_files}, missing llm files: {missing_llm_files}, parse_errors: {parse_errors}"
+        f"Missing eval files: {missing_eval_files}, missing llm files: {missing_llm_files}, "
+        f"missing/invalid prompt files: {missing_prompt_files}, parse errors: {parse_errors}"
     )
     if debug:
         logger.info(
             f"[DEBUG] total_rows processed = {total_rows}, final df size = {len(df)}")
 
-        # Show distribution of actual vs target lengths
+        # Show distribution of actual exemplar lengths
         for target in sorted(df['target_length'].unique()):
             subset = df[df['target_length'] == target]
             actual_lengths = sorted(subset['exemplar_length'].unique())
             logger.info(
                 f"[DEBUG] Target length {target}: actual lengths = {actual_lengths}")
+            logger.info(
+                f"[DEBUG] Count by exemplar length: {subset.groupby('exemplar_length').size().to_dict()}")
 
     return df
 
@@ -968,14 +940,11 @@ def run_full_analysis(
                                 },
                                 "predictions": {
                                     "x_range": unique_lengths.tolist(),
-                                    "y_pred_mean": [subset[metric].mean()] * len(
-                                        unique_lengths),
+                                    "y_pred_mean": [subset[metric].mean()] * len(unique_lengths),
                                     "y_pred_hdi_lower": [subset[
-                                                             metric].mean() - 0.1] * len(
-                                        unique_lengths),
+                                                             metric].mean() - 0.1] * len(unique_lengths),
                                     "y_pred_hdi_upper": [subset[
-                                                             metric].mean() + 0.1] * len(
-                                        unique_lengths)
+                                                             metric].mean() + 0.1] * len(unique_lengths)
                                 }
                             }
 
