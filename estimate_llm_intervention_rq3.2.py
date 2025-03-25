@@ -726,23 +726,28 @@ def plot_exemplar_length_effect(
     # Set seaborn style with a white background for better visibility
     sns.set_style("whitegrid")
 
-    # Create category for exemplar length to ensure dots are properly spaced
-    # Convert exemplar_length to categorical for proper swarmplot behavior
-    df['exemplar_length_cat'] = df['exemplar_length'].astype('category')
+    # Get unique exemplar lengths and create a mapping for plotting
     unique_lengths = sorted(df['exemplar_length'].unique())
+    length_to_pos = {length: i for i, length in enumerate(unique_lengths)}
 
-    # Use a swarmplot with categorical x values
-    sns.swarmplot(x='exemplar_length_cat', y=metric, data=df,
-                  size=10, color='blue', alpha=0.7,
-                  label=f'Observations (n={len(df)})')
+    # Add a position column for plotting
+    df['position'] = df['exemplar_length'].map(length_to_pos)
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # Use stripplot with jitter and lower alpha for better visualization
+    sns.stripplot(x='position', y=metric, data=df,
+                  size=10, color='blue', alpha=0.5, jitter=0.3,
+                  label=f'Observations (n={len(df)})', ax=ax)
 
     # Add count labels for each exemplar length
-    for i, length in enumerate(unique_lengths):
-        count = len(df[df['exemplar_length'] == length])
-        plt.text(i,
-                 df[df['exemplar_length'] == length][metric].max() + 0.02,
-                 f"n={count}",
-                 ha='center', va='bottom')
+    for pos, length in enumerate(unique_lengths):
+        subset = df[df['exemplar_length'] == length]
+        if not subset.empty:
+            count = len(subset)
+            max_y = subset[metric].max()
+            ax.text(pos, max_y + 0.02, f"n={count}", ha='center', va='bottom')
 
     # Plot model predictions with HDI
     x_range = np.array(results['predictions']['x_range'])
@@ -750,9 +755,14 @@ def plot_exemplar_length_effect(
     y_pred_hdi_lower = np.array(results['predictions']['y_pred_hdi_lower'])
     y_pred_hdi_upper = np.array(results['predictions']['y_pred_hdi_upper'])
 
-    plt.plot(x_range, y_pred_mean, color='red', linewidth=2, label='Bayesian model fit')
-    plt.fill_between(x_range, y_pred_hdi_lower, y_pred_hdi_upper,
-                     color='red', alpha=0.2, label='95% HDI')
+    # For the line plot, we need to map the continuous x values to positions
+    # Create a mapping function based on the min and max of x_range
+    x_min, x_max = min(x_range), max(x_range)
+
+    # Plot continuous prediction line
+    ax.plot(x_range, y_pred_mean, color='red', linewidth=2, label='Bayesian model fit')
+    ax.fill_between(x_range, y_pred_hdi_lower, y_pred_hdi_upper,
+                    color='red', alpha=0.2, label='95% HDI')
 
     # Add slope information with better Bayesian terminology
     slope_info = (f"Slope: {results['slope']['mean']:.6f} "
@@ -763,8 +773,8 @@ def plot_exemplar_length_effect(
 
     text_box = f"{slope_info}\n{effect_info}\n{prob_info}\n{conclusion}"
 
-    plt.annotate(text_box, xy=(0.05, 0.05), xycoords='axes fraction',
-                 bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8))
+    ax.annotate(text_box, xy=(0.05, 0.05), xycoords='axes fraction',
+                bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8))
 
     # Format metric name for display
     metric_label = metric
@@ -784,21 +794,22 @@ def plot_exemplar_length_effect(
         direction = "↓ (Lower is better)"
 
     # Set labels and title
-    plt.xlabel('Exemplar Length (words)', fontsize=14)
-    plt.ylabel(f'{metric_label} {direction}', fontsize=14)
-    plt.title(f'Effect of Exemplar Length on {metric_label}\n'
-              f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
-              fontsize=16)
+    ax.set_xlabel('Exemplar Length (words)', fontsize=14)
+    ax.set_ylabel(f'{metric_label} {direction}', fontsize=14)
+    ax.set_title(f'Effect of Exemplar Length on {metric_label}\n'
+                 f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
+                 fontsize=16)
 
     # Format y-axis as percentage for accuracy metrics
     if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
-        plt.gca().yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+        ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
 
-    # Ensure x-ticks are at the exemplar lengths and properly labeled
-    plt.xticks(range(len(unique_lengths)), labels=unique_lengths)
+    # Set x-tick positions and labels explicitly
+    ax.set_xticks(range(len(unique_lengths)))
+    ax.set_xticklabels([str(int(length)) for length in unique_lengths])
 
     # Add legend
-    plt.legend(loc='best', fontsize=12)
+    ax.legend(loc='best', fontsize=12)
 
     # Create output directory structure
     output_path = Path(output_dir) / corpus / threat_model / llm
