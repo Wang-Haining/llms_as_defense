@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Analyze the effect of exemplar length on LLM imitation defense performance.
 
