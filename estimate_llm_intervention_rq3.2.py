@@ -2,7 +2,9 @@
 Analyze the effect of exemplar length on LLM imitation defense performance.
 
 This script analyzes how varying exemplar lengths (500/1000/2500 words) affect 
-defense effectiveness against authorship attribution models.
+defense effectiveness against authorship attribution models, but now uses
+the *actual* exemplar length extracted from each seed_{seed}.json file
+rather than a fallback.
 
 Usage:
     python estimate_llm_intervention_rq3.2.py
@@ -20,6 +22,7 @@ import pymc as pm
 import arviz as az
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sacremoses import MosesTokenizer
 from scipy.special import expit  # for logistic transform
 
 # Configure logging
@@ -34,69 +37,54 @@ METRICS = ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy', 'bert
 THREAT_MODELS = ['logreg', 'svm', 'roberta']
 LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
 CORPORA = ['ebg', 'rj']
+
+# We no longer rely on [500, 1000, 2500] fallback for length, but
+# we keep them if you still want to loop over subfolders. Otherwise you can remove.
 EXEMPLAR_LENGTHS = [500, 1000, 2500]
 
 
-def get_actual_exemplar_lengths_by_prompt(prompts_base_dir: str) -> Dict[
-    str, Dict[int, float]]:
+def extract_exemplar_and_count(llm_output_file: str) -> dict:
     """
-    Extract the actual word counts from each prompt file and build a nested dictionary.
+    Given a path to an LLM output JSON (like seed_XXXX.json),
+    extract the exemplar text from the 'user' field and count its words.
 
-    For each RQ folder (e.g., "rq3.2_imitation_w_500words"), we collect a map of seed -> word_count.
-
-    Assumes prompt files are named like "promptNN.json" or "promptNNNN.json", etc.,
-    where "promptNN" is the 'stem'. We remove the 'prompt' prefix and parse the rest as an integer.
-
-    Example:
-      "prompt05.json" -> seed=5
-      "prompt42.json" -> seed=42
-      "prompt00.json" -> seed=0
+    Returns a dict with:
+      {
+        "exemplar_text": str,
+        "word_count": int,
+        "file": str  # original file name
+      }
     """
-    import json
-    from pathlib import Path
-    import logging
+    marker_start = "Here is an example of the writing style you are expected to mimic:\n\n"
+    marker_end   = "\n\nPlease rewrite the following text"
 
-    logger = logging.getLogger(__name__)
+    with open(llm_output_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    actual_lengths: Dict[str, Dict[int, float]] = {}
+    user_text = data.get("user", "")
+    if not user_text:
+        raise ValueError(f"No 'user' field found in {llm_output_file}")
 
-    for length in [500, 1000, 2500]:
-        rq = f"rq3.2_imitation_w_{length}words"
-        prompt_dir = Path(prompts_base_dir) / rq
-        if not prompt_dir.exists():
-            logger.warning(f"Prompt directory not found: {prompt_dir}")
-            continue
+    start_idx = user_text.find(marker_start)
+    if start_idx == -1:
+        raise ValueError(f"Could not find marker_start in 'user' text for {llm_output_file}")
 
-        per_seed = {}
-        for prompt_file in prompt_dir.glob("prompt*.json"):
-            try:
-                with open(prompt_file, "r") as f:
-                    prompt_data = json.load(f)
+    start_idx += len(marker_start)
+    end_idx = user_text.find(marker_end, start_idx)
+    if end_idx == -1:
+        raise ValueError(f"Could not find marker_end in 'user' text for {llm_output_file}")
 
-                stem = prompt_file.stem  # e.g. "prompt05"
-                # remove "prompt" prefix
-                seed_str = stem.replace("prompt", "")  # e.g. "05"
-                # handle leading zeros ("05" -> "5", "00" -> "0", etc.)
-                seed_str = seed_str.lstrip("0") or "0"
-                seed_int = int(seed_str)
+    exemplar_text = user_text[start_idx:end_idx].strip()
 
-                # Now parse the word_count
-                if "metadata" in prompt_data and "word_count" in prompt_data[
-                    "metadata"]:
-                    per_seed[seed_int] = float(prompt_data["metadata"]["word_count"])
-                else:
-                    # Fallback or custom logic if "word_count" missing
-                    logger.warning(f"No 'metadata.word_count' in {prompt_file}")
-            except Exception as e:
-                logger.error(f"Error processing {prompt_file}: {e}")
+    tokenizer = MosesTokenizer(lang='en')
+    tokens = tokenizer.tokenize(exemplar_text, escape=False)
+    word_count = len(tokens)
 
-        if per_seed:
-            actual_lengths[rq] = per_seed
-            avg_count = sum(per_seed.values()) / len(per_seed)
-            logger.info(
-                f"RQ {rq}: found {len(per_seed)} prompts with average word count {avg_count:.1f}")
-
-    return actual_lengths
+    return {
+        "exemplar_text": exemplar_text,
+        "word_count": word_count,
+        "file": llm_output_file
+    }
 
 
 def normalize_llm_name(model_name: str) -> str:
@@ -118,25 +106,23 @@ def normalize_llm_name(model_name: str) -> str:
 def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
     """
     Extract and organize data from evaluation results, including binary outcomes,
-    using each prompt's actual word count if available.
+    using each seed_{seed}.json's actual word count for the exemplar.
+
+    *No* fallback to 500/1000/2500 is done.
     """
     data = []
-
-    # Build the nested map: {rq_name: {seed_int: actual_length, ...}}
-    actual_exemplar_map = get_actual_exemplar_lengths_by_prompt("prompts")
-
-    # Track debug stats: how often do we fallback to nominal length?
-    fallback_count = 0
     total_rows = 0
+    missing_seed_file = 0
+    parse_errors = 0
 
+    # We still loop over these subfolders to keep your directory structure,
+    # but we won't use the "target_length" for fallback.
     for target_length in EXEMPLAR_LENGTHS:
         rq = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
-        seed_length_map = actual_exemplar_map.get(rq, {})
 
         if debug:
             logger.info(f"[DEBUG] Now processing RQ folder: {rq}")
-            logger.info(f"[DEBUG]   Found {len(seed_length_map)} seeds in the prompt map for this RQ.")
 
         for corpus in CORPORA:
             corpus_path = Path(base_dir) / corpus / rq_main / rq
@@ -164,39 +150,39 @@ def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
                     logger.error(f"Error parsing {eval_file}")
                     continue
 
+                # For each seed in the evaluation results
                 for seed_str, seed_results in results.items():
-                    # Attempt to parse the seed as int
-                    try:
-                        seed_int = int(seed_str)
-                    except Exception as e:
-                        seed_int = -1
+                    # We'll parse seed_{seed_str}.json to get the real length
+                    seed_file = model_dir / f"seed_{seed_str}.json"
+                    if not seed_file.exists():
+                        missing_seed_file += 1
                         if debug:
-                            logger.warning(f"[DEBUG] Could not parse seed '{seed_str}' as int: {e}")
+                            logger.warning(f"[DEBUG] seed file missing: {seed_file}")
+                        continue  # skip this row entirely
 
+                    # Try to parse the seed file
+                    try:
+                        extracted = extract_exemplar_and_count(str(seed_file))
+                        exemplar_length = extracted["word_count"]
+                    except Exception as e:
+                        parse_errors += 1
+                        if debug:
+                            logger.warning(f"[DEBUG] error extracting from {seed_file}: {e}")
+                        continue  # skip
+
+                    # Now gather the data from evaluation.json
                     for threat_model, tm_results in seed_results.items():
                         if threat_model not in THREAT_MODELS:
                             continue
 
                         post = tm_results['attribution']['post']
-
-                        # Use real length if found, else fallback
-                        actual_length = seed_length_map.get(seed_int, float(target_length))
-                        if debug:
-                            logger.info(
-                                f"[DEBUG] For seed={seed_str} (int={seed_int}), "
-                                f"found length_map? {'YES' if seed_int in seed_length_map else 'NO'}, "
-                                f"using length={actual_length}"
-                            )
-                        if seed_int not in seed_length_map:
-                            fallback_count += 1
-                        total_rows += 1
-
                         entry = {
                             'corpus': corpus,
                             'llm': llm,
                             'threat_model': threat_model,
                             'seed': seed_str,
-                            'exemplar_length': actual_length,
+                            # Use the *actual* length from the LLM output
+                            'exemplar_length': float(exemplar_length),
                             'accuracy@1': post.get('accuracy@1'),
                             'accuracy@5': post.get('accuracy@5'),
                             'true_class_confidence': post.get('true_class_confidence'),
@@ -218,27 +204,27 @@ def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
                             if 'bertscore' in quality and 'bertscore_f1_avg' in quality['bertscore']:
                                 entry['bertscore'] = quality['bertscore']['bertscore_f1_avg']
 
-                        data.append(entry)
+                        # If there's a seed_{seed}.json, let's see if it has example_metrics
+                        # to get binary outcomes
+                        try:
+                            with open(seed_file) as f:
+                                detailed_data = json.load(f)
+                            if 'example_metrics' in detailed_data:
+                                binary_acc1 = [
+                                    1 if ex['transformed_rank'] == 0 else 0
+                                    for ex in detailed_data['example_metrics']
+                                ]
+                                binary_acc5 = [
+                                    1 if ex['transformed_rank'] < 5 else 0
+                                    for ex in detailed_data['example_metrics']
+                                ]
+                                entry['binary_acc1'] = binary_acc1
+                                entry['binary_acc5'] = binary_acc5
+                        except Exception as e:
+                            logger.error(f"Error processing seed file {seed_file}: {e}")
 
-                        # Check for binary outcomes
-                        seed_file = model_dir / f"seed_{seed_str}.json"
-                        if seed_file.exists():
-                            try:
-                                with open(seed_file) as f:
-                                    detailed_data = json.load(f)
-                                if 'example_metrics' in detailed_data:
-                                    binary_acc1 = [
-                                        1 if ex['transformed_rank'] == 0 else 0
-                                        for ex in detailed_data['example_metrics']
-                                    ]
-                                    binary_acc5 = [
-                                        1 if ex['transformed_rank'] < 5 else 0
-                                        for ex in detailed_data['example_metrics']
-                                    ]
-                                    entry['binary_acc1'] = binary_acc1
-                                    entry['binary_acc5'] = binary_acc5
-                            except Exception as e:
-                                logger.error(f"Error processing seed file {seed_file}: {e}")
+                        data.append(entry)
+                        total_rows += 1
 
     df = pd.DataFrame(data)
     logger.info(
@@ -248,14 +234,11 @@ def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
         f"{df['threat_model'].nunique()} threat models, "
         f"and {df['exemplar_length'].nunique()} distinct exemplar lengths"
     )
-
-    if debug and total_rows > 0:
-        logger.info(f"[DEBUG] Finished prepare_data. Out of {total_rows} total rows, {fallback_count} used nominal fallback.")
-        fallback_pct = 100.0 * fallback_count / total_rows
-        logger.info(f"[DEBUG] => fallback usage = {fallback_pct:.1f}%")
+    logger.info(f"Missing seed files: {missing_seed_file}, parse errors: {parse_errors}")
+    if debug:
+        logger.info(f"[DEBUG] total rows: {total_rows}, final df size: {len(df)}")
 
     return df
-
 
 
 def analyze_exemplar_length_effect(
@@ -285,6 +268,7 @@ def analyze_exemplar_length_effect(
 
     binary_key = f'binary_{metric.replace("@", "")}'
     if metric in ['accuracy@1', 'accuracy@5'] and binary_key in df.columns:
+        # If we have binary outcomes, do logistic modeling
         binary_rows = []
         for _, row in df.iterrows():
             if binary_key in row and isinstance(row[binary_key], list):
@@ -308,6 +292,7 @@ def analyze_exemplar_length_effect(
             x_mean = np.mean(x)
             x_range = np.linspace(min(x), max(x), 100)
             x_scaled = (x - x_mean) / 1000.0
+
             with pm.Model() as model:
                 try:
                     alpha = pm.Normal("alpha", mu=0, sigma=2)
@@ -325,21 +310,26 @@ def analyze_exemplar_length_effect(
                     beta_mean = float(np.mean(beta_samples))
                     beta_std = float(np.std(beta_samples))
                     beta_hdi = az.hdi(beta_samples, hdi_prob=0.95)
+
                     if higher_is_better:
                         posterior_prob_beneficial = float(np.mean(beta_samples > 0))
                         direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
                     else:
                         posterior_prob_beneficial = float(np.mean(beta_samples < 0))
                         direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+
                     effect_sd = beta_std
                     rope_bounds = (-0.05 * effect_sd, 0.05 * effect_sd)
                     in_rope = float(np.mean((beta_samples >= rope_bounds[0]) & (beta_samples <= rope_bounds[1])))
+
                     if (beta_hdi[0] > rope_bounds[1]) or (beta_hdi[1] < rope_bounds[0]):
                         significance = "Credible Effect"
                     elif (beta_hdi[0] >= rope_bounds[0]) and (beta_hdi[1] <= rope_bounds[1]):
                         significance = "Practically Equivalent to Zero"
                     else:
                         significance = "Not Credible"
+
+                    # Predictions
                     pred_samples = []
                     for i in range(100):
                         idx = np.random.randint(0, len(alpha_samples))
@@ -352,8 +342,11 @@ def analyze_exemplar_length_effect(
                     y_pred_hdi = np.zeros((2, len(x_range)))
                     for i in range(len(x_range)):
                         y_pred_hdi[:, i] = az.hdi(pred_samples[:, i], hdi_prob=0.95)
+
                     y_pred_hdi_lower = y_pred_hdi[0, :]
                     y_pred_hdi_upper = y_pred_hdi[1, :]
+
+                    # Conclusion
                     if in_rope > 0.95:
                         conclusion = "Practically Equivalent"
                     elif significance == "Credible Effect":
@@ -363,12 +356,14 @@ def analyze_exemplar_length_effect(
                             conclusion = "Significant Deterioration"
                     else:
                         conclusion = "Inconclusive"
+
                     effect_per_1000_words = beta_mean
                     effect_2000_words = beta_mean * 2
                     avg_prob = np.mean(y)
                     avg_logit = np.log(avg_prob / (1 - avg_prob))
                     prob_effect_1000 = expit(avg_logit + effect_per_1000_words) - avg_prob
                     prob_effect_2000 = expit(avg_logit + effect_2000_words) - avg_prob
+
                     return {
                         "corpus": corpus,
                         "threat_model": threat_model,
@@ -405,19 +400,24 @@ def analyze_exemplar_length_effect(
                     logger.error(f"Error in binary model fitting: {str(e)}")
                     logger.error(f"Binary values: {np.bincount(y)}")
                     logger.warning("Falling back to aggregate modeling approach")
-    # Non-binary metrics or fallback:
+
+    # If no binary data or we fell back, do standard continuous approach
     df = df.dropna(subset=[metric, 'exemplar_length'])
     x = df['exemplar_length'].values
     y = df[metric].values
+
+    # Some special handling for 'entropy'
     if corpus.lower() == 'ebg':
         max_entropy = np.log2(45)
     elif corpus.lower() == 'rj':
         max_entropy = np.log2(21)
     else:
         max_entropy = np.log2(100)
+
     x_mean = np.mean(x)
     x_range = np.linspace(min(x), max(x), 100)
     x_scaled = (x - x_mean) / 1000.0
+
     if metric == 'entropy':
         y_scaled = y / max_entropy
         y_mean = np.mean(y)
@@ -427,54 +427,71 @@ def analyze_exemplar_length_effect(
     else:
         y_scaled = y
         y_mean = np.mean(y)
+
     with pm.Model() as model:
         try:
             alpha = pm.Normal("alpha", mu=0, sigma=2)
             beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
+
             if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy']:
                 sigma = pm.HalfStudentT("sigma", nu=3, sigma=0.1)
             else:
                 sigma = pm.HalfStudentT("sigma", nu=3, sigma=0.5)
+
             mu_est = alpha + beta * x_scaled
+
             if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
                 theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
                 concentration = pm.HalfNormal("concentration", 10.0)
                 alpha_beta = pm.Deterministic("alpha_beta", theta * concentration)
                 beta_beta = pm.Deterministic("beta_beta", (1 - theta) * concentration)
                 likelihood = pm.Beta("likelihood", alpha=alpha_beta, beta=beta_beta, observed=y_scaled)
+
             elif metric == 'entropy':
-                likelihood = pm.TruncatedNormal("likelihood", mu=mu_est, sigma=sigma, lower=0, upper=1, observed=y_scaled)
+                likelihood = pm.TruncatedNormal(
+                    "likelihood", mu=mu_est, sigma=sigma, lower=0, upper=1, observed=y_scaled
+                )
             else:
-                likelihood = pm.StudentT("likelihood", nu=4, mu=mu_est, sigma=sigma, observed=y_scaled)
+                likelihood = pm.StudentT(
+                    "likelihood", nu=4, mu=mu_est, sigma=sigma, observed=y_scaled
+                )
+
             trace = pm.sample(
-                2000, tune=1000, chains=4, random_seed=42, target_accept=0.95,
-                return_inferencedata=True, cores=4
+                2000, tune=1000, chains=4, random_seed=42,
+                target_accept=0.95, return_inferencedata=True, cores=4
             )
+
             alpha_samples = trace.posterior["alpha"].values.flatten()
             beta_samples = trace.posterior["beta"].values.flatten()
+
             x_range_scaled = (x_range - x_mean) / 1000.0
             beta_mean = float(np.mean(beta_samples))
             beta_std = float(np.std(beta_samples))
             beta_hdi = az.hdi(beta_samples, hdi_prob=0.95)
+
             if higher_is_better:
                 posterior_prob_beneficial = float(np.mean(beta_samples > 0))
                 direction = "positive" if posterior_prob_beneficial > 0.5 else "negative"
             else:
                 posterior_prob_beneficial = float(np.mean(beta_samples < 0))
                 direction = "negative" if posterior_prob_beneficial > 0.5 else "positive"
+
             effect_sd = beta_std
             rope_bounds = (-0.1 * effect_sd, 0.1 * effect_sd)
             in_rope = float(np.mean((beta_samples >= rope_bounds[0]) & (beta_samples <= rope_bounds[1])))
+
             if (beta_hdi[0] > rope_bounds[1]) or (beta_hdi[1] < rope_bounds[0]):
                 significance = "Credible Effect"
             elif (beta_hdi[0] >= rope_bounds[0]) and (beta_hdi[1] <= rope_bounds[1]):
                 significance = "Practically Equivalent to Zero"
             else:
                 significance = "Not Credible"
+
             pred_samples = []
             for i in range(100):
                 idx = np.random.randint(0, len(alpha_samples))
                 a, b = alpha_samples[idx], beta_samples[idx]
+
                 if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
                     logit = a + b * x_range_scaled
                     pred = 1 / (1 + np.exp(-logit))
@@ -484,13 +501,17 @@ def analyze_exemplar_length_effect(
                 else:
                     pred = a + b * x_range_scaled
                 pred_samples.append(pred)
+
             pred_samples = np.array(pred_samples)
             y_pred_mean = np.mean(pred_samples, axis=0)
+
             y_pred_hdi = np.zeros((2, len(x_range)))
             for i in range(len(x_range)):
                 y_pred_hdi[:, i] = az.hdi(pred_samples[:, i], hdi_prob=0.95)
+
             y_pred_hdi_lower = y_pred_hdi[0, :]
             y_pred_hdi_upper = y_pred_hdi[1, :]
+
             if in_rope > 0.95:
                 conclusion = "Practically Equivalent"
             elif significance == "Credible Effect":
@@ -500,15 +521,19 @@ def analyze_exemplar_length_effect(
                     conclusion = "Significant Deterioration"
             else:
                 conclusion = "Inconclusive"
+
         except Exception as e:
             logger.error(f"Model fitting error: {str(e)}")
             logger.error(f"Data summary: min={np.min(y)}, max={np.max(y)}, mean={np.mean(y)}")
             return {"error": f"Model fitting failed for {corpus}-{threat_model}-{llm}-{metric}: {str(e)}"}
+
     effect_per_1000_words = beta_mean
     effect_2000_words = beta_mean * 2
+
     if metric == 'entropy':
         effect_per_1000_words *= max_entropy
         effect_2000_words *= max_entropy
+
     return {
         "corpus": corpus,
         "threat_model": threat_model,
@@ -577,7 +602,6 @@ def plot_exemplar_length_effect(
         jitter=0.3,
         ax=ax
     )
-    # Single legend entry for observations
     ax.plot([], [], color='blue', label=f'Observations (n={len(df)})')
 
     data_min, data_max = df[metric].min(), df[metric].max()
@@ -623,8 +647,11 @@ def plot_exemplar_length_effect(
     direction_str = "↑ (Higher is better)" if higher_is_better else "↓ (Lower is better)"
     ax.set_xlabel('Exemplar Length (words)', fontsize=14)
     ax.set_ylabel(f'{metric_label} {direction_str}', fontsize=14)
-    ax.set_title(f'Effect of Exemplar Length on {metric_label}\n'
-                 f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})', fontsize=16)
+    ax.set_title(
+        f'Effect of Exemplar Length on {metric_label}\n'
+        f'({corpus.upper()}, {threat_model.upper()}, {llm.title()})',
+        fontsize=16
+    )
 
     if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
         import matplotlib.ticker as mticker
@@ -661,18 +688,22 @@ def run_full_analysis(
         for threat_model in threat_models_to_analyze:
             for llm in llms_to_analyze:
                 for metric in metrics_to_analyze:
-                    subset = data[(data['corpus'] == corpus) &
-                                  (data['threat_model'] == threat_model) &
-                                  (data['llm'] == llm)]
+                    subset = data[
+                        (data['corpus'] == corpus) &
+                        (data['threat_model'] == threat_model) &
+                        (data['llm'] == llm)
+                    ]
                     if len(subset) < 3 or metric not in subset.columns or subset[metric].isna().all():
                         logger.warning(f"Skipping {corpus}-{threat_model}-{llm}-{metric}: insufficient data")
                         continue
                     logger.info(f"Analyzing {corpus}-{threat_model}-{llm}-{metric}")
+
                     try:
                         analysis = analyze_exemplar_length_effect(data, metric, corpus, threat_model, llm)
                         if 'error' in analysis:
                             logger.warning(f"Analysis failed: {analysis['error']}")
                             continue
+
                         results.append({
                             'Corpus': corpus.upper(),
                             'Threat Model': threat_model.upper(),
@@ -690,46 +721,55 @@ def run_full_analysis(
                             'In ROPE': analysis['slope']['in_rope'],
                             'Conclusion': analysis['slope']['conclusion']
                         })
+
                         plot_exemplar_length_effect(data, analysis, output_dir)
+
                     except Exception as e:
                         logger.error(f"Error analyzing {corpus}-{threat_model}-{llm}-{metric}: {e}")
+
     results_df = pd.DataFrame(results)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     results_df.to_csv(Path(output_dir) / "exemplar_length_analysis_results.csv", index=False)
-    # (The remainder of the summary-report code is unchanged.)
     logger.info(f"Analysis complete. Results saved to {output_dir}")
     return results_df
 
 
 def create_summary_report(results_df: pd.DataFrame, output_dir: str) -> None:
+    from pathlib import Path
     report_path = Path(output_dir) / "exemplar_length_analysis_report.md"
     with open(report_path, 'w') as f:
         f.write("# Analysis of Exemplar Length Effect on LLM-based Imitation Defense\n\n")
         f.write("## Overview\n\n")
-        f.write(f"This analysis examines the effect of exemplar length (500, 1000, and 2500 words) on the effectiveness of LLM-based imitation as a defense against authorship attribution attacks. The analysis covers:\n\n")
-        f.write(f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
-        f.write(f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
-        f.write(f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
-        f.write(f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
-        f.write("## Note on Bayesian Interpretation\n\n")
-        f.write("This analysis uses Bayesian methods to estimate the effect of exemplar length on defense effectiveness. Key concepts:\n\n")
-        f.write("- **Posterior probability**: In Bayesian analysis, we calculate the probability of an effect based on observed data and prior beliefs.\n")
-        f.write("- **95% HDI (Highest Density Interval)**: The interval containing 95% of the posterior probability mass, showing where the true effect most likely lies.\n")
-        f.write("- **Credible Effect**: When the 95% HDI excludes zero, providing strong evidence that the effect is real.\n")
-        f.write("- **Posterior prob. beneficial**: The probability that longer exemplars improve a metric.\n\n")
-        f.write("## Overall Findings\n\n")
+        f.write(
+            f"This analysis examines the effect of *actual* exemplar length on the effectiveness "
+            f"of LLM-based imitation as a defense against authorship attribution attacks. We extract "
+            f"the exemplar text from each seed_{seed}.json, count its words, and model how that length "
+            f"impacts various metrics.\n\n"
+        )
+        f.write(
+            f"- {results_df['Corpus'].nunique()} corpora: {', '.join(sorted(results_df['Corpus'].unique()))}\n")
+        f.write(
+            f"- {results_df['Threat Model'].nunique()} threat models: {', '.join(sorted(results_df['Threat Model'].unique()))}\n")
+        f.write(
+            f"- {results_df['LLM'].nunique()} LLMs: {', '.join(sorted(results_df['LLM'].unique()))}\n")
+        f.write(
+            f"- {results_df['Metric'].nunique()} metrics: {', '.join(sorted(results_df['Metric'].unique()))}\n\n")
+
+        # Additional details
         credible = results_df[results_df['Conclusion'].str.contains('Significant')]
         improvements = credible[credible['Conclusion'].str.contains('Improvement')]
         deteriorations = credible[credible['Conclusion'].str.contains('Deterioration')]
         inconclusive = results_df[results_df['Conclusion'] == 'Inconclusive']
         equivalent = results_df[results_df['Conclusion'] == 'Practically Equivalent']
+
         total_tests = len(results_df)
+        f.write("## Overall Findings\n\n")
         f.write(f"Out of {total_tests} total tests:\n\n")
         f.write(f"- **Credible improvements with longer exemplars**: {len(improvements)} ({len(improvements) / total_tests:.1%})\n")
         f.write(f"- **Credible deteriorations with longer exemplars**: {len(deteriorations)} ({len(deteriorations) / total_tests:.1%})\n")
         f.write(f"- **Inconclusive results**: {len(inconclusive)} ({len(inconclusive) / total_tests:.1%})\n")
         f.write(f"- **Practically equivalent results**: {len(equivalent)} ({len(equivalent) / total_tests:.1%})\n\n")
-        # (Additional report sections remain unchanged.)
+
     logger.info(f"Summary report saved to {report_path}")
 
 
@@ -747,7 +787,7 @@ def parse_arguments():
     parser.add_argument('--threat_model', type=str, choices=THREAT_MODELS, help='Specific threat model to analyze (default: all)')
     parser.add_argument('--metric', type=str, choices=METRICS, help='Specific metric to analyze (default: all)')
     parser.add_argument('--debug', action='store_true',
-                        help='Enable extra debug printing to diagnose seed/length matching issues')
+                        help='Enable extra debug printing to diagnose length matching issues')
 
     return parser.parse_args()
 
@@ -762,9 +802,9 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Preparing data for analysis")
-    # Pass args.debug here
     data = prepare_data(args.base_dir, debug=args.debug)
 
+    # Save raw data
     data.to_csv(output_dir / "raw_data.csv", index=False)
 
     logger.info("Running analysis")
@@ -780,7 +820,6 @@ def main():
     logger.info("Creating summary report")
     create_summary_report(results_df, str(output_dir))
     logger.info("Analysis complete")
-
 
 
 if __name__ == "__main__":
