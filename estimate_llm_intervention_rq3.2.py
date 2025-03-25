@@ -46,7 +46,10 @@ EXEMPLAR_LENGTHS = [500, 1000, 2500]
 def extract_exemplar_and_count(llm_output_file: str) -> dict:
     """
     Given a path to an LLM output JSON (like seed_XXXX.json),
-    extract the exemplar text from the 'user' field and count its words.
+    extract the exemplar text and count its words.
+
+    If the JSON contains a "user" field, we try to extract the exemplar
+    using marker strings. Otherwise, we fall back to the "original" field.
 
     Returns a dict with:
       {
@@ -55,32 +58,39 @@ def extract_exemplar_and_count(llm_output_file: str) -> dict:
         "file": str  # original file name
       }
     """
+    # Markers used in your prompt instructions
     marker_start = "Here is an example of the writing style you are expected to mimic:\n\n"
-    marker_end   = "\n\nPlease rewrite the following text"
+    marker_end = "\n\nPlease rewrite the following text"
 
     with open(llm_output_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # If the loaded JSON is a list, take the first element.
+    # If the JSON is a list, use the first element.
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(f"Empty list in {llm_output_file}")
         data = data[0]
 
-    user_text = data.get("user", "")
-    if not user_text:
-        raise ValueError(f"No 'user' field found in {llm_output_file}")
-
-    start_idx = user_text.find(marker_start)
-    if start_idx == -1:
-        raise ValueError(f"Could not find marker_start in 'user' text for {llm_output_file}")
-
-    start_idx += len(marker_start)
-    end_idx = user_text.find(marker_end, start_idx)
-    if end_idx == -1:
-        raise ValueError(f"Could not find marker_end in 'user' text for {llm_output_file}")
-
-    exemplar_text = user_text[start_idx:end_idx].strip()
+    # First, try to use the "user" field.
+    exemplar_candidate = data.get("user", "")
+    if exemplar_candidate.strip():
+        # Try to extract using markers.
+        start_idx = exemplar_candidate.find(marker_start)
+        if start_idx == -1:
+            raise ValueError(
+                f"Could not find marker_start in 'user' text for {llm_output_file}")
+        start_idx += len(marker_start)
+        end_idx = exemplar_candidate.find(marker_end, start_idx)
+        if end_idx == -1:
+            raise ValueError(
+                f"Could not find marker_end in 'user' text for {llm_output_file}")
+        exemplar_text = exemplar_candidate[start_idx:end_idx].strip()
+    else:
+        # Fall back to the "original" field.
+        exemplar_text = data.get("original", "").strip()
+        if not exemplar_text:
+            raise ValueError(
+                f"No 'user' or 'original' field found in {llm_output_file}")
 
     tokenizer = MosesTokenizer(lang='en')
     tokens = tokenizer.tokenize(exemplar_text, escape=False)
@@ -91,7 +101,6 @@ def extract_exemplar_and_count(llm_output_file: str) -> dict:
         "word_count": word_count,
         "file": llm_output_file
     }
-
 
 
 def normalize_llm_name(model_name: str) -> str:
