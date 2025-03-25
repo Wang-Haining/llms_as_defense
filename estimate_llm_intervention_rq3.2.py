@@ -92,22 +92,28 @@ def normalize_llm_name(model_name: str) -> str:
     return name
 
 
-def prepare_data(base_dir: str) -> pd.DataFrame:
+def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
     """
-    Extract and organize data from evaluation results, including binary success/failure outcomes.
-    Now each row uses the actual prompt word count (if available) rather than an average.
+    Extract and organize data from evaluation results, including binary outcomes,
+    using each prompt's actual word count if available.
     """
     data = []
-    # Get the actual per-seed exemplar lengths from the prompts folder.
+
+    # Build the nested map: {rq_name: {seed_int: actual_length, ...}}
     actual_exemplar_map = get_actual_exemplar_lengths_by_prompt("prompts")
 
-    # Process each exemplar length category
+    # Track debug stats: how often do we fallback to nominal length?
+    fallback_count = 0
+    total_rows = 0
+
     for target_length in EXEMPLAR_LENGTHS:
         rq = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
-        # Get the mapping from seed to actual word count (if available)
         seed_length_map = actual_exemplar_map.get(rq, {})
-        logger.info(f"Processing RQ {rq}: using per-seed lengths if available.")
+
+        if debug:
+            logger.info(f"[DEBUG] Now processing RQ folder: {rq}")
+            logger.info(f"[DEBUG]   Found {len(seed_length_map)} seeds in the prompt map for this RQ.")
 
         for corpus in CORPORA:
             corpus_path = Path(base_dir) / corpus / rq_main / rq
@@ -115,11 +121,13 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                 logger.warning(f"Path not found: {corpus_path}")
                 continue
 
-            logger.info(f"Processing {corpus} for {rq}")
+            if debug:
+                logger.info(f"[DEBUG]   Checking corpus: {corpus}, path={corpus_path}")
 
             for model_dir in corpus_path.glob("*"):
                 if not model_dir.is_dir():
                     continue
+
                 llm = normalize_llm_name(model_dir.name)
                 eval_file = model_dir / "evaluation.json"
                 if not eval_file.exists():
@@ -134,17 +142,32 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                     continue
 
                 for seed_str, seed_results in results.items():
+                    # Attempt to parse the seed as int
                     try:
                         seed_int = int(seed_str)
                     except Exception as e:
-                        logger.error(f"Cannot convert seed {seed_str} to int: {e}")
                         seed_int = -1
+                        if debug:
+                            logger.warning(f"[DEBUG] Could not parse seed '{seed_str}' as int: {e}")
+
                     for threat_model, tm_results in seed_results.items():
                         if threat_model not in THREAT_MODELS:
                             continue
+
                         post = tm_results['attribution']['post']
-                        # Use actual word count for this seed if available, else fallback
+
+                        # Use real length if found, else fallback
                         actual_length = seed_length_map.get(seed_int, float(target_length))
+                        if debug:
+                            logger.info(
+                                f"[DEBUG] For seed={seed_str} (int={seed_int}), "
+                                f"found length_map? {'YES' if seed_int in seed_length_map else 'NO'}, "
+                                f"using length={actual_length}"
+                            )
+                        if seed_int not in seed_length_map:
+                            fallback_count += 1
+                        total_rows += 1
+
                         entry = {
                             'corpus': corpus,
                             'llm': llm,
@@ -156,6 +179,8 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                             'true_class_confidence': post.get('true_class_confidence'),
                             'entropy': post.get('entropy')
                         }
+
+                        # Quality metrics
                         if 'quality' in tm_results:
                             quality = tm_results['quality']
                             if 'pinc' in quality:
@@ -166,20 +191,27 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
                                         pinc_scores.append(quality['pinc'][key])
                                 if pinc_scores:
                                     entry['pinc'] = np.mean(pinc_scores)
+
                             if 'bertscore' in quality and 'bertscore_f1_avg' in quality['bertscore']:
                                 entry['bertscore'] = quality['bertscore']['bertscore_f1_avg']
+
                         data.append(entry)
-                        # Process binary outcomes if available
+
+                        # Check for binary outcomes
                         seed_file = model_dir / f"seed_{seed_str}.json"
                         if seed_file.exists():
                             try:
                                 with open(seed_file) as f:
                                     detailed_data = json.load(f)
                                 if 'example_metrics' in detailed_data:
-                                    binary_acc1 = [1 if ex['transformed_rank'] == 0 else 0
-                                                   for ex in detailed_data['example_metrics']]
-                                    binary_acc5 = [1 if ex['transformed_rank'] < 5 else 0
-                                                   for ex in detailed_data['example_metrics']]
+                                    binary_acc1 = [
+                                        1 if ex['transformed_rank'] == 0 else 0
+                                        for ex in detailed_data['example_metrics']
+                                    ]
+                                    binary_acc5 = [
+                                        1 if ex['transformed_rank'] < 5 else 0
+                                        for ex in detailed_data['example_metrics']
+                                    ]
                                     entry['binary_acc1'] = binary_acc1
                                     entry['binary_acc5'] = binary_acc5
                             except Exception as e:
@@ -187,11 +219,20 @@ def prepare_data(base_dir: str) -> pd.DataFrame:
 
     df = pd.DataFrame(data)
     logger.info(
-        f"Collected {len(df)} data points across {df['corpus'].nunique()} corpora, "
-        f"{df['llm'].nunique()} LLMs, {df['threat_model'].nunique()} threat models, "
+        f"Collected {len(df)} data points across "
+        f"{df['corpus'].nunique()} corpora, "
+        f"{df['llm'].nunique()} LLMs, "
+        f"{df['threat_model'].nunique()} threat models, "
         f"and {df['exemplar_length'].nunique()} distinct exemplar lengths"
     )
+
+    if debug and total_rows > 0:
+        logger.info(f"[DEBUG] Finished prepare_data. Out of {total_rows} total rows, {fallback_count} used nominal fallback.")
+        fallback_pct = 100.0 * fallback_count / total_rows
+        logger.info(f"[DEBUG] => fallback usage = {fallback_pct:.1f}%")
+
     return df
+
 
 
 def analyze_exemplar_length_effect(
@@ -682,6 +723,9 @@ def parse_arguments():
     parser.add_argument('--model', type=str, help='Specific LLM to analyze (default: all)')
     parser.add_argument('--threat_model', type=str, choices=THREAT_MODELS, help='Specific threat model to analyze (default: all)')
     parser.add_argument('--metric', type=str, choices=METRICS, help='Specific metric to analyze (default: all)')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable extra debug printing to diagnose seed/length matching issues')
+
     return parser.parse_args()
 
 
@@ -690,20 +734,30 @@ def main():
     logger.info("Starting exemplar length analysis")
     logger.info(f"Base directory: {args.base_dir}")
     logger.info(f"Output directory: {args.output_dir}")
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info("Preparing data for analysis")
-    data = prepare_data(args.base_dir)
+    # Pass args.debug here
+    data = prepare_data(args.base_dir, debug=args.debug)
+
     data.to_csv(output_dir / "raw_data.csv", index=False)
+
     logger.info("Running analysis")
-    results_df = run_full_analysis(data=data, output_dir=str(output_dir),
-                                   filter_corpus=args.corpus,
-                                   filter_model=args.model,
-                                   filter_threat_model=args.threat_model,
-                                   filter_metric=args.metric)
+    results_df = run_full_analysis(
+        data=data,
+        output_dir=str(output_dir),
+        filter_corpus=args.corpus,
+        filter_model=args.model,
+        filter_threat_model=args.threat_model,
+        filter_metric=args.metric
+    )
+
     logger.info("Creating summary report")
     create_summary_report(results_df, str(output_dir))
     logger.info("Analysis complete")
+
 
 
 if __name__ == "__main__":
