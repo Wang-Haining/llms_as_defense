@@ -137,21 +137,17 @@ def prepare_data(
     missing_llm_seed = 0
     parse_errors = 0
 
-    # We keep the same subfolder structure you have: rq3.2_imitation_w_500words, etc.
-    # If you no longer want to loop over [500, 1000, 2500], remove it or adapt as needed.
     for target_length in [500, 1000, 2500]:
         rq_folder = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
 
-        # For each corpus: ebg, rj
         for corpus in CORPORA:
             eval_rq_path = Path(evaluation_base_dir) / corpus / rq_main / rq_folder
             llm_rq_path = Path(llm_outputs_base_dir) / corpus / rq_main / rq_folder
 
             if debug:
                 logger.info(f"[DEBUG] Checking corpus={corpus}, RQ folder={rq_folder}")
-                logger.info(
-                    f"[DEBUG] eval_rq_path={eval_rq_path}, llm_rq_path={llm_rq_path}")
+                logger.info(f"[DEBUG] eval_rq_path={eval_rq_path}, llm_rq_path={llm_rq_path}")
 
             if not eval_rq_path.exists():
                 logger.warning(f"Evaluation path not found: {eval_rq_path}")
@@ -160,26 +156,23 @@ def prepare_data(
                 logger.warning(f"LLM outputs path not found: {llm_rq_path}")
                 continue
 
-            # Loop over each model_dir in the EVAL folder
             for model_dir in eval_rq_path.glob("*"):
                 if not model_dir.is_dir():
                     continue
 
                 model_name = model_dir.name  # e.g. "gemma-2-9b-it"
-                llm_eval_dir = model_dir  # path in defense_evaluation
+                llm_eval_dir = model_dir  # evaluation metrics folder
                 llm_out_dir = llm_rq_path / model_name  # corresponding folder in llm_outputs
 
                 if not llm_out_dir.exists():
                     logger.warning(f"No matching LLM output dir for {llm_out_dir}")
                     continue
 
-                # parse evaluation.json
                 eval_file = llm_eval_dir / "evaluation.json"
                 if not eval_file.exists():
                     logger.warning(f"evaluation.json not found: {eval_file}")
                     continue
 
-                # read evaluation.json => results
                 try:
                     with open(eval_file, "r") as f:
                         evaluation_data = json.load(f)
@@ -187,49 +180,36 @@ def prepare_data(
                     logger.error(f"Error parsing {eval_file}: {e}")
                     continue
 
-                # For each seed in evaluation_data, parse the post metrics
                 for seed_str, seed_results in evaluation_data.items():
-                    # We want metrics from "defense_evaluation" => seed_{seed_str}.json
-                    # We want prompt from "llm_outputs" => seed_{seed_str}.json
                     eval_seed_file = llm_eval_dir / f"seed_{seed_str}.json"
                     llm_seed_file = llm_out_dir / f"seed_{seed_str}.json"
 
-                    # If eval_seed_file missing => skip
                     if not eval_seed_file.exists():
                         missing_eval_seed += 1
                         if debug:
-                            logger.warning(
-                                f"[DEBUG] Missing eval seed file: {eval_seed_file}")
+                            logger.warning(f"[DEBUG] Missing eval seed file: {eval_seed_file}")
                         continue
 
-                    # If llm_seed_file missing => skip (can't parse user prompt)
                     if not llm_seed_file.exists():
                         missing_llm_seed += 1
                         if debug:
-                            logger.warning(
-                                f"[DEBUG] Missing LLM seed file: {llm_seed_file}")
+                            logger.warning(f"[DEBUG] Missing LLM seed file: {llm_seed_file}")
                         continue
 
-                    # parse the prompt from llm_outputs
                     try:
                         extracted = extract_exemplar_and_count(str(llm_seed_file))
                         exemplar_length = extracted["word_count"]
                     except Exception as e:
                         parse_errors += 1
                         if debug:
-                            logger.warning(
-                                f"[DEBUG] error extracting from {llm_seed_file}: {e}")
+                            logger.warning(f"[DEBUG] error extracting from {llm_seed_file}: {e}")
                         continue
 
-                    # Now parse the evaluation metrics from seed_results
-                    # e.g. "logreg", "svm", "roberta"
                     for threat_model, tm_data in seed_results.items():
                         if threat_model not in THREAT_MODELS:
                             continue
-                        # post metrics
                         post = tm_data["attribution"]["post"]
 
-                        # Build a row
                         row = {
                             "corpus": corpus,
                             "llm": normalize_llm_name(model_name),
@@ -242,10 +222,8 @@ def prepare_data(
                             "entropy": post.get("entropy")
                         }
 
-                        # If "quality" is present
                         if "quality" in tm_data:
                             q = tm_data["quality"]
-                            # PINC
                             if "pinc" in q:
                                 pinc_scores = []
                                 for k in range(1, 5):
@@ -255,12 +233,9 @@ def prepare_data(
                                 if pinc_scores:
                                     row["pinc"] = float(np.mean(pinc_scores))
 
-                            # BERTScore
-                            if "bertscore" in q and "bertscore_f1_avg" in q[
-                                "bertscore"]:
+                            if "bertscore" in q and "bertscore_f1_avg" in q["bertscore"]:
                                 row["bertscore"] = q["bertscore"]["bertscore_f1_avg"]
 
-                        # parse example_metrics from the EVAL seed file => binary outcomes
                         try:
                             with open(eval_seed_file, "r") as f:
                                 detailed_eval_data = json.load(f)
@@ -276,27 +251,31 @@ def prepare_data(
                                 row["binary_acc1"] = binary_acc1
                                 row["binary_acc5"] = binary_acc5
                         except Exception as e:
-                            logger.error(
-                                f"Error reading eval seed file {eval_seed_file}: {e}")
+                            logger.error(f"Error reading eval seed file {eval_seed_file}: {e}")
 
                         data.append(row)
                         total_rows += 1
 
     df = pd.DataFrame(data)
+    if df.empty:
+        logger.error("No data collected. Please check that evaluation and LLM output files exist and have the expected structure.")
+        return df
+
     logger.info(
-        f"Collected {len(df)} data points (rows) across "
+        f"Collected {len(df)} data points across "
         f"{df['corpus'].nunique()} corpora, "
         f"{df['llm'].nunique()} LLMs, "
         f"{df['threat_model'].nunique()} threat models, "
         f"and {df['exemplar_length'].nunique()} distinct exemplar lengths."
     )
     logger.info(
-        f"Missing eval seed: {missing_eval_seed}, missing llm seed: {missing_llm_seed}, parse_errors: {parse_errors}")
+        f"Missing eval seed: {missing_eval_seed}, missing llm seed: {missing_llm_seed}, parse_errors: {parse_errors}"
+    )
     if debug:
-        logger.info(
-            f"[DEBUG] total_rows processed = {total_rows}, final df size = {len(df)}")
+        logger.info(f"[DEBUG] total_rows processed = {total_rows}, final df size = {len(df)}")
 
     return df
+
 
 
 def analyze_exemplar_length_effect(
