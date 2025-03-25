@@ -688,33 +688,22 @@ def analyze_exemplar_length_effect(
 
 
 def plot_exemplar_length_effect(
-        data: pd.DataFrame,
-        results: Dict,
-        output_dir: str,
-        format: str = 'png'
+    data: pd.DataFrame,
+    results: Dict,
+    output_dir: str,
+    format: str = 'png'
 ) -> None:
-    """
-    Create and save plot of exemplar length effect on a metric.
-
-    Args:
-        data: DataFrame with raw data
-        results: Results dictionary from analyze_exemplar_length_effect
-        output_dir: Directory to save plot
-        format: Output file format (png, pdf, svg)
-    """
     import matplotlib.pyplot as plt
     import seaborn as sns
     import numpy as np
     from pathlib import Path
 
-    # Extract parameters from results
     corpus = results['corpus']
     threat_model = results['threat_model']
     llm = results['llm']
     metric = results['metric']
     higher_is_better = results['higher_is_better']
 
-    # Filter data
     df = data[
         (data['corpus'] == corpus) &
         (data['threat_model'] == threat_model) &
@@ -722,13 +711,12 @@ def plot_exemplar_length_effect(
     ].copy()
     df = df.dropna(subset=[metric, 'exemplar_length'])
 
-    # Create plot
     plt.figure(figsize=(12, 8))
     sns.set_style("whitegrid")
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    # Plot the raw data points using the actual exemplar_length values
+    # ---- 1) Remove label to avoid repeated legend entries ----
     sns.stripplot(
         x='exemplar_length',
         y=metric,
@@ -737,20 +725,24 @@ def plot_exemplar_length_effect(
         color='blue',
         alpha=0.5,
         jitter=0.3,
-        label=f'Observations (n={len(df)})',
         ax=ax
     )
 
-    # Add count labels for each exemplar length
+    # If you really want a single legend entry, do:
+    ax.plot([], [], color='blue', label=f'Observations (n={len(df)})')
+
+    # ---- 2) Use a smaller or scaled offset for the "n=" label ----
+    data_min, data_max = df[metric].min(), df[metric].max()
+    data_range = data_max - data_min
     for length in sorted(df['exemplar_length'].unique()):
         subset = df[df['exemplar_length'] == length]
-        if not subset.empty:
-            count = len(subset)
-            max_y = subset[metric].max()
-            # Slight vertical offset so text doesn't overlap the highest point
-            ax.text(length, max_y + 0.02, f"n={count}", ha='center', va='bottom')
+        count = len(subset)
+        max_y = subset[metric].max()
+        # e.g. 2% of the data range
+        offset = 0.02 * data_range
+        ax.text(length, max_y + offset, f"n={count}", ha='center', va='bottom')
 
-    # Plot the model predictions with HDI
+    # Plot the Bayesian model predictions
     x_range = np.array(results['predictions']['x_range'])
     y_pred_mean = np.array(results['predictions']['y_pred_mean'])
     y_pred_hdi_lower = np.array(results['predictions']['y_pred_hdi_lower'])
@@ -766,7 +758,6 @@ def plot_exemplar_length_effect(
         label='95% HDI'
     )
 
-    # Annotate slope information
     slope_info = (
         f"Slope: {results['slope']['mean']:.6f} "
         f"[95% HDI: {results['slope']['hdi'][0]:.6f}, {results['slope']['hdi'][1]:.6f}]"
@@ -774,7 +765,6 @@ def plot_exemplar_length_effect(
     effect_info = f"Effect (500→2500): {results['slope']['effect_2000_words']:.4f}"
     prob_info = f"Posterior prob. beneficial: {results['slope']['posterior_prob_beneficial']:.3f}"
     conclusion = f"Conclusion: {results['slope']['conclusion']}"
-
     text_box = f"{slope_info}\n{effect_info}\n{prob_info}\n{conclusion}"
 
     ax.annotate(
@@ -784,7 +774,7 @@ def plot_exemplar_length_effect(
         bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=0.8)
     )
 
-    # Format metric name for display
+    # Pretty labels
     metric_label = metric
     if metric == 'accuracy@1':
         metric_label = 'Top-1 Accuracy'
@@ -795,10 +785,7 @@ def plot_exemplar_length_effect(
     elif metric == 'entropy':
         metric_label = 'Prediction Entropy'
 
-    # Add direction indicator for interpretation
     direction_str = "↑ (Higher is better)" if higher_is_better else "↓ (Lower is better)"
-
-    # Set labels and title
     ax.set_xlabel('Exemplar Length (words)', fontsize=14)
     ax.set_ylabel(f'{metric_label} {direction_str}', fontsize=14)
     ax.set_title(
@@ -807,29 +794,25 @@ def plot_exemplar_length_effect(
         fontsize=16
     )
 
-    # Format y-axis as percentage for accuracy metrics
     if metric in ['accuracy@1', 'accuracy@5', 'true_class_confidence']:
-        ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+        import matplotlib.ticker as mticker
+        ax.yaxis.set_major_formatter(mticker.PercentFormatter(1.0))
 
-    # Optionally, set x-ticks explicitly if you only have 3 lengths
-    # This ensures the x-axis has the correct tick labels at 500, 1000, 2500
+    # Force x-ticks at 500, 1000, 2500
     unique_lengths = sorted(df['exemplar_length'].unique())
     ax.set_xticks(unique_lengths)
     ax.set_xticklabels([str(int(l)) for l in unique_lengths])
 
-    # Add legend
     ax.legend(loc='best', fontsize=12)
 
-    # Create output directory structure
     output_path = Path(output_dir) / corpus / threat_model / llm
     output_path.mkdir(parents=True, exist_ok=True)
-
-    # Save plot
     file_path = output_path / f"{metric}_exemplar_effect.{format}"
     plt.savefig(file_path, bbox_inches='tight', dpi=300)
     plt.close()
 
     print(f"Saved plot to {file_path}")
+
 
 
 def run_full_analysis(
