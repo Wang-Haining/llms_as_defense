@@ -14,16 +14,17 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
+import arviz as az
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
-import arviz as az
-import matplotlib.pyplot as plt
 import seaborn as sns
 from sacremoses import MosesTokenizer
 from scipy.special import expit  # for logistic transform
+from utils import CORPORA
 
 # Configure logging
 logging.basicConfig(
@@ -32,24 +33,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Constants
 METRICS = ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy', 'bertscore', 'pinc']
 THREAT_MODELS = ['logreg', 'svm', 'roberta']
 LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
-CORPORA = ['ebg', 'rj']
-
-# We no longer rely on [500, 1000, 2500] fallback for length, but
-# we keep them if you still want to loop over subfolders. Otherwise you can remove.
-EXEMPLAR_LENGTHS = [500, 1000, 2500]
 
 
 def extract_exemplar_and_count(llm_output_file: str) -> dict:
     """
     Given a path to an LLM output JSON (like seed_XXXX.json),
-    extract the exemplar text and count its words.
-
-    If the JSON contains a "user" field, we try to extract the exemplar
-    using marker strings. Otherwise, we fall back to the "original" field.
+    extract the exemplar text from the "original" field and count its words.
+    This function uses the "original" field by default (no fallback).
 
     Returns a dict with:
       {
@@ -58,39 +51,18 @@ def extract_exemplar_and_count(llm_output_file: str) -> dict:
         "file": str  # original file name
       }
     """
-    # Markers used in your prompt instructions
-    marker_start = "Here is an example of the writing style you are expected to mimic:\n\n"
-    marker_end = "\n\nPlease rewrite the following text"
-
     with open(llm_output_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # If the JSON is a list, use the first element.
+    # if the loaded JSON is a list, use the first element.
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(f"Empty list in {llm_output_file}")
         data = data[0]
 
-    # First, try to use the "user" field.
-    exemplar_candidate = data.get("user", "")
-    if exemplar_candidate.strip():
-        # Try to extract using markers.
-        start_idx = exemplar_candidate.find(marker_start)
-        if start_idx == -1:
-            raise ValueError(
-                f"Could not find marker_start in 'user' text for {llm_output_file}")
-        start_idx += len(marker_start)
-        end_idx = exemplar_candidate.find(marker_end, start_idx)
-        if end_idx == -1:
-            raise ValueError(
-                f"Could not find marker_end in 'user' text for {llm_output_file}")
-        exemplar_text = exemplar_candidate[start_idx:end_idx].strip()
-    else:
-        # Fall back to the "original" field.
-        exemplar_text = data.get("original", "").strip()
-        if not exemplar_text:
-            raise ValueError(
-                f"No 'user' or 'original' field found in {llm_output_file}")
+    exemplar_text = data.get("original", "").strip()
+    if not exemplar_text:
+        raise ValueError(f"No 'original' field found in {llm_output_file}")
 
     tokenizer = MosesTokenizer(lang='en')
     tokens = tokenizer.tokenize(exemplar_text, escape=False)
@@ -136,6 +108,7 @@ def prepare_data(
     import json
     import logging
     from pathlib import Path
+
     import pandas as pd
 
     logger = logging.getLogger(__name__)
@@ -314,7 +287,7 @@ def analyze_exemplar_length_effect(
 
     binary_key = f'binary_{metric.replace("@", "")}'
     if metric in ['accuracy@1', 'accuracy@5'] and binary_key in df.columns:
-        # If we have binary outcomes, do logistic modeling
+        # if we have binary outcomes, do logistic modeling
         binary_rows = []
         for _, row in df.iterrows():
             if binary_key in row and isinstance(row[binary_key], list):
@@ -375,7 +348,7 @@ def analyze_exemplar_length_effect(
                     else:
                         significance = "Not Credible"
 
-                    # Predictions
+                    # predictions
                     pred_samples = []
                     for i in range(100):
                         idx = np.random.randint(0, len(alpha_samples))
@@ -392,7 +365,7 @@ def analyze_exemplar_length_effect(
                     y_pred_hdi_lower = y_pred_hdi[0, :]
                     y_pred_hdi_upper = y_pred_hdi[1, :]
 
-                    # Conclusion
+                    # conclusion
                     if in_rope > 0.95:
                         conclusion = "Practically Equivalent"
                     elif significance == "Credible Effect":
@@ -447,12 +420,12 @@ def analyze_exemplar_length_effect(
                     logger.error(f"Binary values: {np.bincount(y)}")
                     logger.warning("Falling back to aggregate modeling approach")
 
-    # If no binary data or we fell back, do standard continuous approach
+    # if no binary data or we fell back, do standard continuous approach
     df = df.dropna(subset=[metric, 'exemplar_length'])
     x = df['exemplar_length'].values
     y = df[metric].values
 
-    # Some special handling for 'entropy'
+    # some special handling for 'entropy'
     if corpus.lower() == 'ebg':
         max_entropy = np.log2(45)
     elif corpus.lower() == 'rj':
@@ -618,10 +591,6 @@ def plot_exemplar_length_effect(
     output_dir: str,
     format: str = 'png'
 ) -> None:
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import numpy as np
-    from pathlib import Path
 
     corpus = results['corpus']
     threat_model = results['threat_model']
@@ -850,10 +819,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Preparing data for analysis")
-    # Pass both base directories to prepare_data
+    # pass both base directories to prepare_data
     data = prepare_data(args.evaluation_dir, args.llm_outputs_dir, debug=args.debug)
 
-    # Save raw data
+    # save raw data
     data.to_csv(output_dir / "raw_data.csv", index=False)
 
     logger.info("Running analysis")
