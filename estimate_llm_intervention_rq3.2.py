@@ -103,140 +103,191 @@ def normalize_llm_name(model_name: str) -> str:
     return name
 
 
-def prepare_data(base_dir: str, debug: bool = False) -> pd.DataFrame:
+def prepare_data(
+        evaluation_base_dir: str,
+        llm_outputs_base_dir: str,
+        debug: bool = False
+) -> pd.DataFrame:
     """
-    Extract and organize data from evaluation results, including binary outcomes,
-    using each seed_{seed}.json's actual word count for the exemplar.
+    Combine metrics from defense_evaluation with actual exemplar text from llm_outputs.
 
-    *No* fallback to 500/1000/2500 is done.
+    1) For each corpus, RQ folder (rq3.2_imitation_w_{length}words), and model_dir:
+       - Parse evaluation.json and seed_{seed}.json in defense_evaluation to get metrics
+       - Parse seed_{seed}.json in llm_outputs to get the 'user' prompt => exemplar length
+    2) Merge them into a single row (exemplar_length + metrics).
     """
+
+    import json
+    import logging
+    from pathlib import Path
+    import pandas as pd
+
+    logger = logging.getLogger(__name__)
+
     data = []
     total_rows = 0
-    missing_seed_file = 0
+    missing_eval_seed = 0
+    missing_llm_seed = 0
     parse_errors = 0
 
-    # We still loop over these subfolders to keep your directory structure,
-    # but we won't use the "target_length" for fallback.
-    for target_length in EXEMPLAR_LENGTHS:
-        rq = f"rq3.2_imitation_w_{target_length}words"
+    # We keep the same subfolder structure you have: rq3.2_imitation_w_500words, etc.
+    # If you no longer want to loop over [500, 1000, 2500], remove it or adapt as needed.
+    for target_length in [500, 1000, 2500]:
+        rq_folder = f"rq3.2_imitation_w_{target_length}words"
         rq_main = "rq3"
 
-        if debug:
-            logger.info(f"[DEBUG] Now processing RQ folder: {rq}")
-
+        # For each corpus: ebg, rj
         for corpus in CORPORA:
-            corpus_path = Path(base_dir) / corpus / rq_main / rq
-            if not corpus_path.exists():
-                logger.warning(f"Path not found: {corpus_path}")
-                continue
+            eval_rq_path = Path(evaluation_base_dir) / corpus / rq_main / rq_folder
+            llm_rq_path = Path(llm_outputs_base_dir) / corpus / rq_main / rq_folder
 
             if debug:
-                logger.info(f"[DEBUG]   Checking corpus: {corpus}, path={corpus_path}")
+                logger.info(f"[DEBUG] Checking corpus={corpus}, RQ folder={rq_folder}")
+                logger.info(
+                    f"[DEBUG] eval_rq_path={eval_rq_path}, llm_rq_path={llm_rq_path}")
 
-            for model_dir in corpus_path.glob("*"):
+            if not eval_rq_path.exists():
+                logger.warning(f"Evaluation path not found: {eval_rq_path}")
+                continue
+            if not llm_rq_path.exists():
+                logger.warning(f"LLM outputs path not found: {llm_rq_path}")
+                continue
+
+            # Loop over each model_dir in the EVAL folder
+            for model_dir in eval_rq_path.glob("*"):
                 if not model_dir.is_dir():
                     continue
 
-                llm = normalize_llm_name(model_dir.name)
-                eval_file = model_dir / "evaluation.json"
+                model_name = model_dir.name  # e.g. "gemma-2-9b-it"
+                llm_eval_dir = model_dir  # path in defense_evaluation
+                llm_out_dir = llm_rq_path / model_name  # corresponding folder in llm_outputs
+
+                if not llm_out_dir.exists():
+                    logger.warning(f"No matching LLM output dir for {llm_out_dir}")
+                    continue
+
+                # parse evaluation.json
+                eval_file = llm_eval_dir / "evaluation.json"
                 if not eval_file.exists():
-                    logger.warning(f"Evaluation file not found: {eval_file}")
+                    logger.warning(f"evaluation.json not found: {eval_file}")
                     continue
 
+                # read evaluation.json => results
                 try:
-                    with open(eval_file) as f:
-                        results = json.load(f)
-                except json.JSONDecodeError:
-                    logger.error(f"Error parsing {eval_file}")
+                    with open(eval_file, "r") as f:
+                        evaluation_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error parsing {eval_file}: {e}")
                     continue
 
-                # For each seed in the evaluation results
-                for seed_str, seed_results in results.items():
-                    # We'll parse seed_{seed_str}.json to get the real length
-                    seed_file = model_dir / f"seed_{seed_str}.json"
-                    if not seed_file.exists():
-                        missing_seed_file += 1
-                        if debug:
-                            logger.warning(f"[DEBUG] seed file missing: {seed_file}")
-                        continue  # skip this row entirely
+                # For each seed in evaluation_data, parse the post metrics
+                for seed_str, seed_results in evaluation_data.items():
+                    # We want metrics from "defense_evaluation" => seed_{seed_str}.json
+                    # We want prompt from "llm_outputs" => seed_{seed_str}.json
+                    eval_seed_file = llm_eval_dir / f"seed_{seed_str}.json"
+                    llm_seed_file = llm_out_dir / f"seed_{seed_str}.json"
 
-                    # Try to parse the seed file
+                    # If eval_seed_file missing => skip
+                    if not eval_seed_file.exists():
+                        missing_eval_seed += 1
+                        if debug:
+                            logger.warning(
+                                f"[DEBUG] Missing eval seed file: {eval_seed_file}")
+                        continue
+
+                    # If llm_seed_file missing => skip (can't parse user prompt)
+                    if not llm_seed_file.exists():
+                        missing_llm_seed += 1
+                        if debug:
+                            logger.warning(
+                                f"[DEBUG] Missing LLM seed file: {llm_seed_file}")
+                        continue
+
+                    # parse the prompt from llm_outputs
                     try:
-                        extracted = extract_exemplar_and_count(str(seed_file))
+                        extracted = extract_exemplar_and_count(str(llm_seed_file))
                         exemplar_length = extracted["word_count"]
                     except Exception as e:
                         parse_errors += 1
                         if debug:
-                            logger.warning(f"[DEBUG] error extracting from {seed_file}: {e}")
-                        continue  # skip
+                            logger.warning(
+                                f"[DEBUG] error extracting from {llm_seed_file}: {e}")
+                        continue
 
-                    # Now gather the data from evaluation.json
-                    for threat_model, tm_results in seed_results.items():
+                    # Now parse the evaluation metrics from seed_results
+                    # e.g. "logreg", "svm", "roberta"
+                    for threat_model, tm_data in seed_results.items():
                         if threat_model not in THREAT_MODELS:
                             continue
+                        # post metrics
+                        post = tm_data["attribution"]["post"]
 
-                        post = tm_results['attribution']['post']
-                        entry = {
-                            'corpus': corpus,
-                            'llm': llm,
-                            'threat_model': threat_model,
-                            'seed': seed_str,
-                            # Use the *actual* length from the LLM output
-                            'exemplar_length': float(exemplar_length),
-                            'accuracy@1': post.get('accuracy@1'),
-                            'accuracy@5': post.get('accuracy@5'),
-                            'true_class_confidence': post.get('true_class_confidence'),
-                            'entropy': post.get('entropy')
+                        # Build a row
+                        row = {
+                            "corpus": corpus,
+                            "llm": normalize_llm_name(model_name),
+                            "threat_model": threat_model,
+                            "seed": seed_str,
+                            "exemplar_length": float(exemplar_length),
+                            "accuracy@1": post.get("accuracy@1"),
+                            "accuracy@5": post.get("accuracy@5"),
+                            "true_class_confidence": post.get("true_class_confidence"),
+                            "entropy": post.get("entropy")
                         }
 
-                        # Quality metrics
-                        if 'quality' in tm_results:
-                            quality = tm_results['quality']
-                            if 'pinc' in quality:
+                        # If "quality" is present
+                        if "quality" in tm_data:
+                            q = tm_data["quality"]
+                            # PINC
+                            if "pinc" in q:
                                 pinc_scores = []
                                 for k in range(1, 5):
                                     key = f"pinc_{k}_avg"
-                                    if key in quality['pinc']:
-                                        pinc_scores.append(quality['pinc'][key])
+                                    if key in q["pinc"]:
+                                        pinc_scores.append(q["pinc"][key])
                                 if pinc_scores:
-                                    entry['pinc'] = np.mean(pinc_scores)
+                                    row["pinc"] = float(np.mean(pinc_scores))
 
-                            if 'bertscore' in quality and 'bertscore_f1_avg' in quality['bertscore']:
-                                entry['bertscore'] = quality['bertscore']['bertscore_f1_avg']
+                            # BERTScore
+                            if "bertscore" in q and "bertscore_f1_avg" in q[
+                                "bertscore"]:
+                                row["bertscore"] = q["bertscore"]["bertscore_f1_avg"]
 
-                        # If there's a seed_{seed}.json, let's see if it has example_metrics
-                        # to get binary outcomes
+                        # parse example_metrics from the EVAL seed file => binary outcomes
                         try:
-                            with open(seed_file) as f:
-                                detailed_data = json.load(f)
-                            if 'example_metrics' in detailed_data:
+                            with open(eval_seed_file, "r") as f:
+                                detailed_eval_data = json.load(f)
+                            if "example_metrics" in detailed_eval_data:
                                 binary_acc1 = [
-                                    1 if ex['transformed_rank'] == 0 else 0
-                                    for ex in detailed_data['example_metrics']
+                                    1 if ex["transformed_rank"] == 0 else 0
+                                    for ex in detailed_eval_data["example_metrics"]
                                 ]
                                 binary_acc5 = [
-                                    1 if ex['transformed_rank'] < 5 else 0
-                                    for ex in detailed_data['example_metrics']
+                                    1 if ex["transformed_rank"] < 5 else 0
+                                    for ex in detailed_eval_data["example_metrics"]
                                 ]
-                                entry['binary_acc1'] = binary_acc1
-                                entry['binary_acc5'] = binary_acc5
+                                row["binary_acc1"] = binary_acc1
+                                row["binary_acc5"] = binary_acc5
                         except Exception as e:
-                            logger.error(f"Error processing seed file {seed_file}: {e}")
+                            logger.error(
+                                f"Error reading eval seed file {eval_seed_file}: {e}")
 
-                        data.append(entry)
+                        data.append(row)
                         total_rows += 1
 
     df = pd.DataFrame(data)
     logger.info(
-        f"Collected {len(df)} data points across "
+        f"Collected {len(df)} data points (rows) across "
         f"{df['corpus'].nunique()} corpora, "
         f"{df['llm'].nunique()} LLMs, "
         f"{df['threat_model'].nunique()} threat models, "
-        f"and {df['exemplar_length'].nunique()} distinct exemplar lengths"
+        f"and {df['exemplar_length'].nunique()} distinct exemplar lengths."
     )
-    logger.info(f"Missing seed files: {missing_seed_file}, parse errors: {parse_errors}")
+    logger.info(
+        f"Missing eval seed: {missing_eval_seed}, missing llm seed: {missing_llm_seed}, parse_errors: {parse_errors}")
     if debug:
-        logger.info(f"[DEBUG] total rows: {total_rows}, final df size: {len(df)}")
+        logger.info(
+            f"[DEBUG] total_rows processed = {total_rows}, final df size = {len(df)}")
 
     return df
 
@@ -778,8 +829,8 @@ def parse_arguments():
         description="Analyze the effect of exemplar length on LLM imitation defense performance",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--base_dir', type=str, default='defense_evaluation',
-                        help='Base directory containing evaluation results')
+    parser.add_argument('--evaluation_dir', type=str, default='defense_evaluation')
+    parser.add_argument('--llm_outputs_dir', type=str, default='llm_outputs')
     parser.add_argument('--output_dir', type=str, default='results/exemplar_length_analysis_rq3.2',
                         help='Directory to save analysis results')
     parser.add_argument('--corpus', type=str, choices=CORPORA, help='Specific corpus to analyze (default: all)')
