@@ -1,0 +1,86 @@
+# Effects of Exemplar Length by Metric
+
+## Top-1 Accuracy
+
+- Average effect (500→2500): 0.0801 (increase)
+- Higher is better: False
+- Overall impact: Negative (longer exemplars worsen this metric)
+
+### Results by LLM:
+
+- Gemma-2: 0.1704
+- Llama-3.1: -0.1569
+- Ministral: 0.0959
+- Claude-3.5: -0.0717
+- Gpt-4O: 0.3625
+
+## Top-5 Accuracy
+
+- Average effect (500→2500): 0.0840 (increase)
+- Higher is better: False
+- Overall impact: Negative (longer exemplars worsen this metric)
+
+### Results by LLM:
+
+- Gemma-2: -0.0236
+- Llama-3.1: 0.0896
+- Ministral: -0.1030
+- Claude-3.5: 0.1847
+- Gpt-4O: 0.2723
+
+## True Class Confidence
+
+- Average effect (500→2500): 0.0625 (increase)
+- Higher is better: False
+- Overall impact: Negative (longer exemplars worsen this metric)
+
+### Results by LLM:
+
+- Gemma-2: 0.1235
+- Llama-3.1: -0.0413
+- Ministral: 0.0997
+- Claude-3.5: -0.0721
+- Gpt-4O: 0.2029
+
+## Prediction Entropy
+
+- Average effect (500→2500): 0.0934 (increase)
+- Higher is better: True
+- Overall impact: Positive (longer exemplars improve this metric)
+
+### Results by LLM:
+
+- Gemma-2: -0.2528
+- Llama-3.1: 0.4537
+- Ministral: -0.1119
+- Claude-3.5: 0.2594
+- Gpt-4O: 0.1188
+
+## bertscore
+
+- Average effect (500→2500): 0.0107 (increase)
+- Higher is better: True
+- Overall impact: Positive (longer exemplars improve this metric)
+
+### Results by LLM:
+
+- Gemma-2: 0.0040
+- Llama-3.1: 0.0028
+- Ministral: 0.0016
+- Claude-3.5: 0.0224
+- Gpt-4O: 0.0229
+
+## pinc
+
+- Average effect (500→2500): -0.0090 (decrease)
+- Higher is better: True
+- Overall impact: Negative (longer exemplars worsen this metric)
+
+### Results by LLM:
+
+- Gemma-2: -0.0031
+- Llama-3.1: 0.0025
+- Ministral: -0.0032
+- Claude-3.5: -0.0033
+- Gpt-4O: -0.0378
+

@@ -1,0 +1,29 @@
+# Significant Improvements with Longer Exemplars
+
+- Gemma-2 | LOGREG | bertscore: Effect size = 0.0093, p = 0.9950
+- Llama-3.1 | LOGREG | entropy: Effect size = 1.0588, p = 1.0000
+- Llama-3.1 | LOGREG | bertscore: Effect size = 0.0049, p = 0.9999
+- Claude-3.5 | LOGREG | bertscore: Effect size = 0.0150, p = 0.9998
+- Gpt-4O | LOGREG | entropy: Effect size = 0.6753, p = 1.0000
+- Gpt-4O | LOGREG | bertscore: Effect size = 0.0451, p = 1.0000
+- Gemma-2 | SVM | entropy: Effect size = 0.2385, p = 0.9870
+- Gemma-2 | SVM | bertscore: Effect size = 0.0093, p = 0.9950
+- Llama-3.1 | SVM | entropy: Effect size = 1.1350, p = 0.9989
+- Llama-3.1 | SVM | bertscore: Effect size = 0.0049, p = 0.9999
+- Claude-3.5 | SVM | bertscore: Effect size = 0.0150, p = 0.9998
+- Gpt-4O | SVM | entropy: Effect size = 0.8667, p = 1.0000
+- Gpt-4O | SVM | bertscore: Effect size = 0.0451, p = 1.0000
+- Gemma-2 | ROBERTA | bertscore: Effect size = 0.0093, p = 0.9950
+- Llama-3.1 | ROBERTA | bertscore: Effect size = 0.0049, p = 0.9999
+- Claude-3.5 | ROBERTA | entropy: Effect size = 0.1436, p = 0.9830
+- Claude-3.5 | ROBERTA | bertscore: Effect size = 0.0150, p = 0.9998
+- Gpt-4O | ROBERTA | bertscore: Effect size = 0.0451, p = 1.0000
+- Ministral | LOGREG | bertscore: Effect size = 0.0027, p = 0.9829
+- Claude-3.5 | LOGREG | bertscore: Effect size = 0.0298, p = 0.9952
+- Ministral | SVM | bertscore: Effect size = 0.0027, p = 0.9829
+- Claude-3.5 | SVM | entropy: Effect size = 0.4702, p = 1.0000
+- Claude-3.5 | SVM | bertscore: Effect size = 0.0298, p = 0.9952
+- Llama-3.1 | ROBERTA | entropy: Effect size = 0.1454, p = 0.9854
+- Ministral | ROBERTA | bertscore: Effect size = 0.0027, p = 0.9829
+- Claude-3.5 | ROBERTA | entropy: Effect size = 0.5631, p = 1.0000
+- Claude-3.5 | ROBERTA | bertscore: Effect size = 0.0298, p = 0.9952
