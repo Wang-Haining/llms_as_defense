@@ -14,11 +14,11 @@ This script:
    - prompts/rq3.2_imitation_variable_length/ [with --variable_length]
 
 Usage:
-    # Generate all prompts (fixed thresholds)
-    python prepare_exemplar_prompts.py
+    # generate all prompts (fixed thresholds)
+    python prepare_prompts_for_rq3.2_imitation.py
 
-    # Generate only variable length prompts
-    python prepare_exemplar_prompts.py --variable_length
+    # generate only variable length prompts
+    python prepare_prompts_for_rq3.2_imitation.py --variable_length
 
 Source:
     BLOG1K: https://zenodo.org/records/7455623#.Y5-v9uxAphG
