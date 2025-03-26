@@ -142,51 +142,38 @@ class ExperimentConfig:
 
         # special handling for different RQ3.x scenarios
         if self.sub_question == "rq3.1_obfuscation_w_persona":
+            # Return the directory for per-sample persona selection
             persona_dir = base_prompt_dir / self.sub_question
             if not persona_dir.exists():
                 raise FileNotFoundError(f"Persona directory not found: {persona_dir}")
-
-            # list all persona files (excluding non-json files)
             persona_files = [f for f in persona_dir.glob("persona_*.json")]
             if not persona_files:
                 raise FileNotFoundError(f"No persona files found in {persona_dir}")
-
-            # randomly select one persona file
-            persona_index = random.randint(0, len(persona_files) - 1)
-            return persona_files[persona_index], persona_index
+            return persona_dir, None
 
         # handle RQ3.2 imitation with different word counts
-        # Updated condition to include both patterns:
         elif self.sub_question.startswith(
                 "rq3.2_imitation_w_") or self.sub_question == "rq3.2_imitation_variable_length":
+            # for these, we'll return the directory instead of a specific file
+            # the actual file selection will happen per sample in process_texts
             imitation_dir = base_prompt_dir / self.sub_question
             if not imitation_dir.exists():
                 raise FileNotFoundError(
                     f"Imitation directory not found: {imitation_dir}")
-
-            # list all json files in the directory
             imitation_files = [f for f in imitation_dir.glob("*.json")]
             if not imitation_files:
                 raise FileNotFoundError(f"No imitation files found in {imitation_dir}")
-
-            # randomly select one imitation file
-            imitation_index = random.randint(0, len(imitation_files) - 1)
-            return imitation_files[imitation_index], imitation_index
+            return imitation_dir, None
 
         # handle RQ3.3 simplification with exemplar
         elif self.sub_question == "rq3.3_simplification_w_exemplar":
             exemplar_dir = base_prompt_dir / self.sub_question
             if not exemplar_dir.exists():
                 raise FileNotFoundError(f"Exemplar directory not found: {exemplar_dir}")
-
-            # list all json files in the directory
             exemplar_files = [f for f in exemplar_dir.glob("*.json")]
             if not exemplar_files:
                 raise FileNotFoundError(f"No exemplar files found in {exemplar_dir}")
-
-            # randomly select one exemplar file
-            exemplar_index = random.randint(0, len(exemplar_files) - 1)
-            return exemplar_files[exemplar_index], exemplar_index
+            return exemplar_dir, None
 
         # handle RQ3.3 simplification with vocabulary and exemplar
         elif self.sub_question == "rq3.3_simplification_w_vocabulary_and_exemplar":
@@ -194,16 +181,11 @@ class ExperimentConfig:
             if not vocab_exemplar_dir.exists():
                 raise FileNotFoundError(
                     f"Vocabulary and exemplar directory not found: {vocab_exemplar_dir}")
-
-            # list all json files in the directory
             vocab_exemplar_files = [f for f in vocab_exemplar_dir.glob("*.json")]
             if not vocab_exemplar_files:
                 raise FileNotFoundError(
                     f"No vocabulary and exemplar files found in {vocab_exemplar_dir}")
-
-            # randomly select one file
-            vocab_exemplar_index = random.randint(0, len(vocab_exemplar_files) - 1)
-            return vocab_exemplar_files[vocab_exemplar_index], vocab_exemplar_index
+            return vocab_exemplar_dir, None
 
         # handle RQ3.3 simplification with vocabulary only (single file)
         elif self.sub_question == "rq3.3_simplification_w_vocabulary":
@@ -581,15 +563,54 @@ class ExperimentManager:
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
+    def _load_instructions(self, prompt_path: Path, sample_index: int = None) -> Tuple[
+        Dict[str, str], Optional[int]]:
+        """
+        Load instructions based on the prompt path.
+        For RQ3.x with per-sample prompts, selects a different prompt for each sample.
+
+        Args:
+            prompt_path: Path to prompt file or directory
+            sample_index: Optional index of the sample being processed
+
+        Returns:
+            Tuple of (instructions dict, prompt_index or None)
+        """
+        # if prompt_path is a directory, we need to select a specific file for this sample
+        if prompt_path.is_dir():
+            if "rq3.1_obfuscation_w_persona" in str(prompt_path):
+                prompt_files = list(prompt_path.glob("persona_*.json"))
+            else:
+                prompt_files = list(prompt_path.glob("*.json"))
+
+            # for all RQ3.x directories - random selection for each sample
+            prompt_index = random.randint(0, len(prompt_files) - 1)
+            prompt_file = prompt_files[prompt_index]
+            logger.info(
+                f"Sample {sample_index}: Selected prompt file: {prompt_file.name} (index: {prompt_index})")
+            instructions = json.loads(prompt_file.read_text(encoding='utf-8'))
+            return instructions, prompt_index
+
+        # for standard single file prompts (RQ1, RQ2, etc.)
+        instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
+        return instructions, None
+
     async def _process_single_text(
             self,
             text: str,
             instructions: Dict[str, str],
             seed: int,
+            sample_index: Optional[int] = None,
+            prompt_path: Optional[Path] = None,
             prompt_index: Optional[int] = None
     ) -> Optional[Dict]:
         """process a single text input"""
         try:
+            # For RQ3.x with per-sample prompts, load specific instructions
+            if prompt_path and prompt_path.is_dir():
+                instructions, prompt_index = self._load_instructions(prompt_path,
+                                                                     sample_index)
+
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 instructions,
                 text.strip(),  # strip whitespace from input text
@@ -599,7 +620,8 @@ class ExperimentManager:
                 result = {
                     "original": text,
                     "raw_input": {
-                        "provider": self.model_manager.config.provider
+                        "provider": self.model_manager.config.provider,
+                        "instructions": instructions  # save the full instructions
                     },
                     "raw_output": raw_output,
                     "transformed": rewrite,
@@ -617,7 +639,6 @@ class ExperimentManager:
         except Exception as e:
             logger.error(f"error processing text: {str(e)}")
             return None
-
     def _is_gpt4o_model(self) -> bool:
         """Check if current model is GPT-4 and needs special handling."""
         model_name = self.config.model_name.lower()
@@ -626,20 +647,32 @@ class ExperimentManager:
     async def _generate_gpt4o_rewrites(
             self,
             texts: List[str],
-            instructions: Dict[str, str],
-            prompt_index: Optional[int] = None
+            prompt_path: Path,
+            global_instructions: Dict[str, str] = None,
+            global_prompt_index: Optional[int] = None
     ) -> Dict:
         selected_seeds = FIXED_SEEDS[:5]  # Always use 5 seeds
         all_results = []
 
         for seed_idx, seed in enumerate(selected_seeds):
             random.seed(seed)
-            # create tasks for each text, instead of processing texts sequentially
-            tasks = [
-                self._process_single_text(text, instructions, seed, prompt_index)
-                for text in texts
-            ]
-            transformations = [r for r in await asyncio.gather(*tasks) if r]
+            transformations = []
+
+            # Process texts sequentially for rate-limiting
+            for i, text in enumerate(texts):
+                # Use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
+                if prompt_path.is_dir():  # RQ3.x with per-sample prompts
+                    result = await self._process_single_text(
+                        text, {}, seed, sample_index=i, prompt_path=prompt_path
+                    )
+                else:  # Standard case with global instructions
+                    result = await self._process_single_text(
+                        text, global_instructions, seed,
+                        prompt_index=global_prompt_index
+                    )
+
+                if result:
+                    transformations.append(result)
 
             if transformations:
                 self._save_seed_results(seed, transformations)
@@ -656,24 +689,37 @@ class ExperimentManager:
     async def generate_rewrites(
             self,
             texts: List[str],
-            instructions: Dict[str, str],
-            prompt_index: Optional[int] = None
+            prompt_path: Path,
+            global_instructions: Dict[str, str] = None,
+            global_prompt_index: Optional[int] = None
     ) -> Dict:
         """Generate rewritten versions of input texts using LLM transformations."""
         if self.is_gpt4o:
             logger.info("Using sequential processing for GPT-4 model")
-            return await self._generate_gpt4o_rewrites(texts, instructions,
-                                                       prompt_index)
+            return await self._generate_gpt4o_rewrites(
+                texts, prompt_path, global_instructions, global_prompt_index
+            )
+
         selected_seeds = FIXED_SEEDS[: self.config.num_seeds]
 
         async def process_seed(s_idx: int) -> Dict:
             seed = selected_seeds[s_idx]
             random.seed(seed)
 
-            tasks = [
-                self._process_single_text(text, instructions, seed, prompt_index)
-                for text in texts
-            ]
+            tasks = []
+            for i, text in enumerate(texts):
+                # Use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
+                if prompt_path.is_dir():  # RQ3.x with per-sample prompts
+                    task = self._process_single_text(
+                        text, {}, seed, sample_index=i, prompt_path=prompt_path
+                    )
+                else:  # Standard case with global instructions
+                    task = self._process_single_text(
+                        text, global_instructions, seed,
+                        prompt_index=global_prompt_index
+                    )
+                tasks.append(task)
+
             results = await asyncio.gather(*tasks)
             valid_results = [r for r in results if r]
 
@@ -783,18 +829,25 @@ async def main():
         config = ExperimentConfig.from_args(args)
         logger.info(
             f"initialized experiment config for {config.corpus}-{config.sub_question}")
-        # get prompt path and index (now handles both regular and persona cases)
-        prompt_path, prompt_index = config.get_prompt_path()
-        if not prompt_path.exists():
+
+        # get prompt path and index (now handles both regular and variable paths)
+        prompt_path, global_prompt_index = config.get_prompt_path()
+
+        if isinstance(prompt_path, Path) and not prompt_path.exists():
             raise FileNotFoundError(f"prompt configuration not found: {prompt_path}")
 
-        # log the selected persona file for RQ3.1
-        if config.sub_question == "rq3.1_obfuscation_w_persona":
-            logger.info(f"Selected persona file: {prompt_path.name} (index: {prompt_index})")
-        elif prompt_index is not None:
-            logger.info(f"Selected prompt file index: {prompt_index}")
+        # load global instructions for standard cases (not per-sample)
+        global_instructions = None
+        if not prompt_path.is_dir():  # For RQ1, RQ2, fixed RQ3 prompts
+            global_instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
 
-        instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
+            # log the selected prompt index if applicable
+            if global_prompt_index is not None:
+                logger.info(f"Selected global prompt index: {global_prompt_index}")
+        else:
+            # for RQ3.x with per-sample prompts
+            logger.info(
+                f"Using per-sample prompt selection from directory: {prompt_path}")
 
         # init managers
         model_manager = ModelManager(config)
@@ -812,8 +865,9 @@ async def main():
             test_texts = test_texts[:3]
             logger.info("debug mode ON: using only first 3 samples")
 
+        # modified to pass prompt_path instead of instructions
         results = await experiment_manager.generate_rewrites(
-            test_texts, instructions, prompt_index)
+            test_texts, prompt_path, global_instructions, global_prompt_index)
 
         successful_runs = sum(
             len(run["transformations"]) for run in results["all_runs"])
