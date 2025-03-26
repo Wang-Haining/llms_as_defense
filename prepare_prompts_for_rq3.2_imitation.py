@@ -325,11 +325,12 @@ def process_variable_length(df: pd.DataFrame, authors: List[str], tokenizer: Mos
                 target_length
             )
 
-            # store metadata for analysis
-            variable_length_metadata[author_id] = {
-                "target_length": target_length,
-                "actual_count": actual_count,
-                "prompt_index": idx
+            # store metadata for analysis - convert all values to native Python types
+            author_id_str = str(author_id)  # Convert author_id to string explicitly
+            variable_length_metadata[author_id_str] = {
+                "target_length": int(target_length),
+                "actual_count": int(actual_count),
+                "prompt_index": int(idx)
             }
 
             logger.info(f"Created variable length prompt for author {author_id}: "
