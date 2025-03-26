@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n                 I've long been in agreeance with the stereotype that America is in arrogant country and here's the latest proof.  Think about the last time you saw a medal tally table. How do they order the countries? 9 out of 10 tables will order countries in the number of medals won, starting with gold; if tied on gold they'll go by silver and if tied on silver, they'll go by bronze. Not so in the USA:       Look for an example of how it should be done in my sidebar!  On a brighter note, I have to say I'm impressed with  urlLink Paul Hamm's  efforts to come back from a horrible fall on vault that pushed him down from 1st to 12th to win the  urlLink All Around gymnastics gold  for the first time ever by an American man. It was nice to see even his Romanian competitor slap him on the back after nailing his parallel bars in spite of his disastrous performance on the previous apparatus.  Commentators called it the greatest sporting moment they've ever witnessed and I have to admit it was simply amazing - his high bar routine was the best I've ever seen in my admittedly limited gymnastics viewing!   I won't turn this post into a rant about the merits of judging sports like gymnastics and ice skating but when something like this happens, and the result is decided by 12 1000s (thousandths) of a point, a little warning bell should be ringing somewhere in the back of minds everywhere.       \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "4095438",
+    "word_count": 280,
+    "prompt_index": 357,
+    "target_length": 353
+  }
+}

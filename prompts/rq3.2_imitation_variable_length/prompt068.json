@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n           Bands announced for August 20th gig in Boston.     May 21, 2004  - In celebration of the tenth year of the Vans Warped Tour several veteran bands will come together on Friday August 20th at Boston's Gillette Stadium Parking Lot for the Vans Warped Tour 10th Anniversary Reunion Show.    Artists confirmed so far include:    Rancid,    Pennywise,   New Found Glory,   Good Charlotte,   Less Than Jake,   Unwritten Law,   face to face,   The Vandals,   Finch,   Sick of it All,   Something Corporate,   Simple Plan,   Hepcat,   Ozomatli,   Strung Out,  and many more acts to be announced soon.   Highlights from this show will be broadcast exclusively on Fuse as a 90-minute concert special, scheduled to air Friday, September 24 at 7:00 PM Eastern/Pacific. Fuse will build up to this event with weekly 'Warped Wednesdays'--a slate of weekly programming premiering on June 16th. Every Wednesday all summer long between 11:00 AM and 3:00 PM (EST), Fuse's air will be overtaken by the hottest bands on the tour who will host hours of their favorite music videos and share their Warped road stories. Later in the day, fans can then tune-in to Fuse's live daily studio telecast between 6:00 - 7:00 PM (EST) for a final fix of tour updates, news, exclusive interviews from the road, and much more.   Via  music.ign.com          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3732255",
+    "word_count": 265,
+    "prompt_index": 68,
+    "target_length": 744
+  }
+}

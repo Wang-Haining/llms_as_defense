@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       Since everyone else is jumping on the 'let's all talk about the super bowl half-time show incident'...then for once, and probably once only, I too will jump aboard...  How PLANNED was that? I mean...look at the song lyrics, and the fact that her (as timberlake put it) 'wardrobe malfunction' was...well...it ripped off a little too perfectly.  Not to mention that they were all over each other, had this suspicious gleam in their eyes, and nobody in the media seemed too sorry about it.  Excuse me for having morals, America. But whatever happened to decency. Oh, that's right. It's been dead for 50 years. I'm sorry, but I and several others don't care to see Janet Jackson's partially exposed breast.  To me, boobs aren't very attractive. Perhaps that is simply because I am of the female species, a Christian, and not a lesbian, so that's something I don't care to see.  But if I may comment, it was excruciatingly ugly. All things of that sort aren't too pretty, as I said above. But STILL.         \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "2079968",
+    "word_count": 225,
+    "prompt_index": 276,
+    "target_length": 169
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n                 The only thing interesting that happened to me today was that, for no reason, I decided to check back with spymac to find version 3! The long anticipated update to the spymac we behold. I stoped hanging around spymac when I had so many things piled up on me that I had no time for anything not productive. I still have a heap on my plate, but I am not working so it workes out a little better.  Right now I am working with my school's IT dep't to help 'secure' their Windows network. They have a copy of Windows Server 2003 that I get to mess around with so it can be fun - I am trying to get them to let me use it at home too, just for fun. They make my job easy anyway because they don't practice even the basics of network  security. Not that I know a whole lot about everything but it seems that I know more about them than the administration and way more than most of my peers - I do try to be humble ^_^.  I am working on a yaoi manga right now, you can expect it to be interesting. I am the author and I have an artist working with me. Our first issue is to be out by March the first, I hope.  I will be sure to keep you posted on it all, so untill next post, good hypertime.             \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3544873",
+    "word_count": 270,
+    "prompt_index": 360,
+    "target_length": 220
+  }
+}

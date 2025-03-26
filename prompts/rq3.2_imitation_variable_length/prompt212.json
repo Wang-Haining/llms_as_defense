@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       Wow!  Its like all of a sudden I feel sad.  I don't know what it is.  Maybe because I've had this happy high for about a month.  Or maybe because I feel like I'm growing apart from a certain person.  I see him everyday when I walk to Biology.  He's always talking to this one girl.  And sometimes I think if only we were in the same grade.  But then I run into Jacob and Jake and they're both sophmores and have always taken time to say hi or comment on my hair.  I dunno Jake told me my hair looked nice once.  But why the fuck cant he ever say something nice during school.  On the weekends and on trips I think could you flirt anymore,  but then like a meathead he can't talk to me in front of other girls in his class.  It sucks.  But I did tick him off the other day.  I was walking to class and I saw Matt Grimes and he was walking in front of Matt and I said hey to Matt and I talked to him a bit, because he never talks to anyone.  Plus I think it gave him an ego boost because he despises him.  But I blew him off like he blows me off.  That showed him.  And Matt would never act in a weird way if I said hello.  No telling what the other person would do.  He does come and talk to me in the hall though sometimes.  Michael is becoming a closer friend.  I can tell because he will smile at me in the halls.  He never used to do that.  Huh.  Well I feel a little better.  Maybe things will look up at Gatlinburg.  Three days of competeing, fun, flirting, and him.         \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "2635745",
+    "word_count": 337,
+    "prompt_index": 212,
+    "target_length": 787
+  }
+}

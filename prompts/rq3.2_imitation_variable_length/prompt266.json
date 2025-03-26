@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n            Now to start off, I am in no way saying this is one of those life changing decisions.&nbsp; One of those that keeps you up at night.&nbsp; Not like 'Should I move to Denver or not.'  &nbsp;  No, this is more like, I made plans with a friend weeks ago to get together in Denver.&nbsp; No big plans with it, just time to hang out in the big city and have a good time.&nbsp; My friend lives in Laramie, and I am hoping we will get to hang out quite a bit before he graduates.&nbsp; Anyway he called me up Tuesday to confirm.  &nbsp;  Wednesday I get a call from 'my group.'&nbsp; The group I have been friends with since back in the day.&nbsp; The group that loses contact for a year at a time, then comes back together like we went to the bars last night.&nbsp; They want to go camping...but up in Casper.&nbsp; Sick of driving to Casper I politely decline.&nbsp; I have plans anyway.&nbsp; But then they decide to move it to Laramie.&nbsp; Understand 3 of these people are not going to be here at all for at least a good 9 months when the summer is out...and some it may be years before I see them again.&nbsp; But how to tell somone that you would rather hangout with your other friends?&nbsp; Especially when the plans have been solid for weeks.  &nbsp;  You find a way to do both.&nbsp; Denver Friday, camping Saturday.&nbsp; And the goodtimes keep on rollin'  &nbsp;  &nbsp;             \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "1755426",
+    "word_count": 347,
+    "prompt_index": 266,
+    "target_length": 292
+  }
+}

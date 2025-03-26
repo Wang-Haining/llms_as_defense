@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n            I know, I already have an lj, but i figured i'd just use this for a bit. things are going okay - as in nothing dramatic is happening. my god i went swimming today, my eyes were all red. i know i should wear goggles, but i feel so stupid wearing them....i know, i know, safety first, then looks, right? right.     &nbsp;  i guess im sort of waiting up for my sister, dont know why though. shes so bossy, gina do this, gina do that and gina you're not doing it right.     &nbsp;  work tomorrow. not very excited. and im going jogging. im so lazy, i have to will myself to get up to go jogging, and then L is like, 'gina, go, its good for you, its an adventure!'    &nbsp;  i've been seeing  him  a lot. ugh. gooo awaaayyyy. why'd i like him again?    &nbsp;  oh, yeah. he was nice. funny, i dont see that characteristic in him nowadays.    &nbsp;  moving on, im excited. not sure about what. you know that feeling that says, 'something cool will happen...' yeah, thats the one.    &nbsp;  *sigh* well, not much more to talk about. i watched The Sound of Music the other day. its so interesting, how a nun can just give it all up for a guy. but then again, does she erally give it up? its sad that they dont put more focus on the spiritual, just the romance.    &nbsp;  i think too much, dont i? lol    &nbsp;  love always,   gina    &nbsp;   &nbsp;   &nbsp;   &nbsp;          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3986257",
+    "word_count": 330,
+    "prompt_index": 396,
+    "target_length": 1063
+  }
+}

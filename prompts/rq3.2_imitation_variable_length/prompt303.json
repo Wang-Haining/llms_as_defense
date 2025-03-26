@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       I'm sitting here, in such a good mood, eating some delicious birthday cake... (its my g-pa's birthday) and im basking in my good mood!!! Im sooo damn happy. Today I went to church. And class kinda sucked, but it was ok. I got to see all my friends and chill with them. I got to see Drew, man I love him. :) He's nuts. (no pun intended) Got to see Adam, my pimp daddy! He is just too sweet and cute. dumdedumdumdum#2 and i like you but i dont like you. *inside jokes* Hes such a hottie! And got to see Mark. Ah, this is what makes the night great... He wouldn't look at me. Not once. It was hilarious. He is soo pissy and bitchy. But, I didnt do it. He put himself there. So, its funny to me. Maybe I am a sick, twisted individual. But other people agree with me. And, I got to talk to Danny, which is awesome. Tomorrow Im goin somewhere with my g-ma and then goin to my moms house then over to Wanda's house and spending the night with her. Then Friday we are doin a yard sale at her house. And then goin home from that and to Orientation at 6:30 for school. *yay, gotta look cute for that* Then back with my mom, spending the night with her. Then doing the Yard Sale again Saturday. Come down and see me, and buy something. (140 Amanda Court, Stockbridge... the street after Ricos.) Well, thats about it. Love You! *unless you are Mark, Hannah McClamma, Shelia McClamma, and any other bad people I cant think of... hahahahaha, i crack myself up!*          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3497938",
+    "word_count": 358,
+    "prompt_index": 303,
+    "target_length": 247
+  }
+}

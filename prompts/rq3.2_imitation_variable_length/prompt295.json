@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n           I had a best friend in college who I simply adored.  He was really nice, sweet, completely ridiculous, and the funniest person I have ever known.  He's so talented and I have always been his biggest fan and cheerleader.  The usual happened.  I fell in love, and he didn't.  I don't doubt he had feelings for me, but I guess timing wasn't right.  Who knows?  About a year after we met, my gay best friend came back from his fellowship in DC and we had to make up for lost time (we stopped talking for a reason so stupid, I'm embarrassed to mention it), so my friend got jealous and we stopped hanging out as much as we used to.    Anyway, before I graduated, he met a girl and they started dating.  He and I fell out of touch and their relationship just blossomed.  They dated for 3 years and just broke up.  He's obviously heartbroken about it.  We got back in touch just recently when their relationship was suffering.  So, the whole point of this is that he's coming in town from NYC this weekend to help his sister move.  I haven't seen him since graduation (about 2 and a half years ago) and I'm nervous.  I'm not still in love with him.  I mean, it took me ages, but I got over him eventually.  He's like my little brother now.  I just believe in him so much and I can't wait to see him realize how incredibly talented he is.    I'm just nervous.  I don't know why.         \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3543301",
+    "word_count": 311,
+    "prompt_index": 295,
+    "target_length": 481
+  }
+}

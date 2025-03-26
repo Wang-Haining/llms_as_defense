@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n             Let Oo Of The Past       Why is it so hard for some people to let go of the past? It's not as if it can be changed. It's over. It's history. Granted, it is wise to study it, learn from it, and install safeguards to protect from repeating mistakes. Fine. Do that. But then move on.      On a deeper level...      Thought is energy, arguably the most powerful energy. That which receives the focus of our thoughts, our energy, gains power. The powerful becomes our reality. The amazing thing is ... the choice of what receives the focus of our thoughts and energy is entirely ours to make. Fail to choose wisely, giving power to past issues, and we'll meet with present day anxiety and fear. Go overboard and we'll be consumed by that fear, even paralyzed by it, unable to see what is beautiful around us. Fail to realize our mistake in time and the beautiful around us will flee. But if we instead choose wisely, gifting the energy of our thoughts to the tomorrow we desire, that gift will be returned to us.      This all ties into the related concept of taking responsibility for our own happiness. But I'll save that for another entry shortly.          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "1238388",
+    "word_count": 243,
+    "prompt_index": 321,
+    "target_length": 217
+  }
+}

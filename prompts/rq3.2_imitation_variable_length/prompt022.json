@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       Hello Houston.  'You say If you were to wait Something just might change I say That i don't have the strength  to burn our fueling Flame.'  -The Starting Line.  That was the first song that popped up on my Random. It says in the song that Love can make you stay. Somehow, I have gained belief for this. I.E., Casey. For those of you that know the story, doesn't it make sense? It does to me. I figured out..That I have a new favorite song, by my new favorite band (I have a new one each week). First off, It's either 'Kissing you goodnight' or 'On my mind' by Alister. Which is a band that rocks. But it's great song. I also like 'Somewhere Down in Fullerton.' Which is a great song by the same band. Anyway. I decided that my favorite movie was Ever After today. I like Princess Movies. Like The Princess Bride, which is such a GREAT movie. It's got the guy from Robin Hood: Men in Tights in it, as Wesley. Gosh I could go on for hours about that movies...those movies. I could aslo go on for hours about Homestar Runner and the enviroment. I'm such a Marizpan! Any...way...  Song of the moment: Seriously? -[The Sorry Song]- The Troys.  GRIPE: The name of that BAND!  Other gripe: COCAH WATERS!!   MUAH!! KC is my baby!!!          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "1193364",
+    "word_count": 300,
+    "prompt_index": 22,
+    "target_length": 595
+  }
+}

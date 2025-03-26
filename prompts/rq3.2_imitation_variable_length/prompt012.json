@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       first of all, let's clarify:  i am not a 'tool belt wearing' kinda person... i can swing a hammer, screw a screw (shut up...), build a quaint little birdhouse, even paint... but when it comes to the actual building of a structure, well, i can hand you the hammer or hold that ladder for ya...  so today, i helped a friend and his girlfriend do some work on what will be a 30' x 24' barn when it is done... they've got all the posts up, marked by way of laser level... secondary posting in, next up, lifting 20' boards up to near the top of the posts, and bolting them in place.   *note*  i hate ladders.  but so does his girlfriend, and she is afraid of heights, so feeling bad for her i volunteered to climb the ladder with one end of the 20' board, yeah heavy as all hell.  and while i am standing too high up on a ladder, holding this heavy thing, shaking like a leaf in a tornado, i am thinking maybe the horses will be fine in a tent...?   i'm pretty sure this is one of the 485675639 reasons why i am not in the construction business.   hard work never killed anyone right?  just leaves you with scrapes, bruises, broken fingernails, and a grand desire to descend that ladder and dive into a pool full of margarita....          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3475491",
+    "word_count": 278,
+    "prompt_index": 12,
+    "target_length": 289
+  }
+}

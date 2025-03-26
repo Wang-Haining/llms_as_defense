@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       k so yesterday was really fun! i hung out with cara and meg and we went to courtney's and then to ryan's.meg is soooo cool i lover her sooooo much! i feel like u could anything with her and it would be fun and she's not the kind of person who needs to be constantly entertained. omg i love her! today my mom practically ruined my whole weekend. apparently my 'transcripts' from city honors came today so she can mail them to villa. wtf im not going there!! she can't physically make me get out of bed..i told her so and she said i could go to a foster home for all she cared. ughhhh i dont know how much more i can take her...things were finally going okay....then she jsut fucked em up for me again. then again, she might be bluffing....thanks mom! she just should have never had me because she didnt want me. so yeah my birthday is coming up. friday nikki decorated my locker which was really nice of her and she put pictures of johnny depp on it!! yum....tommorow im going to a concert with sarah for my birthday!!!! well i gtg plant flowers..........as if i didn't do enough of that today. for our cyo thingy we had to plant flowers around our church...it was ok until cara started flingin worms at me ..Haha!! well gtg      \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3433970",
+    "word_count": 268,
+    "prompt_index": 398,
+    "target_length": 164
+  }
+}

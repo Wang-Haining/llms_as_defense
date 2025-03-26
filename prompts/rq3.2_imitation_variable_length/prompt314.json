@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n             Lets see, woke up at 7.30am. Made my way to school, finished of some of our sanding on the bike. Then went to Lot 1 Mac to meet CI Asri 4 some meeting. Then after the meeting. Aqilah, Renkai, Kangsheng, Huilin n Me. Met Foo Chang After that we walked around the shopping complex 4 while before deciding to go to Lim Bang. After playing CS 4 abt an hour, headed back to Lot 1, to Mac again, sit down chit-chat. Then Foo Chang decided to watch movie and he had a hard time convincing me to watch, so after we went to the cinema to check the timings but there was no time. So Foo Chang suggested that we travel to West Mall to watch the movie. So we took a train there and brought tickets 4 the 7.05pm show. 'Riddick'. Then we eat dinner. Pizza Hut actually. Yum! Soon it was time to watch the movie. Wat a fantastic show, filled with CGI effects. Power sia. I recommand anyone who enjoys Science Faction to catch the show. It would simply blow ya mind. After that i went home. A perfect day. I like working like that. Left the house at 8.00am, reached home at 9.30pm. Best!         \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3504220",
+    "word_count": 243,
+    "prompt_index": 314,
+    "target_length": 509
+  }
+}

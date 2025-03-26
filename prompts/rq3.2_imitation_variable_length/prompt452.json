@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       wow... it is early in the morning..(for me) and im feelin emo, lol, so bear with me..  over the past 3 or 4 days I've been to numerous parties, slept over at numerous houses..(with barely any sleep) and completely abused caffeine substances till they no longer work for me...and yet i continue to go to bonfires and parties..why?..Because its summer and i promised myself that i would have a fun time ---promise..broken--- right now im feeling extremely depressed..(but nothing sum music wont help me fix) and listening to muse, and basically anything that will just make me zone out so i dont have to think about shit.   i finally realized a few nights ago at a friends' house...that nobody really knows me at all..they only know what they see..and what they interpret from my actions..but nobody watches all the time..and nobody can see my all the time..and they only know maybe 1/10 of the real me...and i think that is what im so stressed about...but im trying to fix that..and so far, not much luck, except ive made a few new friends on the way, and i feel that they will (hopefully) stick by me for a while.  music:AFI-silver and cold mood:'frozen in time'    \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3755025",
+    "word_count": 263,
+    "prompt_index": 452,
+    "target_length": 462
+  }
+}

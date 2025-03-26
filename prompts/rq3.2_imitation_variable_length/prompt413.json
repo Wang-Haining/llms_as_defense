@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n             OK din go to sarawak,..went to sabah instead,..haa,..spend five days there,..pretty much familiarise myself with the place..meet up with a tengku puteri,..haa,..a real one..i will be liasoning with her for my upcoming project to serve mankind,..haa..seems that my contacts there are doctors and datuks...haa..interesting people,..and powerful.. will be doing conversation work on pulau gaya, the largest island near kota kinabalu. and also opening up a trail for future trekkers,..also,..a beautiful beach, white sand and blue water sea to work on to be a suitable camping ground....haa,..cool huh,.. oh ya,..the sabah babes are gorgeous,..including the tengku,..think i'm falling in love with the place. the challenge for me now is to infiltrate the locals there, of which have a great minority of illegal immigrants..... erm,..its gonna be a holiday for my team actually,..but of good cause. oh ya,..might be visiting KL with gf during national day,...haa,..hope to bump onto you,..=P          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "480727",
+    "word_count": 229,
+    "prompt_index": 413,
+    "target_length": 523
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n       Quingar pushed Jean-Michel away. The Frenchman had only said that he thought Quingar should decide  how  to kill his cousin, a  different  way than last time. 'Je manque comment vous aves atilise pour etre.' Jean Michel said quietly. 'That freakin' schoolboy'll never be back. Sometimes I get the feeling that we  used  to be best friends. That you want the schoolboy I  used  to be back.' Jean-Michel pulled Quingar close. 'Vous etes mo mei lleur ami.' ~He's still upset with me.' Quingar thought. ~He hates it more than anything when I don't listen to his opinions.~ Quingar put his arms around Jean-Michel, just like they used to&nbsp;do on cold nights at school.  ~~~~~~////Memories of Winter, begin.\\\\\\\\~~~~~~ Jean-Michel rested his head on Quingar's chest. Quingar was freezing. He had given Jean-Michel his jacket and sweater. ~But he does keep me warmer.~ he thought as Jean-Michel pulled himself close to Quingar, just short of laying on him. ~This stupid survival test'll kill him. He's fragile.~ Quingar felt guilty saying this, looking at the bruises and cuts he himself had made on Jean-Michel. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;~~~~~~////Memories of Winter, end.\\\\\\\\~~~~~~          \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3611601",
+    "word_count": 386,
+    "prompt_index": 230,
+    "target_length": 225
+  }
+}

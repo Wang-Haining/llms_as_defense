@@ -1,0 +1,10 @@
+{
+  "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+  "user": "Here is an example of the writing style you are expected to mimic:\n\n   WARNING:  This post has nothing clever in it, so if you think it's lame, then you're prolly right.  Man, I'm watching the Lakers game, and I'm wondering how they managed to suck it up so much recently. Oh well, it's too late because I bet the Pistons will win the title tonight. It's not often great teams like the Lakers screw it up.  I wish I could own a sports team, that would be totally awesome. Only a football team though, maybe hockey. I dunno why really, it just seems like it would be badass. It would suck if the team is bad, but when the team is good, man, that's totally sweet. Especially if you get as good as the Dallas Cowboys from the early and mid 1990s. That would rule like there's no tomorrow.  I also think it's badass when you walk into a teams club house, or like, a school's music hall or something and see a shit load of trophies. I mean, even if you're bad, a lot of trophies still make people respect you.  Back to my point, the Dallas Cowboys of the 1990s kicked so much ass. I wish they could be that good again, but with the salary cap, I don't think it can happen. That would still kick ass though. I mean, NOBODY could take on the cowboys except the San Francisco 49ers. Even then, the Cowboys still won 3 out of 4 titles from 1993-1996.  Either way, I think the lakers time as a dynasty is over. Who knows though, maybe the Bill Parcells of basketball will come back and try and rebuild it. \n\nPlease rewrite the following text to match this writing style while maintaining its core meaning.\n\nText to be modified:\n\n{{text}}\n\nProvide your rewrite between [REWRITE] and [/REWRITE] tags.",
+  "metadata": {
+    "author_id": "3563168",
+    "word_count": 327,
+    "prompt_index": 354,
+    "target_length": 317
+  }
+}
