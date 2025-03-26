@@ -229,7 +229,8 @@ def create_prompt_json(
 
 def main():
     # parse command line arguments
-    parser = argparse.ArgumentParser(description='Prepare exemplar-based prompts for RQ3.2')
+    parser = argparse.ArgumentParser(
+        description='Prepare exemplar-based prompts for RQ3.2')
     parser.add_argument('--variable_length', action='store_true',
                         help='Generate only variable length prompts (100-2500 words)')
     args = parser.parse_args()
@@ -247,57 +248,22 @@ def main():
         f"from {len(train_df.id.unique())} authors"
     )
 
-    # select authors
-    authors = select_authors(df)
-
-    # verify selected authors have sufficient training data
-    authors_data = df[df.id.isin(authors) & (df.split == 'train')]
-    author_counts = authors_data.groupby('id').size()
-    logger.info(
-        f"selected authors have {author_counts.mean():.1f} training samples on average "
-        f"(min: {author_counts.min()}, max: {author_counts.max()})"
-    )
-
     if args.variable_length:
-        # Only process variable length samples
-        logger.info("Processing only variable length samples")
-        process_variable_length(df, authors, tokenizer)
+        # Only process variable length samples - fixed at 500 prompts
+        num_prompts = 500
+        logger.info(f"Processing {num_prompts} variable length samples")
+        process_variable_length(df, num_prompts, tokenizer)
     else:
-        # Process both fixed thresholds and variable length samples
+        # Process only fixed thresholds (original functionality)
         logger.info("Processing fixed threshold samples (500/1000/2500 words)")
+
+        # Use original author selection (50 authors)
+        authors = select_authors(df, NUM_AUTHORS)
         process_fixed_thresholds(df, authors, tokenizer)
 
 
-def process_fixed_thresholds(df: pd.DataFrame, authors: List[str], tokenizer: MosesTokenizer) -> None:
-    """Process fixed threshold samples (500/1000/2500 words)"""
-    for threshold in WORD_THRESHOLDS:
-        # create output directory
-        output_dir = OUTPUT_BASE_DIR / f"rq3.2_imitation_w_{threshold}words"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        logger.info(f"Processing {threshold} word samples")
-
-        # collect samples and create prompts for each author
-        for idx, author_id in enumerate(authors):
-            samples = collect_author_samples(df, author_id, [threshold], tokenizer)
-
-            if threshold in samples:
-                create_prompt_json(
-                    author_id,
-                    samples[threshold],
-                    threshold,
-                    output_dir,
-                    idx
-                )
-                logger.info(f"Created prompt for author {author_id} with {threshold} words")
-            else:
-                logger.warning(f"Skipping author {author_id} for {threshold} words")
-
-        prompt_count = len(list(output_dir.glob("prompt*.json")))
-        logger.info(f"Created {prompt_count} prompts in {output_dir}")
-
-
-def process_variable_length(df: pd.DataFrame, authors: List[str], tokenizer: MosesTokenizer) -> None:
+def process_variable_length(df: pd.DataFrame, num_prompts: int,
+                            tokenizer: MosesTokenizer) -> None:
     """Process variable length samples (100-2500 words)"""
     # create directory for variable length samples
     variable_length_dir = OUTPUT_BASE_DIR / "rq3.2_imitation_variable_length"
@@ -306,9 +272,22 @@ def process_variable_length(df: pd.DataFrame, authors: List[str], tokenizer: Mos
     # dictionary to store variable length metadata
     variable_length_metadata = {}
 
-    # process each author
-    for idx, author_id in enumerate(authors):
-        logger.info(f"Processing author {idx+1}/{len(authors)}: {author_id}")
+    # Select authors with replacement if needed
+    train_authors = df[df.split == 'train']['id'].unique()
+    random.seed(RANDOM_SEED)
+
+    # Generate author-index pairs for each prompt
+    author_selections = []
+    for i in range(num_prompts):
+        author_id = random.choice(train_authors)
+        author_selections.append((author_id, i))
+
+    logger.info(
+        f"Selected {len(author_selections)} author-index pairs for variable length prompts")
+
+    # process each author-index pair
+    for i, (author_id, index) in enumerate(author_selections):
+        logger.info(f"Processing prompt {i + 1}/{num_prompts}: author {author_id}")
 
         # generate sample with random target length
         variable_text, actual_count, target_length = collect_variable_length_sample(
@@ -316,27 +295,101 @@ def process_variable_length(df: pd.DataFrame, authors: List[str], tokenizer: Mos
         )
 
         if variable_text and actual_count >= VARIABLE_LENGTH_MIN:
-            create_prompt_json(
-                author_id,
-                variable_text,
-                actual_count,
-                variable_length_dir,
-                idx,
-                target_length
-            )
+            # Use 3 digits for indices to accommodate up to 1000 prompts
+            prompt_filename = f"prompt{index:03d}.json"
 
-            # store metadata for analysis - convert all values to native Python types
-            author_id_str = str(author_id)  # Convert author_id to string explicitly
-            variable_length_metadata[author_id_str] = {
-                "target_length": int(target_length),
-                "actual_count": int(actual_count),
-                "prompt_index": int(idx)
+            # Create the prompt
+            prompt_data = {
+                "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+                "user": (
+                    f"Here is an example of the writing style you are expected to mimic:"
+                    f"\n\n{variable_text}\n\n"
+                    f"Please rewrite the following text to match this writing style while "
+                    f"maintaining its core meaning.\n\nText to be modified:\n\n{{{{text}}}}\n\n"
+                    f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
+                ),
+                "metadata": {
+                    "author_id": str(author_id),  # ensure string
+                    "word_count": int(actual_count),  # ensure int
+                    "prompt_index": int(index),  # ensure int
+                    "target_length": int(target_length)  # target word count
+                }
             }
 
-            logger.info(f"Created variable length prompt for author {author_id}: "
-                       f"{actual_count} words (target: {target_length})")
+            # save the prompt
+            output_path = variable_length_dir / prompt_filename
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(prompt_data, f, indent=2, ensure_ascii=False)
+
+            # store metadata for analysis
+            prompt_key = f"prompt{index:03d}"
+            variable_length_metadata[prompt_key] = {
+                "author_id": str(author_id),
+                "target_length": int(target_length),
+                "actual_count": int(actual_count),
+                "prompt_index": int(index)
+            }
+
+            logger.info(
+                f"Created {prompt_filename} with {actual_count} words (target: {target_length})")
         else:
-            logger.warning(f"Skipping variable length sample for author {author_id}")
+            logger.warning(f"Skipping author {author_id}: insufficient word count")
+            # try another author as a replacement
+            retry_count = 0
+            while retry_count < 5:  # limit retries to avoid infinite loops
+                retry_count += 1
+                replacement_author = random.choice(train_authors)
+                logger.info(f"Trying replacement author {replacement_author}")
+
+                variable_text, actual_count, target_length = collect_variable_length_sample(
+                    df, replacement_author, VARIABLE_LENGTH_MIN, VARIABLE_LENGTH_MAX,
+                    tokenizer
+                )
+
+                if variable_text and actual_count >= VARIABLE_LENGTH_MIN:
+                    # use the replacement author
+                    prompt_filename = f"prompt{index:03d}.json"
+
+                    # create the prompt
+                    prompt_data = {
+                        "system": "You are a helpful writing assistant. Your task is to paraphrase text while preserving its meaning. Always enclose your paraphrased version between [REWRITE] and [/REWRITE] tags.",
+                        "user": (
+                            f"Here is an example of the writing style you are expected to mimic:"
+                            f"\n\n{variable_text}\n\n"
+                            f"Please rewrite the following text to match this writing style while "
+                            f"maintaining its core meaning.\n\nText to be modified:\n\n{{{{text}}}}\n\n"
+                            f"Provide your rewrite between [REWRITE] and [/REWRITE] tags."
+                        ),
+                        "metadata": {
+                            "author_id": str(replacement_author),  # ensure string
+                            "word_count": int(actual_count),  # ensure int
+                            "prompt_index": int(index),  # ensure int
+                            "target_length": int(target_length)  # target word count
+                        }
+                    }
+
+                    # save the prompt
+                    output_path = variable_length_dir / prompt_filename
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        json.dump(prompt_data, f, indent=2, ensure_ascii=False)
+
+                    # store metadata for analysis
+                    prompt_key = f"prompt{index:03d}"
+                    variable_length_metadata[prompt_key] = {
+                        "author_id": str(replacement_author),
+                        "target_length": int(target_length),
+                        "actual_count": int(actual_count),
+                        "prompt_index": int(index)
+                    }
+
+                    logger.info(
+                        f"Created {prompt_filename} with replacement author {replacement_author}: "
+                        f"{actual_count} words (target: {target_length})")
+                    break
+
+            if retry_count >= 5:
+                logger.error(
+                    f"Failed to find suitable replacement for prompt{index:03d}")
 
     # save metadata for variable length samples
     metadata_path = variable_length_dir / "metadata.json"
@@ -344,7 +397,8 @@ def process_variable_length(df: pd.DataFrame, authors: List[str], tokenizer: Mos
         json.dump(variable_length_metadata, f, indent=2, ensure_ascii=False)
 
     prompt_count = len(list(variable_length_dir.glob("prompt*.json")))
-    logger.info(f"Created {prompt_count} variable length prompts in {variable_length_dir}")
+    logger.info(
+        f"Created {prompt_count} variable length prompts in {variable_length_dir}")
     logger.info(f"Variable length metadata saved to {metadata_path}")
 
 
