@@ -218,13 +218,43 @@ def create_prompt_json(
         }
     }
 
-    # Add target_length to metadata if provided (for variable length samples)
+    # add target_length to metadata if provided (for variable length samples)
     if target_length is not None:
         prompt_data["metadata"]["target_length"] = int(target_length)
 
     output_path = output_dir / f"prompt{index:02d}.json"
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(prompt_data, f, indent=2, ensure_ascii=False)
+
+
+def process_fixed_thresholds(df: pd.DataFrame, authors_with_indices: List, tokenizer: MosesTokenizer) -> None:
+    """Process fixed threshold samples (500/1000/2500 words)"""
+    for threshold in WORD_THRESHOLDS:
+        # create output directory
+        output_dir = OUTPUT_BASE_DIR / f"rq3.2_imitation_w_{threshold}words"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Processing {threshold} word samples")
+
+        # collect samples and create prompts for each author-index pair
+        for i, (author_id, index) in enumerate(authors_with_indices):
+            logger.info(f"Processing sample {i+1}/{len(authors_with_indices)}: author {author_id}")
+            samples = collect_author_samples(df, author_id, [threshold], tokenizer)
+
+            if threshold in samples:
+                create_prompt_json(
+                    author_id,
+                    samples[threshold],
+                    threshold,
+                    output_dir,
+                    index
+                )
+                logger.info(f"Created prompt{index:03d}.json with {threshold} words")
+            else:
+                logger.warning(f"Skipping author {author_id} for {threshold} words")
+
+        prompt_count = len(list(output_dir.glob("prompt*.json")))
+        logger.info(f"Created {prompt_count} prompts in {output_dir}")
 
 
 def main():
@@ -249,15 +279,15 @@ def main():
     )
 
     if args.variable_length:
-        # Only process variable length samples - fixed at 500 prompts
+        # only process variable length samples - fixed at 500 prompts
         num_prompts = 500
         logger.info(f"Processing {num_prompts} variable length samples")
         process_variable_length(df, num_prompts, tokenizer)
     else:
-        # Process only fixed thresholds (original functionality)
+        # process only fixed thresholds (original functionality)
         logger.info("Processing fixed threshold samples (500/1000/2500 words)")
 
-        # Use original author selection (50 authors)
+        # use original author selection (50 authors)
         authors = select_authors(df, NUM_AUTHORS)
         process_fixed_thresholds(df, authors, tokenizer)
 
