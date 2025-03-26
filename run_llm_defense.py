@@ -579,12 +579,20 @@ class ExperimentManager:
         # if prompt_path is a directory, we need to select a specific file for this sample
         if prompt_path.is_dir():
             if "rq3.1_obfuscation_w_persona" in str(prompt_path):
-                prompt_files = list(prompt_path.glob("persona_*.json"))
+                prompt_files = list(sorted(prompt_path.glob("persona_*.json")))
             else:
-                prompt_files = list(prompt_path.glob("*.json"))
+                prompt_files = list(sorted(prompt_path.glob("*.json")))
 
-            # for all RQ3.x directories - random selection for each sample
-            prompt_index = random.randint(0, len(prompt_files) - 1)
+            # use sample_index to generate a unique seed for each sample
+            # this ensures different samples get different prompt files even when processed concurrently
+            if sample_index is not None:
+                # create a new random state just for this selection
+                local_random = random.Random(sample_index + 12345)  # Arbitrary offset
+                prompt_index = local_random.randint(0, len(prompt_files) - 1)
+            else:
+                # fallback to global random if no sample index
+                prompt_index = random.randint(0, len(prompt_files) - 1)
+
             prompt_file = prompt_files[prompt_index]
             logger.info(
                 f"Sample {sample_index}: Selected prompt file: {prompt_file.name} (index: {prompt_index})")
