@@ -10,6 +10,7 @@ Usage:
     python estimate_llm_intervention_rq3.2.py
 """
 
+import re
 import argparse
 import json
 import logging
@@ -346,30 +347,6 @@ def prepare_data(
                 f"[DEBUG] Count by exemplar length: {subset.groupby('exemplar_length').size().to_dict()}")
 
     return df
-
-
-def extract_exemplar_from_prompt(prompt_data):
-    """Extract exemplar text from a prompt JSON object"""
-    if not isinstance(prompt_data, dict):
-        return None
-
-    # Extract the user instruction which contains the exemplar
-    user_instruction = prompt_data.get("user", "")
-    if not user_instruction:
-        return None
-
-    # Try to extract the exemplar between "expected to mimic:" and "Please rewrite"
-    mimic_start = user_instruction.find("expected to mimic:")
-    if mimic_start == -1:
-        return None
-
-    mimic_start += len("expected to mimic:")
-    rewrite_start = user_instruction.find("Please rewrite", mimic_start)
-    if rewrite_start == -1:
-        return None
-
-    exemplar_text = user_instruction[mimic_start:rewrite_start].strip()
-    return exemplar_text
 
 
 def analyze_exemplar_length_effect(
