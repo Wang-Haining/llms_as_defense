@@ -587,7 +587,7 @@ class ExperimentManager:
             # this ensures different samples get different prompt files even when processed concurrently
             if sample_index is not None:
                 # create a new random state just for this selection
-                local_random = random.Random(sample_index + 12345)  # Arbitrary offset
+                local_random = random.Random(sample_index + 12345)  # arbitrary offset
                 prompt_index = local_random.randint(0, len(prompt_files) - 1)
             else:
                 # fallback to global random if no sample index
