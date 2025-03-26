@@ -156,7 +156,9 @@ class ExperimentConfig:
             return persona_files[persona_index], persona_index
 
         # handle RQ3.2 imitation with different word counts
-        elif self.sub_question.startswith("rq3.2_imitation_w_"):
+        # Updated condition to include both patterns:
+        elif self.sub_question.startswith(
+                "rq3.2_imitation_w_") or self.sub_question == "rq3.2_imitation_variable_length":
             imitation_dir = base_prompt_dir / self.sub_question
             if not imitation_dir.exists():
                 raise FileNotFoundError(
