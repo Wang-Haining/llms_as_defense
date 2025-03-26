@@ -651,21 +651,21 @@ class ExperimentManager:
             global_instructions: Dict[str, str] = None,
             global_prompt_index: Optional[int] = None
     ) -> Dict:
-        selected_seeds = FIXED_SEEDS[:5]  # Always use 5 seeds
+        selected_seeds = FIXED_SEEDS[:5]  # always use 5 seeds
         all_results = []
 
         for seed_idx, seed in enumerate(selected_seeds):
             random.seed(seed)
             transformations = []
 
-            # Process texts sequentially for rate-limiting
+            # process texts sequentially for rate-limiting
             for i, text in enumerate(texts):
-                # Use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
+                # use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
                 if prompt_path.is_dir():  # RQ3.x with per-sample prompts
                     result = await self._process_single_text(
                         text, {}, seed, sample_index=i, prompt_path=prompt_path
                     )
-                else:  # Standard case with global instructions
+                else:  # standard case with global instructions
                     result = await self._process_single_text(
                         text, global_instructions, seed,
                         prompt_index=global_prompt_index
@@ -708,12 +708,12 @@ class ExperimentManager:
 
             tasks = []
             for i, text in enumerate(texts):
-                # Use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
+                # use global instructions for RQ1, RQ2, etc. or per-sample for RQ3.x
                 if prompt_path.is_dir():  # RQ3.x with per-sample prompts
                     task = self._process_single_text(
                         text, {}, seed, sample_index=i, prompt_path=prompt_path
                     )
-                else:  # Standard case with global instructions
+                else:  # standard case with global instructions
                     task = self._process_single_text(
                         text, global_instructions, seed,
                         prompt_index=global_prompt_index
