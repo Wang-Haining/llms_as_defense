@@ -218,8 +218,7 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
 
 
 def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
-                       higher_is_better: bool,
-                       rope_width: float = 0.01) -> DifferenceResult:
+                       higher_is_better: bool) -> DifferenceResult:
     """
     Analyze difference between baseline and enhanced approach using Bayesian modeling.
 
@@ -227,42 +226,26 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         paired_samples: List of paired (baseline, enhanced) observations
         metric: Metric name being analyzed
         higher_is_better: Whether higher values of the metric indicate better performance
-        rope_width: Width of region of practical equivalence (default: ±0.01)
 
     Returns:
         DifferenceResult with analysis statistics
     """
-    # extract baseline and enhanced values
     baseline_values = np.array([pair[0] for pair in paired_samples])
     enhanced_values = np.array([pair[1] for pair in paired_samples])
 
-    # handle entropy normalization if needed
     if metric == 'entropy':
-        # determine log_base for normalization based on corpus (inferred from values)
         max_entropy = max(np.max(baseline_values), np.max(enhanced_values))
-        if max_entropy > 5.0:  # likely EBG corpus (log2(45) ≈ 5.49)
-            log_base = np.log2(45)
-        else:  # likely RJ corpus (log2(21) ≈ 4.39)
-            log_base = np.log2(21)
+        log_base = np.log2(45) if max_entropy > 5.0 else np.log2(21)
+        baseline_values /= log_base
+        enhanced_values /= log_base
 
-        # normalize entropy values by theoretical maximum
-        baseline_values = baseline_values / log_base
-        enhanced_values = enhanced_values / log_base
-
-    # calculate raw differences
-    if higher_is_better:
-        differences = enhanced_values - baseline_values  # positive means enhancement is better
-    else:
-        differences = baseline_values - enhanced_values  # positive means enhancement is better
-
-    # normalize differences to [0,1] for Beta modeling if needed
+    differences = enhanced_values - baseline_values if higher_is_better else baseline_values - enhanced_values
     min_diff = min(0, np.min(differences))
     max_diff = max(0, np.max(differences))
     range_diff = max_diff - min_diff
 
-    # if range is too small, return trivial result
     if range_diff < 1e-6:
-        # transform back to original scale for entropy
+        # handle degenerate case
         if metric == 'entropy':
             baseline_mean = float(np.mean(baseline_values * log_base))
             enhanced_mean = float(np.mean(enhanced_values * log_base))
@@ -285,85 +268,53 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         )
 
     normalized_diffs = (differences - min_diff) / range_diff
-    epsilon = 1e-6
-    normalized_diffs = np.clip(normalized_diffs, epsilon, 1 - epsilon)  # Avoid extremes
+    normalized_diffs = np.clip(normalized_diffs, 1e-6, 1 - 1e-6)
 
     n_obs = len(normalized_diffs)
-
-    # use weakly informative prior for run-level metrics (n=5)
     if n_obs == 5:
         prior_mean = float(np.median(normalized_diffs))
-        default_strength = 2.0
-        alpha_prior = prior_mean * default_strength
-        beta_prior = (1 - prior_mean) * default_strength
+        alpha_prior = prior_mean * 2.0
+        beta_prior = (1 - prior_mean) * 2.0
     else:
-        # Use flat prior for sample-level metrics
         alpha_prior, beta_prior = 1, 1
 
-    # define Bayesian model
     with pm.Model() as model:
-        # parameters for difference distribution
         mu = pm.Beta("mu", alpha=alpha_prior, beta=beta_prior)
         kappa = pm.HalfNormal("kappa", sigma=10)
+        _ = pm.Beta("obs", alpha=mu * kappa, beta=(1 - mu) * kappa, observed=normalized_diffs)
+        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42, cores=4, return_inferencedata=True)
 
-        _ = pm.Beta("obs",
-                    alpha=mu * kappa,
-                    beta=(1 - mu) * kappa,
-                    observed=normalized_diffs)
-
-        # sample from posterior
-        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
-                          cores=4, return_inferencedata=True)
-
-    # extract posterior samples
     mu_samples = trace.posterior["mu"].values.flatten()
-
-    # transform back to original scale
     diff_samples = mu_samples * range_diff + min_diff
 
-    # re-transform entropy values if needed
     if metric == 'entropy':
         baseline_mean = float(np.mean(baseline_values * log_base))
         enhanced_mean = float(np.mean(enhanced_values * log_base))
-        diff_samples = diff_samples * log_base
+        diff_samples *= log_base
     else:
         baseline_mean = float(np.mean(baseline_values))
         enhanced_mean = float(np.mean(enhanced_values))
 
-    # calculate statistics
     difference_mean = float(np.mean(diff_samples))
     difference_std = float(np.std(diff_samples))
-    difference_ci = az.hdi(diff_samples)
-    difference_ci_lower = float(difference_ci[0])
-    difference_ci_upper = float(difference_ci[1])
-
-    # calculate probability of improvement
+    ci_lower, ci_upper = az.hdi(diff_samples)
+    difference_ci_lower = float(ci_lower)
+    difference_ci_upper = float(ci_upper)
     prob_improvement = float(np.mean(diff_samples > 0))
 
-    # ROPE analysis - scale accordingly for entropy
+    # adaptive ROPE width
+    rope_width = 0.1 * difference_std
     if metric == 'entropy':
-        # scale ROPE width proportionally for entropy
-        scaled_rope_width = rope_width * log_base
-    else:
-        scaled_rope_width = rope_width
+        rope_width *= log_base
 
-    rope_bounds = (-scaled_rope_width, scaled_rope_width)
-    in_rope = float(
-        np.mean((diff_samples >= rope_bounds[0]) & (diff_samples <= rope_bounds[1])))
+    in_rope = float(np.mean((-rope_width <= diff_samples) & (diff_samples <= rope_width)))
 
-    # determine conclusion with explicit directionality
     if in_rope > 0.95:
         conclusion = "Practically Equivalent"
     elif prob_improvement > 0.95:
-        if higher_is_better:
-            conclusion = f"Significant Increase (Enhanced > Baseline)"
-        else:
-            conclusion = f"Significant Decrease (Enhanced < Baseline)"
+        conclusion = "Significant Increase (Enhanced > Baseline)" if higher_is_better else "Significant Decrease (Enhanced < Baseline)"
     elif prob_improvement < 0.05:
-        if higher_is_better:
-            conclusion = f"Significant Decrease (Enhanced < Baseline)"
-        else:
-            conclusion = f"Significant Increase (Enhanced > Baseline)"
+        conclusion = "Significant Decrease (Enhanced < Baseline)" if higher_is_better else "Significant Increase (Enhanced > Baseline)"
     else:
         conclusion = "Inconclusive"
 
@@ -378,6 +329,7 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         in_rope=in_rope,
         conclusion=conclusion
     )
+
 
 
 def compare_defenses(
