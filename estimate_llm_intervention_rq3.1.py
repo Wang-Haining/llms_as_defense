@@ -7,6 +7,7 @@ improvements over the other in terms of effectiveness, robustness, or text quali
 
 Usage:
     python estimate_llm_intervention_rq3.1.py --baseline rq2.1_obfuscation --enhanced rq3.1_obfuscation_w_persona
+    python estimate_llm_intervention_rq3.1.py
 """
 
 import json
@@ -210,26 +211,6 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                             for b_score, e_score in zip(baseline_scores, enhanced_scores):
                                 model_pairs.append((b_score, e_score))
 
-            elif metric == 'meteor':
-                # process METEOR scores from all seeds
-                for seed in set(baseline_data[model_name].keys()) & set(enhanced_data[model_name].keys()):
-                    if ('quality' in baseline_data[model_name][seed] and
-                            'quality' in enhanced_data[model_name][seed] and
-                            'meteor' in baseline_data[model_name][seed]['quality'] and
-                            'meteor' in enhanced_data[model_name][seed]['quality'] and
-                            'meteor_scores' in baseline_data[model_name][seed]['quality']['meteor'] and
-                            'meteor_scores' in enhanced_data[model_name][seed]['quality']['meteor']):
-
-                        baseline_scores = [float(x) for x in
-                                           baseline_data[model_name][seed]['quality']['meteor']['meteor_scores']]
-                        enhanced_scores = [float(x) for x in
-                                           enhanced_data[model_name][seed]['quality']['meteor']['meteor_scores']]
-
-                        # pair up scores
-                        if len(baseline_scores) == len(enhanced_scores):
-                            for b_score, e_score in zip(baseline_scores, enhanced_scores):
-                                model_pairs.append((b_score, e_score))
-
         if model_pairs:
             paired_observations[model_name] = model_pairs
 
@@ -251,37 +232,37 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
     Returns:
         DifferenceResult with analysis statistics
     """
-    # Extract baseline and enhanced values
+    # extract baseline and enhanced values
     baseline_values = np.array([pair[0] for pair in paired_samples])
     enhanced_values = np.array([pair[1] for pair in paired_samples])
 
-    # Handle entropy normalization if needed
+    # handle entropy normalization if needed
     if metric == 'entropy':
-        # Determine log_base for normalization based on corpus (inferred from values)
+        # determine log_base for normalization based on corpus (inferred from values)
         max_entropy = max(np.max(baseline_values), np.max(enhanced_values))
-        if max_entropy > 5.0:  # Likely EBG corpus (log2(45) ≈ 5.49)
+        if max_entropy > 5.0:  # likely EBG corpus (log2(45) ≈ 5.49)
             log_base = np.log2(45)
-        else:  # Likely RJ corpus (log2(21) ≈ 4.39)
+        else:  # likely RJ corpus (log2(21) ≈ 4.39)
             log_base = np.log2(21)
 
-        # Normalize entropy values by theoretical maximum
+        # normalize entropy values by theoretical maximum
         baseline_values = baseline_values / log_base
         enhanced_values = enhanced_values / log_base
 
-    # Calculate raw differences
+    # calculate raw differences
     if higher_is_better:
         differences = enhanced_values - baseline_values  # positive means enhancement is better
     else:
         differences = baseline_values - enhanced_values  # positive means enhancement is better
 
-    # Normalize differences to [0,1] for Beta modeling if needed
+    # normalize differences to [0,1] for Beta modeling if needed
     min_diff = min(0, np.min(differences))
     max_diff = max(0, np.max(differences))
     range_diff = max_diff - min_diff
 
-    # If range is too small, return trivial result
+    # if range is too small, return trivial result
     if range_diff < 1e-6:
-        # Transform back to original scale for entropy
+        # transform back to original scale for entropy
         if metric == 'entropy':
             baseline_mean = float(np.mean(baseline_values * log_base))
             enhanced_mean = float(np.mean(enhanced_values * log_base))
@@ -309,7 +290,7 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
 
     n_obs = len(normalized_diffs)
 
-    # Use informative prior for run-level metrics (n=5)
+    # use weakly informative prior for run-level metrics (n=5)
     if n_obs == 5:
         prior_mean = float(np.median(normalized_diffs))
         default_strength = 2.0
@@ -319,29 +300,28 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         # Use flat prior for sample-level metrics
         alpha_prior, beta_prior = 1, 1
 
-    # Define Bayesian model
+    # define Bayesian model
     with pm.Model() as model:
-        # Parameters for difference distribution
+        # parameters for difference distribution
         mu = pm.Beta("mu", alpha=alpha_prior, beta=beta_prior)
         kappa = pm.HalfNormal("kappa", sigma=10)
 
-        # Likelihood - using exactly your parameter formulation
         _ = pm.Beta("obs",
                     alpha=mu * kappa,
                     beta=(1 - mu) * kappa,
                     observed=normalized_diffs)
 
-        # Sample from posterior
+        # sample from posterior
         trace = pm.sample(2000, tune=1000, chains=4, random_seed=42,
                           cores=4, return_inferencedata=True)
 
-    # Extract posterior samples
+    # extract posterior samples
     mu_samples = trace.posterior["mu"].values.flatten()
 
-    # Transform back to original scale
+    # transform back to original scale
     diff_samples = mu_samples * range_diff + min_diff
 
-    # Re-transform entropy values if needed
+    # re-transform entropy values if needed
     if metric == 'entropy':
         baseline_mean = float(np.mean(baseline_values * log_base))
         enhanced_mean = float(np.mean(enhanced_values * log_base))
@@ -350,19 +330,19 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         baseline_mean = float(np.mean(baseline_values))
         enhanced_mean = float(np.mean(enhanced_values))
 
-    # Calculate statistics
+    # calculate statistics
     difference_mean = float(np.mean(diff_samples))
     difference_std = float(np.std(diff_samples))
     difference_ci = az.hdi(diff_samples)
     difference_ci_lower = float(difference_ci[0])
     difference_ci_upper = float(difference_ci[1])
 
-    # Calculate probability of improvement
+    # calculate probability of improvement
     prob_improvement = float(np.mean(diff_samples > 0))
 
     # ROPE analysis - scale accordingly for entropy
     if metric == 'entropy':
-        # Scale ROPE width proportionally for entropy
+        # scale ROPE width proportionally for entropy
         scaled_rope_width = rope_width * log_base
     else:
         scaled_rope_width = rope_width
@@ -371,7 +351,7 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
     in_rope = float(
         np.mean((diff_samples >= rope_bounds[0]) & (diff_samples <= rope_bounds[1])))
 
-    # Determine conclusion with explicit directionality
+    # determine conclusion with explicit directionality
     if in_rope > 0.95:
         conclusion = "Practically Equivalent"
     elif prob_improvement > 0.95:
@@ -425,7 +405,7 @@ def compare_defenses(
     if threat_models is None:
         threat_models = ['logreg', 'svm', 'roberta']
 
-    # Define metrics to analyze
+    # define metrics to analyze
     attribution_metrics = {
         'accuracy@1': False,  # higher is NOT better
         'accuracy@5': False,  # higher is NOT better
@@ -436,7 +416,6 @@ def compare_defenses(
     quality_metrics = {
         'pinc': True,  # higher IS better
         'bertscore': True,  # higher IS better
-        'meteor': True,  # higher IS better
     }
 
     results = []
@@ -444,7 +423,7 @@ def compare_defenses(
     for threat_model in threat_models:
         logging.info(f"Analyzing {corpus} - {threat_model}")
 
-        # Load data
+        # load data
         baseline_data, enhanced_data = load_defense_data(
             base_dir, corpus, baseline_rq, enhanced_rq, threat_model
         )
@@ -453,19 +432,19 @@ def compare_defenses(
             logging.warning(f"No data found for {corpus} - {threat_model}")
             continue
 
-        # Process attribution metrics
+        # process attribution metrics
         for metric, higher_is_better in attribution_metrics.items():
             paired_observations = extract_paired_observations(
                 baseline_data, enhanced_data, metric, 'attribution'
             )
 
             for model_name, pairs in paired_observations.items():
-                if len(pairs) < 3:  # Need at least 3 samples for meaningful analysis
+                if len(pairs) < 3:  # need at least 3 samples for meaningful analysis
                     continue
 
                 diff_result = analyze_difference(pairs, metric, higher_is_better)
 
-                # Format display name
+                # format display name
                 display_name = _get_model_display_name(model_name)
 
                 results.append({
@@ -486,7 +465,7 @@ def compare_defenses(
                     'Conclusion': diff_result.conclusion
                 })
 
-        # Process quality metrics
+        # process quality metrics
         for metric, higher_is_better in quality_metrics.items():
             paired_observations = extract_paired_observations(
                 baseline_data, enhanced_data, metric, 'quality'
@@ -498,7 +477,7 @@ def compare_defenses(
 
                 diff_result = analyze_difference(pairs, metric, higher_is_better)
 
-                # Format display name
+                # format display name
                 display_name = _get_model_display_name(model_name)
 
                 results.append({
@@ -521,7 +500,7 @@ def compare_defenses(
 
     df = pd.DataFrame(results)
 
-    # Save to file if output directory is provided
+    # save to file if output directory is provided
     if output_dir:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -529,7 +508,7 @@ def compare_defenses(
         filename = f"{corpus}_{baseline_rq}_vs_{enhanced_rq}_comparison.csv"
         df.to_csv(output_path / filename, index=False)
 
-        # Also save a summary for just significant results
+        # also save a summary for just significant results
         significant_df = df[df['Conclusion'].isin(['Significant Improvement', 'Significant Decline'])]
         if not significant_df.empty:
             significant_df.to_csv(output_path / f"{corpus}_significant_changes.csv", index=False)
@@ -558,7 +537,7 @@ def main():
     import argparse
     from datetime import datetime
 
-    # Setup logging
+    # setup logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
@@ -613,7 +592,7 @@ def main():
             output_dir=args.output
         )
 
-        # Print summary of significant improvements
+        # print summary of significant improvements
         improvements = results_df[results_df['Conclusion'] == 'Significant Improvement']
         if not improvements.empty:
             logging.info(f"\nSignificant improvements ({corpus}):")
@@ -622,7 +601,7 @@ def main():
                              f"{row['Baseline Mean']:.4f} → {row['Enhanced Mean']:.4f} "
                              f"(diff: {row['Mean Difference']:.4f}, p: {row['P(Improvement)']:.4f})")
 
-        # Print summary of significant declines
+        # print summary of significant declines
         declines = results_df[results_df['Conclusion'] == 'Significant Decline']
         if not declines.empty:
             logging.info(f"\nSignificant declines ({corpus}):")
