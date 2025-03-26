@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=eval_llm_defense_rq3.1
+#SBATCH --job-name=estimate_llm_intervention_rq3.1
 #SBATCH --account=group-jasonclark
 #SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
