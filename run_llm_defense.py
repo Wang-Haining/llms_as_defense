@@ -563,7 +563,8 @@ class ExperimentManager:
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir
 
-    def _load_instructions(self, prompt_path: Path, sample_index: int = None) -> Tuple[
+    def _load_instructions(self, prompt_path: Path, sample_index: int = None,
+                           seed: int = None) -> Tuple[
         Dict[str, str], Optional[int], Optional[str]]:
         """
         Load instructions based on the prompt path.
@@ -572,6 +573,7 @@ class ExperimentManager:
         Args:
             prompt_path: Path to prompt file or directory
             sample_index: Optional index of the sample being processed
+            seed: The random seed for this run
 
         Returns:
             Tuple of (instructions dict, prompt_index or None, prompt_file or None)
@@ -583,11 +585,13 @@ class ExperimentManager:
             else:
                 prompt_files = list(sorted(prompt_path.glob("*.json")))
 
-            # use sample_index to generate a unique seed for each sample
+            # use both seed and sample_index to generate a unique seed for each sample
             # this ensures different samples get different prompt files even when processed concurrently
+            # it also ensures different seeds get different prompt files for the same sample
             if sample_index is not None:
-                # create a new random state just for this selection
-                local_random = random.Random(sample_index + 12345)  # arbitrary offset
+                # create a new random state using both seed and sample_index
+                combined_seed = (seed or 0) * 10000 + sample_index + 12345  # Combine seed and sample_index
+                local_random = random.Random(combined_seed)
                 prompt_index = local_random.randint(0, len(prompt_files) - 1)
             else:
                 # fallback to global random if no sample index
@@ -595,7 +599,7 @@ class ExperimentManager:
 
             prompt_file = prompt_files[prompt_index]
             logger.info(
-                f"Sample {sample_index}: Selected prompt file: {prompt_file.name} (index: {prompt_index})")
+                f"Seed {seed}, Sample {sample_index}: Selected prompt file: {prompt_file.name} (index: {prompt_index})")
             instructions = json.loads(prompt_file.read_text(encoding='utf-8'))
             return instructions, prompt_index, prompt_file.name
 
@@ -614,11 +618,10 @@ class ExperimentManager:
     ) -> Optional[Dict]:
         """process a single text input"""
         try:
-            # for RQ3.x with per-sample prompts, load specific instructions
-            prompt_file = None
+            # For RQ3.x with per-sample prompts, load specific instructions
             if prompt_path and prompt_path.is_dir():
                 instructions, prompt_index, prompt_file = self._load_instructions(
-                    prompt_path, sample_index)
+                    prompt_path, sample_index, seed)
 
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 instructions,
