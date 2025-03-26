@@ -564,7 +564,7 @@ class ExperimentManager:
         return base_dir
 
     def _load_instructions(self, prompt_path: Path, sample_index: int = None) -> Tuple[
-        Dict[str, str], Optional[int]]:
+        Dict[str, str], Optional[int], Optional[str]]:
         """
         Load instructions based on the prompt path.
         For RQ3.x with per-sample prompts, selects a different prompt for each sample.
@@ -574,7 +574,7 @@ class ExperimentManager:
             sample_index: Optional index of the sample being processed
 
         Returns:
-            Tuple of (instructions dict, prompt_index or None)
+            Tuple of (instructions dict, prompt_index or None, prompt_file or None)
         """
         # if prompt_path is a directory, we need to select a specific file for this sample
         if prompt_path.is_dir():
@@ -589,11 +589,11 @@ class ExperimentManager:
             logger.info(
                 f"Sample {sample_index}: Selected prompt file: {prompt_file.name} (index: {prompt_index})")
             instructions = json.loads(prompt_file.read_text(encoding='utf-8'))
-            return instructions, prompt_index
+            return instructions, prompt_index, prompt_file.name
 
         # for standard single file prompts (RQ1, RQ2, etc.)
         instructions = json.loads(prompt_path.read_text(encoding='utf-8'))
-        return instructions, None
+        return instructions, None, None
 
     async def _process_single_text(
             self,
@@ -606,10 +606,11 @@ class ExperimentManager:
     ) -> Optional[Dict]:
         """process a single text input"""
         try:
-            # For RQ3.x with per-sample prompts, load specific instructions
+            # for RQ3.x with per-sample prompts, load specific instructions
+            prompt_file = None
             if prompt_path and prompt_path.is_dir():
-                instructions, prompt_index = self._load_instructions(prompt_path,
-                                                                     sample_index)
+                instructions, prompt_index, prompt_file = self._load_instructions(
+                    prompt_path, sample_index)
 
             raw_output, rewrite, used_seed = await self.model_manager.generate_with_validation(
                 instructions,
@@ -620,8 +621,7 @@ class ExperimentManager:
                 result = {
                     "original": text,
                     "raw_input": {
-                        "provider": self.model_manager.config.provider,
-                        "instructions": instructions  # save the full instructions
+                        "provider": self.model_manager.config.provider
                     },
                     "raw_output": raw_output,
                     "transformed": rewrite,
@@ -629,9 +629,12 @@ class ExperimentManager:
                     "actual_seed": used_seed
                 }
 
-                # include prompt_index in result if provided
+                # include prompt information for traceability
                 if prompt_index is not None:
                     result["prompt_index"] = prompt_index
+
+                if prompt_file:
+                    result["prompt_file"] = str(prompt_file)
 
                 return result
             return None
@@ -639,6 +642,7 @@ class ExperimentManager:
         except Exception as e:
             logger.error(f"error processing text: {str(e)}")
             return None
+
     def _is_gpt4o_model(self) -> bool:
         """Check if current model is GPT-4 and needs special handling."""
         model_name = self.config.model_name.lower()
