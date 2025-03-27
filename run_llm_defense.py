@@ -160,7 +160,7 @@ class ExperimentConfig:
             if not imitation_dir.exists():
                 raise FileNotFoundError(
                     f"Imitation directory not found: {imitation_dir}")
-            imitation_files = [f for f in imitation_dir.glob("*.json")]
+            imitation_files = [f for f in imitation_dir.glob("prompt*.json")]
             if not imitation_files:
                 raise FileNotFoundError(f"No imitation files found in {imitation_dir}")
             return imitation_dir, None
