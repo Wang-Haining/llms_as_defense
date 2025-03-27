@@ -68,7 +68,8 @@ def prepare_exemplar_length_data(
     rows = []
     for corpus in CORPORA:
         print(f"Processing corpus: {corpus}")
-        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_imitation_variable_length"):
+        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob(
+                "rq3.2_imitation_variable_length"):
             # get the experiment name (e.g., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
             print(f"Processing experiment: {experiment_name}")
@@ -82,7 +83,8 @@ def prepare_exemplar_length_data(
             prompt_lengths = extract_exemplar_lengths(prompt_dir)
             print(f"Extracted exemplar lengths for {len(prompt_lengths)} prompts")
 
-            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob("*"):
+            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob(
+                    "*"):
                 model_name = model_dir.name.lower()
                 print(f"Processing model: {model_name}")
 
@@ -105,7 +107,8 @@ def prepare_exemplar_length_data(
                                 for ex in detailed_eval_data["example_metrics"]
                             ]
                     except Exception as e:
-                        print(f"Warning: Could not extract binary metrics from {eval_file}: {e}")
+                        print(
+                            f"Warning: Could not extract binary metrics from {eval_file}: {e}")
 
                     # find the corresponding file in llm_outputs to get prompt_index
                     llm_output_file = Path(
@@ -117,22 +120,6 @@ def prepare_exemplar_length_data(
 
                     with open(llm_output_file) as f:
                         llm_data = json.load(f)
-
-                    # extract prompt_index from the first entry in llm_data
-                    prompt_idx = -1
-                    if isinstance(llm_data, list) and llm_data:
-                        if "prompt_index" in llm_data[0]:
-                            prompt_idx = llm_data[0]["prompt_index"]
-                        else:
-                            for entry in llm_data:
-                                if "prompt_index" in entry:
-                                    prompt_idx = entry["prompt_index"]
-                                    break
-
-                    length = prompt_lengths.get(prompt_idx, -1)
-                    if length == -1:
-                        print(f"Warning: Could not find exemplar length for prompt index {prompt_idx}")
-                        continue
 
                     # Load evaluation data
                     json_path = model_dir / "evaluation.json"
@@ -149,44 +136,68 @@ def prepare_exemplar_length_data(
 
                     record = all_data[seed]
 
-                    for threat_model in THREAT_MODELS:
-                        if threat_model not in record:
-                            print(f"Warning: Threat model {threat_model} not found in record for seed {seed}")
-                            continue
+                    # Process each document in the list
+                    if isinstance(llm_data, list) and llm_data:
+                        for doc_idx, document in enumerate(llm_data):
+                            if "prompt_index" not in document:
+                                print(
+                                    f"Warning: No prompt_index in document {doc_idx} for seed {seed}")
+                                continue
 
-                        attr = record[threat_model].get("attribution", {}).get("post", {})
-                        quality = record[threat_model].get("quality", {})
+                            prompt_idx = document["prompt_index"]
+                            length = prompt_lengths.get(prompt_idx, -1)
+                            if length == -1:
+                                print(
+                                    f"Warning: Could not find exemplar length for prompt index {prompt_idx}")
+                                continue
 
-                        # use raw accuracy values (not binary conversion)
-                        acc1 = float(attr.get("accuracy@1", 0.0))
-                        acc5 = float(attr.get("accuracy@5", 0.0))
+                            # Extract metrics for each threat model
+                            for threat_model in THREAT_MODELS:
+                                if threat_model not in record:
+                                    print(
+                                        f"Warning: Threat model {threat_model} not found in record for seed {seed}")
+                                    continue
 
-                        row = {
-                            "corpus": corpus,
-                            "llm": model_name,
-                            "threat_model": threat_model,
-                            "seed": seed,
-                            "exemplar_length": length,
-                            "accuracy@1": acc1,
-                            "accuracy@5": acc5,
-                            "true_class_confidence": attr.get("true_class_confidence"),
-                            "entropy": attr.get("entropy"),
-                            "bertscore": quality.get("bertscore", {}).get(
-                                "bertscore_f1_avg"),
-                            "pinc": np.mean([
-                                quality.get("pinc", {}).get(f"pinc_{k}_avg", np.nan)
-                                for k in range(1, 5)
-                            ]),
-                            "sample_id": prompt_idx
-                        }
+                                attr = record[threat_model].get("attribution", {}).get(
+                                    "post", {})
+                                quality = record[threat_model].get("quality", {})
 
-                        # add binary accuracy metrics if available
-                        if binary_acc1 is not None:
-                            row["binary_acc1"] = binary_acc1
-                        if binary_acc5 is not None:
-                            row["binary_acc5"] = binary_acc5
+                                # use raw accuracy values (not binary conversion)
+                                acc1 = float(attr.get("accuracy@1", 0.0))
+                                acc5 = float(attr.get("accuracy@5", 0.0))
 
-                        rows.append(row)
+                                row = {
+                                    "corpus": corpus,
+                                    "llm": model_name,
+                                    "threat_model": threat_model,
+                                    "seed": seed,
+                                    "document_idx": doc_idx,
+                                    # Add this to track which document it is
+                                    "exemplar_length": length,
+                                    "accuracy@1": acc1,
+                                    "accuracy@5": acc5,
+                                    "true_class_confidence": attr.get(
+                                        "true_class_confidence"),
+                                    "entropy": attr.get("entropy"),
+                                    "bertscore": quality.get("bertscore", {}).get(
+                                        "bertscore_f1_avg"),
+                                    "pinc": np.mean([
+                                        quality.get("pinc", {}).get(f"pinc_{k}_avg",
+                                                                    np.nan)
+                                        for k in range(1, 5)
+                                    ]),
+                                    "sample_id": prompt_idx
+                                }
+
+                                # add binary accuracy metrics if available
+                                if binary_acc1 is not None and doc_idx < len(
+                                        binary_acc1):
+                                    row["binary_acc1"] = binary_acc1[doc_idx]
+                                if binary_acc5 is not None and doc_idx < len(
+                                        binary_acc5):
+                                    row["binary_acc5"] = binary_acc5[doc_idx]
+
+                                rows.append(row)
 
     df = pd.DataFrame(rows)
     print(f"Created DataFrame with {len(df)} rows")
