@@ -200,75 +200,6 @@ def prepare_exemplar_length_data(
     print(f"Created DataFrame with {len(df)} rows")
     return df
 
-
-# def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
-#     """Model the relationship between exemplar length and a continuous metric.
-#
-#     Args:
-#         df: DataFrame with exemplar_length and metric columns
-#         metric: Name of the metric to model
-#         higher_is_better: Whether higher values of the metric are better
-#         max_entropy_lookup: Dictionary mapping corpus to max entropy value
-#
-#     Returns:
-#         Dictionary with modeling results or None if modeling failed
-#     """
-#     # Drop rows with missing values
-#     df = df.dropna(subset=["exemplar_length", metric])
-#
-#     if df.empty or df['exemplar_length'].nunique() <= 1:
-#         return None
-#
-#     # Use all data points - each sample-seed combination is a unique observation
-#     x = df['exemplar_length'].values
-#     y = df[metric].values
-#     corpus = df['corpus'].iloc[0]
-#
-#     # Scale x for better numerical stability
-#     x_mean = np.mean(x)
-#     x_scaled = (x - x_mean) / 1000
-#
-#     # Normalize entropy if needed
-#     if metric == 'entropy':
-#         y = y / max_entropy_lookup.get(corpus, np.log2(100))
-#
-#     # Ensure y is in (0, 1) for beta regression
-#     epsilon = 1e-6
-#     y = np.clip(y, epsilon, 1 - epsilon)
-#
-#     try:
-#         with pm.Model() as model:
-#             alpha = pm.Normal("alpha", 0, 2)
-#             beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
-#             mu_est = alpha + beta * x_scaled
-#             theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
-#             concentration = pm.HalfNormal("concentration", 10.0)
-#             a_beta = theta * concentration
-#             b_beta = (1 - theta) * concentration
-#             _ = pm.Beta("likelihood", alpha=a_beta, beta=b_beta, observed=y)
-#             trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
-#                               return_inferencedata=True)
-#     except Exception as e:
-#         print(f"Error in modeling {metric}: {str(e)}")
-#         return None
-#
-#     beta_samples = trace.posterior['beta'].values.flatten()
-#     hdi = az.hdi(beta_samples, hdi_prob=0.95)
-#     rope = 0.1 * np.std(beta_samples)
-#     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
-#     prob_benefit = float(
-#         np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
-#     conclusion = "Practically Equivalent" if in_rope > 0.95 else (
-#         "Significant Improvement" if prob_benefit > 0.95 else (
-#             "Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive"))
-#     return {
-#         "slope_mean": float(np.mean(beta_samples)),
-#         "slope_std": float(np.std(beta_samples)),
-#         "slope_hdi": hdi.tolist(),
-#         "in_rope": float(in_rope),
-#         "prob_benefit": float(prob_benefit),
-#         "conclusion": conclusion
-#     }
 def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     # Drop rows with missing values
     df = df.dropna(subset=["exemplar_length", metric])
@@ -325,82 +256,6 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     }
 
 
-# def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
-#     """Model binary metrics extracted from example-level data.
-#
-#     Args:
-#         df: DataFrame with binary metrics
-#         metric_name: Base name of the metric (binary_acc1 or binary_acc5)
-#         higher_is_better: Whether higher values of the metric are better
-#
-#     Returns:
-#         Dictionary with modeling results or None if modeling failed
-#     """
-#     # Expand the binary metrics and corresponding exemplar lengths
-#     binary_metrics = []
-#     exemplar_lengths = []
-#
-#     for idx, row in df.iterrows():
-#         if metric_name not in row or pd.isna(row[metric_name]):
-#             continue
-#
-#         # Get the binary value
-#         binary_value = row[metric_name]
-#
-#         # Handle scalar value (which should be the case after our fix)
-#         binary_metrics.append(float(binary_value))
-#         exemplar_lengths.append(row['exemplar_length'])
-#
-#     if not binary_metrics or len(set(binary_metrics)) < 2:
-#         return None
-#
-#     # Create a new dataframe with expanded data
-#     expanded_df = pd.DataFrame({
-#         'exemplar_length': exemplar_lengths,
-#         'binary_metric': binary_metrics
-#     })
-#
-#     if expanded_df.empty or expanded_df['exemplar_length'].nunique() <= 1:
-#         return None
-#
-#     # Use all data points - each binary outcome is a distinct observation
-#     x = expanded_df['exemplar_length'].values
-#     y = expanded_df['binary_metric'].values
-#
-#     # Scale x for better numerical stability
-#     x_mean = np.mean(x)
-#     x_scaled = (x - x_mean) / 1000
-#
-#     try:
-#         with pm.Model() as model:
-#             alpha = pm.Normal("alpha", 0, 2)
-#             beta = pm.Cauchy("beta", alpha=0, beta=0.5)
-#             eta = alpha + beta * x_scaled
-#             theta = pm.Deterministic("theta", pm.math.sigmoid(eta))
-#             _ = pm.Bernoulli("likelihood", p=theta, observed=y)
-#             trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
-#                               return_inferencedata=True)
-#     except Exception as e:
-#         print(f"Error in modeling {metric_name}: {str(e)}")
-#         return None
-#
-#     beta_samples = trace.posterior['beta'].values.flatten()
-#     hdi = az.hdi(beta_samples, hdi_prob=0.95)
-#     rope = 0.1 * np.std(beta_samples)
-#     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
-#     prob_benefit = float(
-#         np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
-#     conclusion = "Practically Equivalent" if in_rope > 0.95 else (
-#         "Significant Improvement" if prob_benefit > 0.95 else (
-#             "Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive"))
-#     return {
-#         "slope_mean": float(np.mean(beta_samples)),
-#         "slope_std": float(np.std(beta_samples)),
-#         "slope_hdi": hdi.tolist(),
-#         "in_rope": float(in_rope),
-#         "prob_benefit": float(prob_benefit),
-#         "conclusion": conclusion
-#     }
 def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     binary_metrics = []
     exemplar_lengths = []
@@ -562,16 +417,13 @@ def main():
                 for metric in METRICS:
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
 
+                    # In debug mode: log raw subset shape and per-seed sample counts
                     if args.debug:
-                        print(f"  Processing metric: {metric}")
-                        print(f"  Metric values by exemplar length:")
-
-                        # Group by exemplar length and show metric statistics
-                        stats = subset.groupby('exemplar_length')[metric].agg(
-                            ['mean', 'std', 'count'])
-                        # Replace NaN std with "N/A" for clarity
-                        stats['std'] = stats['std'].fillna("N/A")
-                        print(stats)
+                        print(
+                            f"  Subset shape: {subset.shape}")  # e.g. (225, n_columns)
+                        for seed_val in sorted(subset['seed'].unique()):
+                            count = subset[subset['seed'] == seed_val].shape[0]
+                            print(f"  Seed {seed_val}: {count} samples")
 
                     if metric == "accuracy@1":
                         # Check if binary_acc1 exists and has valid values
@@ -657,22 +509,23 @@ def main():
                                 alpha=0.7
                             )
 
-                        # Build a smooth range for x-values
-                        x_vals = np.linspace(subset['exemplar_length'].min(),
-                                             subset['exemplar_length'].max(), 100)
+                        # Create a smooth range for x-values over the entire range
+                        x_min = subset['exemplar_length'].min()
+                        x_max = subset['exemplar_length'].max()
+                        x_vals = np.linspace(x_min, x_max, 100)
                         x_mean = np.mean(subset['exemplar_length'].values)
                         x_vals_scaled = (x_vals - x_mean) / 1000.0
 
-                        # Retrieve posterior mean parameters from the model
+                        # Get posterior mean parameters (returned from your modeling functions)
                         alpha_mean = res["alpha_mean"]
                         beta_mean = res["beta_mean"]
 
-                        # For binary metrics (and continuous ones modeled with invlogit), plot the logistic curve:
+                        # Plot the logistic (squiggle) curve based on the model's parameters:
                         y_curve = 1.0 / (1.0 + np.exp(
                             - (alpha_mean + beta_mean * x_vals_scaled)))
-
                         plt.plot(x_vals, y_curve, "r--", linewidth=2,
                                  label="Posterior mean fit")
+
                         plt.title(
                             f"{corpus.upper()} - {llm} vs {threat_model}: {metric_display}")
                         plt.xlabel("Exemplar Length")
@@ -680,12 +533,14 @@ def main():
                         plt.legend(loc='best')
                         plt.grid(True, alpha=0.3)
 
-                        # Add stats text
-                        plt.text(0.05, 0.95,
-                                 f"Slope: {res['slope_mean']:.4f}\n"
-                                 f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
-                                 f"P(Improvement): {res['prob_benefit']:.4f}\n"
-                                 f"Conclusion: {res['conclusion']}",
+                        # Add model statistics as text (avoid printing std if it might be NA)
+                        stats_text = (
+                            f"Slope: {res['slope_mean']:.4f}\n"
+                            f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
+                            f"P(Improvement): {res['prob_benefit']:.4f}\n"
+                            f"Conclusion: {res['conclusion']}"
+                        )
+                        plt.text(0.05, 0.95, stats_text,
                                  transform=plt.gca().transAxes,
                                  verticalalignment='top',
                                  bbox=dict(boxstyle='round', facecolor='white',
