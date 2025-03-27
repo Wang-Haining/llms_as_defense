@@ -33,27 +33,30 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
         dictionary mapping prompt index to exemplar length
     """
     lengths = {}
-    for prompt_file in prompt_dir.glob("*.json"):
-        with open(prompt_file, "r", encoding="utf-8") as f:
-            prompt_data = json.load(f)
+    for prompt_file in prompt_dir.glob("prompt*.json"):  # Only include prompt files, exclude metadata.json
+        try:
+            with open(prompt_file, "r", encoding="utf-8") as f:
+                prompt_data = json.load(f)
 
-        # extract prompt index from the metadata
-        prompt_idx = prompt_data.get("metadata", {}).get("prompt_index")
-        if prompt_idx is None:
-            # fall back to extracting from filename if not in metadata
-            match = re.search(r'prompt(\d+)\.json', prompt_file.name)
-            if match:
-                prompt_idx = int(match.group(1))
+            # extract prompt index from the metadata
+            prompt_idx = prompt_data.get("metadata", {}).get("prompt_index")
+            if prompt_idx is None:
+                # fall back to extracting from filename if not in metadata
+                match = re.search(r'prompt(\d+)\.json', prompt_file.name)
+                if match:
+                    prompt_idx = int(match.group(1))
+                else:
+                    print(f"Warning: Could not determine prompt index for {prompt_file}")
+                    continue
+
+            # get the word_count from metadata
+            word_count = prompt_data.get("metadata", {}).get("word_count")
+            if word_count is not None:
+                lengths[prompt_idx] = word_count
             else:
-                print(f"Warning: Could not determine prompt index for {prompt_file}")
-                continue
-
-        # get the word_count from metadata
-        word_count = prompt_data.get("metadata", {}).get("word_count")
-        if word_count is not None:
-            lengths[prompt_idx] = word_count
-        else:
-            print(f"Warning: No word_count found in metadata for prompt {prompt_idx}")
+                print(f"Warning: No word_count found in metadata for prompt {prompt_idx}")
+        except Exception as e:
+            print(f"Error processing {prompt_file}: {e}")
 
     return lengths
 
@@ -103,7 +106,7 @@ def prepare_data(eval_base_dir: str,
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # standardize model names for consistency
+    # mapping from directory names to standardized model names
     model_mapping = {
         'gpt-4o-2024-08-06': 'gpt-4o',
         'claude-3-5-sonnet-20241022': 'claude-3.5',
@@ -111,6 +114,9 @@ def prepare_data(eval_base_dir: str,
         'llama-3.1-8b-instruct': 'llama-3.1',
         'ministral-8b-instruct-2410': 'ministral'
     }
+
+    # reverse mapping for finding directories
+    dir_mapping = {v: k for k, v in model_mapping.items()}
 
     for corpus in CORPORA:
         print(f"Processing corpus: {corpus}")
@@ -136,6 +142,18 @@ def prepare_data(eval_base_dir: str,
             # track all available data for summary
             summary_data = []
 
+            # get the actual model directories available in the evaluation directory
+            available_model_dirs = {}
+            for model_dir in Path(eval_base_dir, corpus, 'rq3', experiment_name).glob("*"):
+                if model_dir.is_dir():
+                    # map directory name to standardized name if possible
+                    for k, v in model_mapping.items():
+                        if k in model_dir.name:
+                            available_model_dirs[v] = model_dir.name
+                            break
+
+            print(f"Found model directories: {available_model_dirs}")
+
             for threat_model in THREAT_MODELS:
                 for llm in LLMS:
                     print(f"Processing {corpus}/{threat_model}/{llm}")
@@ -143,8 +161,11 @@ def prepare_data(eval_base_dir: str,
                     # collect data for this specific scenario
                     scenario_data = []
 
+                    # get the actual directory name from mapping or try original name
+                    model_dir_name = available_model_dirs.get(llm, dir_mapping.get(llm, llm))
+
                     # check the evaluation directory for this scenario
-                    eval_dir = Path(eval_base_dir) / corpus / 'rq3' / experiment_name / llm
+                    eval_dir = Path(eval_base_dir) / corpus / 'rq3' / experiment_name / model_dir_name
 
                     if not eval_dir.exists():
                         print(f"Warning: Evaluation directory not found: {eval_dir}")
@@ -170,8 +191,8 @@ def prepare_data(eval_base_dir: str,
                         # get binary metrics from detailed evaluation
                         binary_acc1_list, binary_acc5_list = get_binary_metrics(seed_file)
 
-                        # find corresponding llm output file
-                        llm_output_file = Path(llm_outputs_dir) / corpus / 'rq3' / experiment_name / llm / f"seed_{seed}.json"
+                        # find corresponding llm output file using actual directory name
+                        llm_output_file = Path(llm_outputs_dir) / corpus / 'rq3' / experiment_name / model_dir_name / f"seed_{seed}.json"
 
                         if not llm_output_file.exists():
                             print(f"Warning: LLM output file not found: {llm_output_file}")
@@ -207,7 +228,8 @@ def prepare_data(eval_base_dir: str,
                                 # create row with all metrics
                                 row = {
                                     "corpus": corpus,
-                                    "llm": next((v for k, v in model_mapping.items() if k in llm), llm),
+                                    "llm": llm,  # use standardized name
+                                    "llm_dir": model_dir_name,  # save the directory name for reference
                                     "threat_model": threat_model,
                                     "seed": seed,
                                     "document_idx": doc_idx,
@@ -268,8 +290,10 @@ def main():
                         help="Directory containing LLM outputs")
     parser.add_argument("--prompt_dir", type=str, default="prompts",
                         help="Directory containing prompt files")
-    parser.add_argument("--output_dir", type=str, default="results/exemplar_length_analysis_rq3.2",
+    parser.add_argument("--output_dir", type=str, default="results/prepared_data_rq3.2",
                         help="Directory to save prepared data")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print more detailed debug information")
 
     args = parser.parse_args()
 
