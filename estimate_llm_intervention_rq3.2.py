@@ -37,6 +37,14 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
 
 
 def extract_exemplar_from_prompt(data: Dict) -> Optional[str]:
+    """Extract exemplar text from a prompt.
+
+    Args:
+        data: Prompt data dictionary
+
+    Returns:
+        Extracted exemplar text or None if not found
+    """
     user_instruction = data.get("user", "")
     start = user_instruction.find("expected to mimic:")
     end = user_instruction.find("Please rewrite", start)
@@ -142,6 +150,17 @@ def prepare_exemplar_length_data(
 
 
 def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
+    """Model the relationship between exemplar length and a continuous metric.
+
+    Args:
+        df: DataFrame with exemplar_length and metric columns
+        metric: Name of the metric to model
+        higher_is_better: Whether higher values of the metric are better
+        max_entropy_lookup: Dictionary mapping corpus to max entropy value
+
+    Returns:
+        Dictionary with modeling results or None if modeling failed
+    """
     df = df.dropna(subset=["exemplar_length", metric])
     if df.empty or df['exemplar_length'].nunique() <= 1:
         return None
@@ -184,6 +203,16 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
 
 
 def model_binary_metric(df, metric, higher_is_better):
+    """Model the relationship between exemplar length and a binary metric.
+
+    Args:
+        df: DataFrame with exemplar_length and metric columns
+        metric: Name of the metric to model
+        higher_is_better: Whether higher values of the metric are better
+
+    Returns:
+        Dictionary with modeling results or None if modeling failed
+    """
     df = df.dropna(subset=["exemplar_length", metric])
     if df.empty or df['exemplar_length'].nunique() <= 1:
         return None
@@ -219,35 +248,53 @@ def model_binary_metric(df, metric, higher_is_better):
     }
 
 
-if __name__ == "__main__":
+def main():
+    """Main function to run the exemplar length analysis."""
     import argparse
     output_dir = Path("results/exemplar_length_analysis_rq3.2")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--eval_dir", type=str, default="defense_evaluation")
-    parser.add_argument("--llm_dir", type=str, default="llm_outputs")
-    parser.add_argument("--prompt_dir", type=str, default="prompts")
+    parser = argparse.ArgumentParser(description="Analyze the impact of exemplar length on defense performance")
+    parser.add_argument("--eval_dir", type=str, default="defense_evaluation",
+                        help="Directory containing evaluation results")
+    parser.add_argument("--llm_dir", type=str, default="llm_outputs",
+                        help="Directory containing LLM outputs")
+    parser.add_argument("--prompt_dir", type=str, default="prompts",
+                        help="Directory containing prompt files")
     args = parser.parse_args()
 
+    print("Preparing exemplar length data...")
     df = prepare_exemplar_length_data(args.eval_dir, args.llm_dir, args.prompt_dir)
     df.to_csv(output_dir / "raw_data.csv", index=False)
+    print(f"Raw data saved to {output_dir / 'raw_data.csv'}")
 
     max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
     records = []
 
+    print("Modeling the relationship between exemplar length and metrics...")
     for corpus in CORPORA:
         for threat_model in THREAT_MODELS:
             for llm in LLMS:
-                subset = df[(df.corpus == corpus) & (df.threat_model == threat_model) & (df.llm == llm)]
+                subset = df[(df.corpus == corpus) &
+                            (df.threat_model == threat_model) &
+                            (df.llm == llm)]
+
+                if subset.empty:
+                    print(f"Warning: No data for {corpus}-{threat_model}-{llm}")
+                    continue
+
+                print(f"Processing {corpus}-{threat_model}-{llm}...")
+
                 for metric in METRICS:
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
                     if metric in ["accuracy@1", "accuracy@5"]:
                         res = model_binary_metric(subset, metric, higher_is_better)
                     else:
                         res = model_continuous_metric(subset, metric, higher_is_better, max_entropy_lookup)
+
                     if res is None:
                         continue
+
                     records.append({
                         "Corpus": corpus.upper(),
                         "Threat Model": threat_model,
@@ -263,4 +310,12 @@ if __name__ == "__main__":
                         "Conclusion": res['conclusion']
                     })
 
-    pd.DataFrame(records).to_csv(output_dir / "exemplar_length_results.csv", index=False)
+    results_df = pd.DataFrame(records)
+    results_file = output_dir / "exemplar_length_results.csv"
+    results_df.to_csv(results_file, index=False)
+    print(f"Results saved to {results_file}")
+    print("Analysis complete!")
+
+
+if __name__ == "__main__":
+    main()
