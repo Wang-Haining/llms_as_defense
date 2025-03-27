@@ -189,11 +189,7 @@ def prepare_data(eval_base_dir: str,
                             continue
 
                         # get sample-level metrics from detailed evaluation
-                        metrics = get_binary_metrics(seed_file)
-                        if metrics is not None:
-                            binary_acc1_list, binary_acc5_list, true_conf_list, entropy_list = metrics
-                        else:
-                            binary_acc1_list, binary_acc5_list, true_conf_list, entropy_list = None, None, None, None
+                        binary_acc1_list, binary_acc5_list, true_conf_list, entropy_list = get_binary_metrics(seed_file)
 
                         # find corresponding llm output file using actual directory name
                         llm_output_file = Path(llm_outputs_dir) / corpus / 'rq3' / experiment_name / model_dir_name / f"seed_{seed}.json"
@@ -332,7 +328,7 @@ def main():
                         help="Directory containing LLM outputs")
     parser.add_argument("--prompt_dir", type=str, default="prompts",
                         help="Directory containing prompt files")
-    parser.add_argument("--output_dir", type=str, default="prepared_data_rq3.2",
+    parser.add_argument("--output_dir", type=str, default="results/prepared_data_rq3.2",
                         help="Directory to save prepared data")
     parser.add_argument("--verbose", action="store_true",
                         help="Print more detailed debug information")
