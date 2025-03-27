@@ -70,11 +70,11 @@ def prepare_exemplar_length_data(
     """
     rows = []
     for corpus in CORPORA:
-        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
-            # Get the experiment name (e.g., "rq3.2_imitation_variable_length")
+        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_imitation_variable_length"):
+            # get the experiment name (i.e., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
 
-            # Load prompt lengths from the corresponding prompts directory
+            # load prompt lengths from the corresponding prompts directory
             prompt_dir = Path(prompts_dir) / experiment_name
             if not prompt_dir.exists():
                 print(f"Warning: Prompt directory not found: {prompt_dir}")
