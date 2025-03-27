@@ -64,35 +64,59 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
     return lengths
 
 
-def get_sample_metrics(eval_file: Path) -> tuple:
-    """extract binary accuracy metrics from evaluation file.
+def get_sample_metrics(eval_file: Path):
+    """extract sample-level metrics from evaluation file.
 
     args:
         eval_file: path to evaluation json file
 
     returns:
-        tuple of binary accuracy@1 and accuracy@5 lists
+        tuple of binary accuracy@1, accuracy@5 lists, true confidence list, and entropy list
     """
+    # Initialize with None values
     binary_acc1_list = None
     binary_acc5_list = None
+    true_conf_list = None
+    entropy_list = None
 
     try:
         with open(eval_file, "r") as f:
             detailed_eval_data = json.load(f)
 
         if "example_metrics" in detailed_eval_data:
+            example_metrics = detailed_eval_data["example_metrics"]
+
+            # create binary accuracy metrics
             binary_acc1_list = [
                 1 if ex["transformed_rank"] == 0 else 0
-                for ex in detailed_eval_data["example_metrics"]
+                for ex in example_metrics
             ]
             binary_acc5_list = [
                 1 if ex["transformed_rank"] < 5 else 0
-                for ex in detailed_eval_data["example_metrics"]
+                for ex in example_metrics
             ]
-    except Exception as e:
-        print(f"Warning: Could not extract binary metrics from {eval_file}: {e}")
 
-    return binary_acc1_list, binary_acc5_list
+            # extract true class confidence and calculate entropy
+            true_conf_list = []
+            entropy_list = []
+
+            for ex in example_metrics:
+                true_label = ex["true_label"]
+                trans_probs = np.array(ex["trans_probs"])
+
+                # get confidence for true class
+                true_conf_list.append(float(trans_probs[true_label]))
+
+                # calculate entropy
+                epsilon = 1e-6
+                probs_safe = np.clip(trans_probs, epsilon, 1.0)
+                entropy = -np.sum(probs_safe * np.log2(probs_safe))
+                entropy_list.append(float(entropy))
+
+    except Exception as e:
+        print(f"Warning: Could not extract metrics from {eval_file}: {e}")
+
+    return binary_acc1_list, binary_acc5_list, true_conf_list, entropy_list
 
 
 def prepare_data(eval_base_dir: str,
