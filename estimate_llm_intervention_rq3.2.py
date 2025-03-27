@@ -339,7 +339,8 @@ def main():
     output_dir = Path("results/exemplar_length_analysis_rq3.2")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = argparse.ArgumentParser(description="Analyze the impact of exemplar length on defense performance")
+    parser = argparse.ArgumentParser(
+        description="Analyze the impact of exemplar length on defense performance")
     parser.add_argument("--eval_dir", type=str, default="defense_evaluation",
                         help="Directory containing evaluation results")
     parser.add_argument("--llm_dir", type=str, default="llm_outputs",
@@ -350,34 +351,68 @@ def main():
 
     print("Preparing exemplar length data...")
     df = prepare_exemplar_length_data(args.eval_dir, args.llm_dir, args.prompt_dir)
+
+    # Save raw data before any processing
     df.to_csv(output_dir / "raw_data.csv", index=False)
+    print(f"Created DataFrame with {len(df)} rows")
     print(f"Raw data saved to {output_dir / 'raw_data.csv'}")
+
+    # Print the unique values for key columns to help with debugging
+    print("\nUnique values in the dataset:")
+    print(f"Corpus: {df['corpus'].unique()}")
+    print(f"Threat Models: {df['threat_model'].unique()}")
+    print(f"LLMs: {df['llm'].unique()}")
+
+    # Map model names to standardized names for analysis
+    # This handles variations like 'gpt-4o-2024-08-06' -> 'gpt-4o'
+    model_mapping = {
+        'gpt-4o-2024-08-06': 'gpt-4o',
+        'claude-3-5-sonnet-20241022': 'claude-3.5',
+        'gemma-2-9b-it': 'gemma-2',
+        'llama-3.1-8b-instruct': 'llama-3.1',
+        'ministral-8b-instruct-2410': 'ministral'
+    }
+
+    # Apply mapping to standardize model names
+    df['llm_standardized'] = df['llm'].map(
+        lambda x: next((v for k, v in model_mapping.items() if k in x), x))
 
     max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
     records = []
 
-    print("Modeling the relationship between exemplar length and metrics...")
+    print("\nModeling the relationship between exemplar length and metrics...")
     for corpus in CORPORA:
         for threat_model in THREAT_MODELS:
             for llm in LLMS:
+                # Use the standardized model names for filtering
                 subset = df[(df.corpus == corpus) &
                             (df.threat_model == threat_model) &
-                            (df.llm == llm)]
+                            (df.llm_standardized == llm)]
 
                 if subset.empty:
                     print(f"Warning: No data for {corpus}-{threat_model}-{llm}")
                     continue
 
-                print(f"Processing {corpus}-{threat_model}-{llm}...")
+                print(
+                    f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
 
                 for metric in METRICS:
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
+
+                    # Check if we have enough distinct exemplar lengths for modeling
+                    if subset['exemplar_length'].nunique() <= 1:
+                        print(
+                            f"  Skipping {metric}: Not enough distinct exemplar lengths")
+                        continue
+
                     if metric in ["accuracy@1", "accuracy@5"]:
                         res = model_binary_metric(subset, metric, higher_is_better)
                     else:
-                        res = model_continuous_metric(subset, metric, higher_is_better, max_entropy_lookup)
+                        res = model_continuous_metric(subset, metric, higher_is_better,
+                                                      max_entropy_lookup)
 
                     if res is None:
+                        print(f"  Skipping {metric}: Modeling failed")
                         continue
 
                     records.append({
@@ -394,6 +429,7 @@ def main():
                         "In ROPE": res['in_rope'],
                         "Conclusion": res['conclusion']
                     })
+                    print(f"  Added results for {metric}")
 
     results_df = pd.DataFrame(records)
     results_file = output_dir / "exemplar_length_results.csv"
