@@ -91,18 +91,18 @@ def prepare_exemplar_length_data(
                 for eval_file in model_dir.glob("seed_*.json"):
                     seed = eval_file.stem.split("_")[-1]
 
-                    # load detailed evaluation data for binary accuracy
-                    binary_acc1 = None
-                    binary_acc5 = None
+                    # Load detailed evaluation data for binary accuracy
+                    binary_acc1_list = None
+                    binary_acc5_list = None
                     try:
                         with open(eval_file, "r") as f:
                             detailed_eval_data = json.load(f)
                         if "example_metrics" in detailed_eval_data:
-                            binary_acc1 = [
+                            binary_acc1_list = [
                                 1 if ex["transformed_rank"] == 0 else 0
                                 for ex in detailed_eval_data["example_metrics"]
                             ]
-                            binary_acc5 = [
+                            binary_acc5_list = [
                                 1 if ex["transformed_rank"] < 5 else 0
                                 for ex in detailed_eval_data["example_metrics"]
                             ]
@@ -172,7 +172,6 @@ def prepare_exemplar_length_data(
                                     "threat_model": threat_model,
                                     "seed": seed,
                                     "document_idx": doc_idx,
-                                    # Add this to track which document it is
                                     "exemplar_length": length,
                                     "accuracy@1": acc1,
                                     "accuracy@5": acc5,
@@ -189,13 +188,11 @@ def prepare_exemplar_length_data(
                                     "sample_id": prompt_idx
                                 }
 
-                                # add binary accuracy metrics if available
-                                if binary_acc1 is not None and doc_idx < len(
-                                        binary_acc1):
-                                    row["binary_acc1"] = binary_acc1[doc_idx]
-                                if binary_acc5 is not None and doc_idx < len(
-                                        binary_acc5):
-                                    row["binary_acc5"] = binary_acc5[doc_idx]
+                                # Add binary accuracy metrics for this document if available
+                                if binary_acc1_list is not None and doc_idx < len(binary_acc1_list):
+                                    row["binary_acc1"] = binary_acc1_list[doc_idx]
+                                if binary_acc5_list is not None and doc_idx < len(binary_acc5_list):
+                                    row["binary_acc5"] = binary_acc5_list[doc_idx]
 
                                 rows.append(row)
 
@@ -285,18 +282,20 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     Returns:
         Dictionary with modeling results or None if modeling failed
     """
-    # Expand the lists of binary metrics and corresponding exemplar lengths
+    # Expand the binary metrics and corresponding exemplar lengths
     binary_metrics = []
     exemplar_lengths = []
 
     for idx, row in df.iterrows():
-        if metric_name not in row or row[metric_name] is None:
+        if metric_name not in row or pd.isna(row[metric_name]):
             continue
 
-        binary_list = row[metric_name]
-        for binary_value in binary_list:
-            binary_metrics.append(binary_value)
-            exemplar_lengths.append(row['exemplar_length'])
+        # Get the binary value
+        binary_value = row[metric_name]
+
+        # Handle scalar value (which should be the case after our fix)
+        binary_metrics.append(float(binary_value))
+        exemplar_lengths.append(row['exemplar_length'])
 
     if not binary_metrics or len(set(binary_metrics)) < 2:
         return None
@@ -429,6 +428,21 @@ def main():
                 # In debug mode, print additional information about the subset
                 if args.debug:
                     print(
+                        f"  Data types for exemplar_length: {subset['exemplar_length'].dtype}")
+                    print(
+                        f"  Binary accuracy columns present: {[col for col in subset.columns if 'binary' in col]}")
+                    if 'binary_acc1' in subset.columns:
+                        print(
+                            f"  Data type for binary_acc1: {subset['binary_acc1'].dtype}")
+                        print(
+                            f"  Sample values for binary_acc1: {subset['binary_acc1'].head()}")
+                    if 'binary_acc5' in subset.columns:
+                        print(
+                            f"  Data type for binary_acc5: {subset['binary_acc5'].dtype}")
+                        print(
+                            f"  Sample values for binary_acc5: {subset['binary_acc5'].head()}")
+
+                    print(
                         f"  Exemplar lengths in subset: {sorted(subset['exemplar_length'].unique())}")
                     print(f"  Number of samples by exemplar length:")
                     print(subset['exemplar_length'].value_counts().sort_index())
@@ -443,16 +457,27 @@ def main():
                         # Group by exemplar length and show metric statistics
                         stats = subset.groupby('exemplar_length')[metric].agg(
                             ['mean', 'std', 'count'])
+                        # Replace NaN std with "N/A" for clarity
+                        stats['std'] = stats['std'].fillna("N/A")
                         print(stats)
 
                     if metric == "accuracy@1":
-                        # use binary accuracy if available
+                        # Check if binary_acc1 exists and has valid values
                         if "binary_acc1" in subset.columns and not subset[
                             "binary_acc1"].isna().all():
-                            res = model_binary_metrics_from_examples(subset,
-                                                                     "binary_acc1",
-                                                                     not higher_is_better)
-                            metric_display = "binary_accuracy@1"
+                            # Make sure we're dealing with binary data
+                            try:
+                                res = model_binary_metrics_from_examples(subset,
+                                                                         "binary_acc1",
+                                                                         not higher_is_better)
+                                metric_display = "binary_accuracy@1"
+                            except Exception as e:
+                                print(
+                                    f"  Error in binary accuracy@1 modeling: {e}. Using continuous model instead.")
+                                res = model_continuous_metric(subset, metric,
+                                                              not higher_is_better,
+                                                              max_entropy_lookup)
+                                metric_display = metric
                         else:
                             res = model_continuous_metric(subset, metric,
                                                           not higher_is_better,
@@ -462,10 +487,18 @@ def main():
                         # use binary accuracy if available
                         if "binary_acc5" in subset.columns and not subset[
                             "binary_acc5"].isna().all():
-                            res = model_binary_metrics_from_examples(subset,
-                                                                     "binary_acc5",
-                                                                     not higher_is_better)
-                            metric_display = "binary_accuracy@5"
+                            try:
+                                res = model_binary_metrics_from_examples(subset,
+                                                                         "binary_acc5",
+                                                                         not higher_is_better)
+                                metric_display = "binary_accuracy@5"
+                            except Exception as e:
+                                print(
+                                    f"  Error in binary accuracy@5 modeling: {e}. Using continuous model instead.")
+                                res = model_continuous_metric(subset, metric,
+                                                              not higher_is_better,
+                                                              max_entropy_lookup)
+                                metric_display = metric
                         else:
                             res = model_continuous_metric(subset, metric,
                                                           not higher_is_better,
@@ -496,8 +529,6 @@ def main():
                     })
                     print(f"  Added results for {metric_display}")
 
-                    # in debug mode, add a simple plot to visualize the relationship
-                    # In debug mode, add a simple plot to visualize the relationship
                     # In debug mode, add a simple plot to visualize the relationship
                     if args.debug:
                         try:
