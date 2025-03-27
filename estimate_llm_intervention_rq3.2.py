@@ -63,10 +63,10 @@ def prepare_exemplar_length_data(
     rows = []
     for corpus in CORPORA:
         for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
-            # get the experiment name (e.g., "rq3.2_imitation_variable_length")
+            # Get the experiment name (e.g., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
 
-            # load prompt lengths from the corresponding prompts directory
+            # Load prompt lengths from the corresponding prompts directory
             prompt_dir = Path(prompts_dir) / experiment_name
             if not prompt_dir.exists():
                 print(f"Warning: Prompt directory not found: {prompt_dir}")
@@ -77,26 +77,49 @@ def prepare_exemplar_length_data(
             for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob(
                     "*"):
                 model_name = model_dir.name.lower()
+
                 for eval_file in model_dir.glob("seed_*.json"):
-                    with open(eval_file) as f:
-                        eval_data = json.load(f)
-                    prompt_idx = eval_data[0].get("prompt_index", -1)
-                    length = prompt_lengths.get(prompt_idx, -1)
                     seed = eval_file.stem.split("_")[-1]
+
+                    # Find the corresponding file in llm_outputs to get prompt_index
+                    llm_output_file = Path(
+                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name / f"seed_{seed}.json"
+
+                    if not llm_output_file.exists():
+                        print(f"Warning: LLM output file not found: {llm_output_file}")
+                        continue
+
+                    with open(llm_output_file) as f:
+                        llm_data = json.load(f)
+
+                    # Extract prompt_index from the first entry in llm_data
+                    prompt_idx = -1
+                    if isinstance(llm_data, list) and llm_data:
+                        prompt_idx = llm_data[0].get("prompt_index", -1)
+
+                    length = prompt_lengths.get(prompt_idx, -1)
+
+                    # Load evaluation data
                     json_path = model_dir / "evaluation.json"
                     if not json_path.exists():
                         continue
+
                     with open(json_path) as f:
                         all_data = json.load(f)
+
                     if seed not in all_data:
                         continue
+
                     record = all_data[seed]
+
                     for threat_model in THREAT_MODELS:
                         if threat_model not in record:
                             continue
+
                         attr = record[threat_model].get("attribution", {}).get("post",
                                                                                {})
                         quality = record[threat_model].get("quality", {})
+
                         rows.append({
                             "corpus": corpus,
                             "llm": model_name,
@@ -114,6 +137,7 @@ def prepare_exemplar_length_data(
                                 for k in range(1, 5)
                             ])
                         })
+
     return pd.DataFrame(rows)
 
 
