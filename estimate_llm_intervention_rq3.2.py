@@ -1,249 +1,117 @@
+#!/usr/bin/env python
+"""
+Script to model and analyze the relationship between exemplar length and defense metrics.
+
+This script uses Bayesian modeling to assess how exemplar length affects various
+metrics in defending against authorship attribution attacks.
+"""
+
+import argparse
 import json
-import re
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 
 import arviz as az
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
+import seaborn as sns
 
+# Constants
 CORPORA = ['ebg', 'rj']
 THREAT_MODELS = ['logreg', 'svm', 'roberta']
 LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
 METRICS = ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy', 'bertscore', 'pinc']
+MAX_ENTROPY = {"ebg": np.log2(45), "rj": np.log2(21)}
 
 
-def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
-    """Extract exemplar lengths from prompt files.
+def model_continuous_metric(df: pd.DataFrame,
+                            metric: str,
+                            higher_is_better: bool,
+                            max_entropy: float) -> Optional[Dict]:
+    """fit a bayesian model for a continuous metric.
 
-    Args:
-        prompt_dir: Directory containing prompt JSON files
+    args:
+        df: dataframe containing exemplar length and metric data
+        metric: name of the metric column
+        higher_is_better: whether higher values of the metric are better
+        max_entropy: maximum possible entropy value for normalization
 
-    Returns:
-        Dictionary mapping prompt index to exemplar length
+    returns:
+        dictionary with model results or None if modeling failed
     """
-    lengths = {}
-    for prompt_file in prompt_dir.glob("*.json"):
-        with open(prompt_file, "r", encoding="utf-8") as f:
-            prompt_data = json.load(f)
-
-        # extract prompt index from the metadata
-        prompt_idx = prompt_data.get("metadata", {}).get("prompt_index")
-        if prompt_idx is None:
-            # fall back to extracting from filename if not in metadata
-            match = re.search(r'prompt(\d+)\.json', prompt_file.name)
-            if match:
-                prompt_idx = int(match.group(1))
-            else:
-                print(f"Warning: Could not determine prompt index for {prompt_file}")
-                continue
-
-        # get the word_count from metadata
-        word_count = prompt_data.get("metadata", {}).get("word_count")
-        if word_count is not None:
-            lengths[prompt_idx] = word_count
-        else:
-            print(
-                f"Warning: No word_count found in metadata for prompt {prompt_idx}")
-
-    return lengths
-
-
-def prepare_exemplar_length_data(
-        eval_base_dir: str,
-        llm_outputs_dir: str,
-        prompts_dir: str
-) -> pd.DataFrame:
-    """Prepare dataframe containing exemplar length data and evaluation metrics.
-
-    Args:
-        eval_base_dir: Base directory for evaluation results
-        llm_outputs_dir: Directory containing LLM outputs
-        prompts_dir: Directory containing prompt files
-
-    Returns:
-        DataFrame with exemplar lengths and evaluation metrics
-    """
-    rows = []
-    for corpus in CORPORA:
-        print(f"Processing corpus: {corpus}")
-        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob(
-                "rq3.2_imitation_variable_length"):
-            # get the experiment name (e.g., "rq3.2_imitation_variable_length")
-            experiment_name = rq_folder.name
-            print(f"Processing experiment: {experiment_name}")
-
-            # load prompt lengths from the corresponding prompts directory
-            prompt_dir = Path(prompts_dir) / experiment_name
-            if not prompt_dir.exists():
-                print(f"Warning: Prompt directory not found: {prompt_dir}")
-                continue
-
-            prompt_lengths = extract_exemplar_lengths(prompt_dir)
-            print(f"Extracted exemplar lengths for {len(prompt_lengths)} prompts")
-
-            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob(
-                    "*"):
-                model_name = model_dir.name.lower()
-                print(f"Processing model: {model_name}")
-
-                for eval_file in model_dir.glob("seed_*.json"):
-                    seed = eval_file.stem.split("_")[-1]
-
-                    # Load detailed evaluation data for binary accuracy
-                    binary_acc1_list = None
-                    binary_acc5_list = None
-                    try:
-                        with open(eval_file, "r") as f:
-                            detailed_eval_data = json.load(f)
-                        if "example_metrics" in detailed_eval_data:
-                            binary_acc1_list = [
-                                1 if ex["transformed_rank"] == 0 else 0
-                                for ex in detailed_eval_data["example_metrics"]
-                            ]
-                            binary_acc5_list = [
-                                1 if ex["transformed_rank"] < 5 else 0
-                                for ex in detailed_eval_data["example_metrics"]
-                            ]
-                    except Exception as e:
-                        print(
-                            f"Warning: Could not extract binary metrics from {eval_file}: {e}")
-
-                    # find the corresponding file in llm_outputs to get prompt_index
-                    llm_output_file = Path(
-                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name / f"seed_{seed}.json"
-
-                    if not llm_output_file.exists():
-                        print(f"Warning: LLM output file not found: {llm_output_file}")
-                        continue
-
-                    with open(llm_output_file) as f:
-                        llm_data = json.load(f)
-
-                    # Load evaluation data
-                    json_path = model_dir / "evaluation.json"
-                    if not json_path.exists():
-                        print(f"Warning: Evaluation JSON not found: {json_path}")
-                        continue
-
-                    with open(json_path) as f:
-                        all_data = json.load(f)
-
-                    if seed not in all_data:
-                        print(f"Warning: Seed {seed} not found in {json_path}")
-                        continue
-
-                    record = all_data[seed]
-
-                    # Process each document in the list
-                    if isinstance(llm_data, list) and llm_data:
-                        for doc_idx, document in enumerate(llm_data):
-                            if "prompt_index" not in document:
-                                print(
-                                    f"Warning: No prompt_index in document {doc_idx} for seed {seed}")
-                                continue
-
-                            prompt_idx = document["prompt_index"]
-                            length = prompt_lengths.get(prompt_idx, -1)
-                            if length == -1:
-                                print(
-                                    f"Warning: Could not find exemplar length for prompt index {prompt_idx}")
-                                continue
-
-                            # Extract metrics for each threat model
-                            for threat_model in THREAT_MODELS:
-                                if threat_model not in record:
-                                    print(
-                                        f"Warning: Threat model {threat_model} not found in record for seed {seed}")
-                                    continue
-
-                                attr = record[threat_model].get("attribution", {}).get(
-                                    "post", {})
-                                quality = record[threat_model].get("quality", {})
-
-                                # use raw accuracy values (not binary conversion)
-                                acc1 = float(attr.get("accuracy@1", 0.0))
-                                acc5 = float(attr.get("accuracy@5", 0.0))
-
-                                row = {
-                                    "corpus": corpus,
-                                    "llm": model_name,
-                                    "threat_model": threat_model,
-                                    "seed": seed,
-                                    "document_idx": doc_idx,
-                                    "exemplar_length": length,
-                                    "accuracy@1": acc1,
-                                    "accuracy@5": acc5,
-                                    "true_class_confidence": attr.get(
-                                        "true_class_confidence"),
-                                    "entropy": attr.get("entropy"),
-                                    "bertscore": quality.get("bertscore", {}).get(
-                                        "bertscore_f1_avg"),
-                                    "pinc": np.mean([
-                                        quality.get("pinc", {}).get(f"pinc_{k}_avg",
-                                                                    np.nan)
-                                        for k in range(1, 5)
-                                    ]),
-                                    "sample_id": prompt_idx
-                                }
-
-                                # Add binary accuracy metrics for this document if available
-                                if binary_acc1_list is not None and doc_idx < len(binary_acc1_list):
-                                    row["binary_acc1"] = binary_acc1_list[doc_idx]
-                                if binary_acc5_list is not None and doc_idx < len(binary_acc5_list):
-                                    row["binary_acc5"] = binary_acc5_list[doc_idx]
-
-                                rows.append(row)
-
-    df = pd.DataFrame(rows)
-    print(f"Created DataFrame with {len(df)} rows")
-    return df
-
-def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
-    # Drop rows with missing values
+    # drop rows with missing values
     df = df.dropna(subset=["exemplar_length", metric])
+
     if df.empty or df['exemplar_length'].nunique() <= 1:
         return None
 
-    # Prepare data
+    # prepare data
     x = df['exemplar_length'].values
     y = df[metric].values
     corpus = df['corpus'].iloc[0]
 
+    # center and scale x for better inference
     x_mean = np.mean(x)
-    x_scaled = (x - x_mean) / 1000
+    x_scaled = (x - x_mean) / 1000  # scale to thousands for numerical stability
 
+    # normalize metrics if needed
     if metric == 'entropy':
-        y = y / max_entropy_lookup.get(corpus, np.log2(100))
+        y = y / max_entropy  # normalize entropy to [0,1]
+
+    # clip values to (0,1) for beta model
     epsilon = 1e-6
     y = np.clip(y, epsilon, 1 - epsilon)
 
     try:
         with pm.Model() as model:
+            # priors
             alpha = pm.Normal("alpha", 0, 2)
             beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
+
+            # linear predictor
             mu_est = alpha + beta * x_scaled
+
+            # transform to probability scale
             theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
+
+            # concentration parameter for beta distribution
             concentration = pm.HalfNormal("concentration", 10.0)
+
+            # parameterize beta distribution
             a_beta = theta * concentration
             b_beta = (1 - theta) * concentration
+
+            # likelihood
             _ = pm.Beta("likelihood", alpha=a_beta, beta=b_beta, observed=y)
+
+            # sample posterior
             trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
                               return_inferencedata=True)
     except Exception as e:
         print(f"Error in modeling {metric}: {str(e)}")
         return None
 
+    # analyze results
     beta_samples = trace.posterior['beta'].values.flatten()
     alpha_samples = trace.posterior['alpha'].values.flatten()
+
+    # calculate highest density interval
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
+
+    # region of practical equivalence
     rope = 0.1 * np.std(beta_samples)
     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
+
+    # probability of benefit
     prob_benefit = float(np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
+
+    # determine conclusion
     conclusion = ("Practically Equivalent" if in_rope > 0.95 else
                   ("Significant Improvement" if prob_benefit > 0.95 else
                    ("Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive")))
+
     return {
         "slope_mean": float(np.mean(beta_samples)),
         "slope_std": float(np.std(beta_samples)),
@@ -256,54 +124,90 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     }
 
 
-def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
+def model_binary_metric(df: pd.DataFrame,
+                        metric: str,
+                        higher_is_better: bool) -> Optional[Dict]:
+    """fit a bayesian model for a binary metric.
+
+    args:
+        df: dataframe containing exemplar length and binary metric data
+        metric: name of the binary metric column
+        higher_is_better: whether higher values of the metric are better
+
+    returns:
+        dictionary with model results or None if modeling failed
+    """
+    # prepare binary data
     binary_metrics = []
     exemplar_lengths = []
 
     for idx, row in df.iterrows():
-        if metric_name not in row or pd.isna(row[metric_name]):
+        if metric not in row or pd.isna(row[metric]):
             continue
-        binary_metrics.append(float(row[metric_name]))
+        binary_metrics.append(float(row[metric]))
         exemplar_lengths.append(row['exemplar_length'])
 
     if not binary_metrics or len(set(binary_metrics)) < 2:
         return None
 
-    expanded_df = pd.DataFrame({
+    # create dataframe with valid data points
+    data_df = pd.DataFrame({
         'exemplar_length': exemplar_lengths,
         'binary_metric': binary_metrics
     })
 
-    if expanded_df.empty or expanded_df['exemplar_length'].nunique() <= 1:
+    if data_df.empty or data_df['exemplar_length'].nunique() <= 1:
         return None
 
-    x = expanded_df['exemplar_length'].values
-    y = expanded_df['binary_metric'].values
+    # prepare data for modeling
+    x = data_df['exemplar_length'].values
+    y = data_df['binary_metric'].values
+
+    # center and scale x for better inference
     x_mean = np.mean(x)
-    x_scaled = (x - x_mean) / 1000
+    x_scaled = (x - x_mean) / 1000  # scale to thousands for numerical stability
 
     try:
         with pm.Model() as model:
+            # priors
             alpha = pm.Normal("alpha", 0, 2)
             beta = pm.Cauchy("beta", alpha=0, beta=0.5)
+
+            # linear predictor
             eta = alpha + beta * x_scaled
+
+            # transform to probability scale
             theta = pm.Deterministic("theta", pm.math.sigmoid(eta))
+
+            # likelihood
             _ = pm.Bernoulli("likelihood", p=theta, observed=y)
+
+            # sample posterior
             trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
                               return_inferencedata=True)
     except Exception as e:
-        print(f"Error in modeling {metric_name}: {str(e)}")
+        print(f"Error in modeling binary metric {metric}: {str(e)}")
         return None
 
+    # analyze results
     beta_samples = trace.posterior['beta'].values.flatten()
     alpha_samples = trace.posterior['alpha'].values.flatten()
+
+    # calculate highest density interval
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
+
+    # region of practical equivalence
     rope = 0.1 * np.std(beta_samples)
     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
+
+    # probability of benefit
     prob_benefit = float(np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
+
+    # determine conclusion
     conclusion = ("Practically Equivalent" if in_rope > 0.95 else
                   ("Significant Improvement" if prob_benefit > 0.95 else
                    ("Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive")))
+
     return {
         "slope_mean": float(np.mean(beta_samples)),
         "slope_std": float(np.std(beta_samples)),
@@ -316,244 +220,303 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     }
 
 
-def main():
-    """Main function to run the exemplar length analysis."""
-    import argparse
-    output_dir = Path("results/exemplar_length_analysis_rq3.2")
+def create_diagnostic_plot(df: pd.DataFrame,
+                           metric: str,
+                           model_results: Dict,
+                           output_path: Path,
+                           use_binary: bool = False) -> None:
+    """create a diagnostic plot showing the relationship between exemplar length and metric.
+
+    args:
+        df: dataframe containing exemplar length and metric data
+        metric: name of the metric column to plot
+        model_results: dictionary with model results
+        output_path: path to save the plot
+        use_binary: whether to use binary version of the metric
+    """
+    plt.figure(figsize=(12, 8))
+
+    # determine which metric to plot
+    plot_metric = f"binary_{metric}" if use_binary and f"binary_{metric}" in df.columns else metric
+
+    # set up the plot
+    sns.set_style("whitegrid")
+
+    # plot points for each seed with different colors/markers
+    for seed_val in sorted(df['seed'].unique()):
+        seed_data = df[df['seed'] == seed_val]
+        if not seed_data.empty and plot_metric in seed_data.columns:
+            plt.scatter(
+                seed_data['exemplar_length'],
+                seed_data[plot_metric],
+                label=f"Seed {seed_val}",
+                alpha=0.7,
+                marker='o'
+            )
+
+    # draw the fitted curve
+    x_min = df['exemplar_length'].min()
+    x_max = df['exemplar_length'].max()
+    x_vals = np.linspace(x_min, x_max, 100)
+    x_mean = np.mean(df['exemplar_length'])
+    x_scaled = (x_vals - x_mean) / 1000
+
+    alpha_mean = model_results["alpha_mean"]
+    beta_mean = model_results["beta_mean"]
+
+    # calculate predicted values based on model type
+    if use_binary:
+        # logistic function for binary data
+        y_pred = 1.0 / (1.0 + np.exp(-(alpha_mean + beta_mean * x_scaled)))
+    else:
+        # logistic function for beta model
+        y_pred = 1.0 / (1.0 + np.exp(-(alpha_mean + beta_mean * x_scaled)))
+
+    plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
+
+    # add confidence band
+    def curve_function(alpha, beta, x_scaled):
+        return 1.0 / (1.0 + np.exp(-(alpha + beta * x_scaled)))
+
+    # create plot title
+    llm = df['llm'].iloc[0] if df['llm'].nunique() == 1 else "Various"
+    threat_model = df['threat_model'].iloc[0] if df['threat_model'].nunique() == 1 else "Various"
+    corpus = df['corpus'].iloc[0] if df['corpus'].nunique() == 1 else "Various"
+
+    plt.title(f"{corpus.upper()} - {llm} vs {threat_model}: Impact on {plot_metric}", fontsize=14)
+    plt.xlabel("Exemplar Length (words)", fontsize=12)
+    plt.ylabel(f"{plot_metric}", fontsize=12)
+
+    # add annotations
+    plt.annotate(
+        f"Slope: {model_results['slope_mean']:.4f}\n"
+        f"95% HDI: [{model_results['slope_hdi'][0]:.4f}, {model_results['slope_hdi'][1]:.4f}]\n"
+        f"P(Improvement): {model_results['prob_benefit']:.4f}\n"
+        f"Conclusion: {model_results['conclusion']}",
+        xy=(0.05, 0.95),
+        xycoords='axes fraction',
+        bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.8),
+        fontsize=10,
+        verticalalignment='top'
+    )
+
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc='best')
+
+    # save the plot
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+
+def analyze_scenario_data(data_dir: Path,
+                          output_dir: Path,
+                          corpus: str,
+                          experiment: str,
+                          llm: str,
+                          threat_model: str,
+                          debug: bool) -> List[Dict]:
+    """analyze data for a specific corpus/llm/threat_model scenario.
+
+    args:
+        data_dir: directory containing prepared data
+        output_dir: directory to save results
+        corpus: corpus name (ebg or rj)
+        experiment: experiment name (e.g., rq3.2_imitation_variable_length)
+        llm: language model name
+        threat_model: attribution model name
+        debug: whether to run in debug mode (generate additional diagnostics)
+
+    returns:
+        list of dictionaries with analysis results
+    """
+    # create output directories
+    plots_dir = output_dir / "plots" / corpus / experiment / llm / threat_model
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    # load the data for this scenario
+    data_file = data_dir / corpus / experiment / f"{threat_model}_{llm}_data.csv"
+
+    if not data_file.exists():
+        print(f"Warning: Data file not found: {data_file}")
+        return []
+
+    df = pd.read_csv(data_file)
+
+    if df.empty:
+        print(f"Warning: Empty data file: {data_file}")
+        return []
+
+    print(f"Analyzing {corpus}/{experiment}/{llm} vs {threat_model}")
+    print(f"Data shape: {df.shape}")
+    print(f"Exemplar lengths: {sorted(df['exemplar_length'].unique())}")
+
+    results = []
+
+    # analyze each metric
+    for metric in METRICS:
+        print(f"  Analyzing metric: {metric}")
+
+        # determine if higher is better for this metric
+        higher_is_better = metric in ["entropy", "bertscore", "pinc"]
+
+        # first check if we have binary data available for accuracy metrics
+        binary_metric = None
+        binary_results = None
+
+        if metric == "accuracy@1" and "binary_acc1" in df.columns and not df["binary_acc1"].isna().all():
+            binary_metric = "binary_acc1"
+            print(f"    Using binary data for {metric}")
+            binary_results = model_binary_metric(df, binary_metric, not higher_is_better)
+
+        elif metric == "accuracy@5" and "binary_acc5" in df.columns and not df["binary_acc5"].isna().all():
+            binary_metric = "binary_acc5"
+            print(f"    Using binary data for {metric}")
+            binary_results = model_binary_metric(df, binary_metric, not higher_is_better)
+
+        # model the continuous metric
+        continuous_results = model_continuous_metric(
+            df, metric, higher_is_better, MAX_ENTROPY[corpus])
+
+        # use binary results if available, otherwise use continuous results
+        results_to_use = binary_results if binary_results is not None else continuous_results
+        metric_display = binary_metric if binary_metric is not None else metric
+
+        if results_to_use is None:
+            print(f"    Skipping {metric_display}: Modeling failed")
+            continue
+
+        # record the results
+        result = {
+            "Corpus": corpus.upper(),
+            "Threat Model": threat_model,
+            "LLM": llm,
+            "Metric": metric_display,
+            "Higher is Better": higher_is_better,
+            "Slope": results_to_use['slope_mean'],
+            "Slope Std": results_to_use['slope_std'],
+            "Slope HDI Lower": results_to_use['slope_hdi'][0],
+            "Slope HDI Upper": results_to_use['slope_hdi'][1],
+            "P(Improvement)": results_to_use['prob_benefit'],
+            "In ROPE": results_to_use['in_rope'],
+            "Conclusion": results_to_use['conclusion']
+        }
+
+        results.append(result)
+
+        # create diagnostic plot if in debug mode or for all scenarios
+        if debug or True:  # always create plots for now
+            plot_path = plots_dir / f"{metric_display.replace('@', '_')}.png"
+            create_diagnostic_plot(
+                df,
+                metric,
+                results_to_use,
+                plot_path,
+                use_binary=(binary_metric is not None)
+            )
+            print(f"    Created diagnostic plot: {plot_path}")
+
+    return results
+
+
+def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
+    """analyze the relationship between exemplar length and metrics.
+
+    args:
+        data_dir: directory containing prepared data
+        output_dir: directory to save results
+        debug: whether to run in debug mode
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = argparse.ArgumentParser(
-        description="Analyze the impact of exemplar length on defense performance")
-    parser.add_argument("--eval_dir", type=str, default="defense_evaluation",
-                        help="Directory containing evaluation results")
-    parser.add_argument("--llm_dir", type=str, default="llm_outputs",
-                        help="Directory containing LLM outputs")
-    parser.add_argument("--prompt_dir", type=str, default="prompts",
-                        help="Directory containing prompt files")
-    parser.add_argument("--debug", action="store_true",
-                        help="Run in debug mode (EBG corpus, Ministral vs RoBERTa only)")
-    args = parser.parse_args()
-
-    print("Preparing exemplar length data...")
-    # in debug mode, we still gather all data to verify exemplar lengths
-    df = prepare_exemplar_length_data(args.eval_dir, args.llm_dir, args.prompt_dir)
-
-    # check if we have varying exemplar lengths in the data
-    print(f"\nExemplar length statistics:")
-    print(f"Min length: {df['exemplar_length'].min()}")
-    print(f"Max length: {df['exemplar_length'].max()}")
-    print(f"Unique lengths: {sorted(df['exemplar_length'].unique())}")
-
-    # save raw data before any processing
-    df.to_csv(output_dir / "raw_data.csv", index=False)
-    print(f"Raw data saved to {output_dir / 'raw_data.csv'}")
-
-    # print the unique values for key columns to help with debugging
-    print("\nUnique values in the dataset:")
-    print(f"Corpus: {df['corpus'].unique()}")
-    print(f"Threat Models: {df['threat_model'].unique()}")
-    print(f"LLMs: {df['llm'].unique()}")
-
-    # map model names to standardized names for analysis
-    model_mapping = {
-        'gpt-4o-2024-08-06': 'gpt-4o',
-        'claude-3-5-sonnet-20241022': 'claude-3.5',
-        'gemma-2-9b-it': 'gemma-2',
-        'llama-3.1-8b-instruct': 'llama-3.1',
-        'ministral-8b-instruct-2410': 'ministral'
-    }
-
-    # apply mapping to standardize model names
-    df['llm_standardized'] = df['llm'].map(
-        lambda x: next((v for k, v in model_mapping.items() if k in x), x))
-
-    max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
-    records = []
-
-    print("\nModeling the relationship between exemplar length and metrics...")
+    all_results = []
 
     # filter corpora, models, and threat models for debug mode
-    corpora_to_process = ['ebg'] if args.debug else CORPORA
-    llms_to_process = ['ministral'] if args.debug else LLMS
-    threat_models_to_process = ['roberta'] if args.debug else THREAT_MODELS
+    corpora_to_process = ['ebg'] if debug else CORPORA
+    llms_to_process = ['ministral'] if debug else LLMS
+    threat_models_to_process = ['roberta'] if debug else THREAT_MODELS
 
+    # process each experiment in the data directory
     for corpus in corpora_to_process:
-        for threat_model in threat_models_to_process:
+        corpus_dir = data_dir / corpus
+
+        if not corpus_dir.exists():
+            print(f"Warning: Corpus directory not found: {corpus_dir}")
+            continue
+
+        for experiment_dir in corpus_dir.glob("*"):
+            if not experiment_dir.is_dir():
+                continue
+
+            experiment = experiment_dir.name
+            print(f"Processing experiment: {corpus}/{experiment}")
+
+            # process each LLM/threat model combination
             for llm in llms_to_process:
-                # use the standardized model names for filtering
-                subset = df[(df.corpus == corpus) &
-                            (df.threat_model == threat_model) &
-                            (df.llm_standardized == llm)]
+                for threat_model in threat_models_to_process:
+                    # analyze this specific scenario
+                    results = analyze_scenario_data(
+                        data_dir, output_dir, corpus, experiment, llm, threat_model, debug)
 
-                if subset.empty:
-                    print(f"Warning: No data for {corpus}-{threat_model}-{llm}")
-                    continue
+                    all_results.extend(results)
 
-                print(
-                    f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
+    # save combined results
+    if all_results:
+        results_df = pd.DataFrame(all_results)
+        results_path = output_dir / "exemplar_length_results.csv"
+        results_df.to_csv(results_path, index=False)
+        print(f"Saved combined results to {results_path}")
 
-                # In debug mode, print additional information about the subset
-                if args.debug:
-                    print(
-                        f"  Data types for exemplar_length: {subset['exemplar_length'].dtype}")
-                    print(
-                        f"  Binary accuracy columns present: {[col for col in subset.columns if 'binary' in col]}")
-                    if 'binary_acc1' in subset.columns:
-                        print(
-                            f"  Data type for binary_acc1: {subset['binary_acc1'].dtype}")
-                        print(
-                            f"  Sample values for binary_acc1: {subset['binary_acc1'].head()}")
-                    if 'binary_acc5' in subset.columns:
-                        print(
-                            f"  Data type for binary_acc5: {subset['binary_acc5'].dtype}")
-                        print(
-                            f"  Sample values for binary_acc5: {subset['binary_acc5'].head()}")
+        # create summary table of conclusions
+        summary = results_df.pivot_table(
+            index=['Corpus', 'LLM', 'Threat Model'],
+            columns='Metric',
+            values='Conclusion'
+        )
 
-                    print(
-                        f"  Exemplar lengths in subset: {sorted(subset['exemplar_length'].unique())}")
-                    print(f"  Number of samples by exemplar length:")
-                    print(subset['exemplar_length'].value_counts().sort_index())
+        summary_path = output_dir / "conclusion_summary.csv"
+        summary.to_csv(summary_path)
+        print(f"Saved conclusion summary to {summary_path}")
 
-                for metric in METRICS:
-                    higher_is_better = metric in ["entropy", "bertscore", "pinc"]
+        # create summary of effect directions
+        direction_df = results_df.copy()
+        direction_df['Effect'] = direction_df.apply(
+            lambda row: 'Positive' if ((row['Slope'] > 0 and row['Higher is Better']) or
+                                       (row['Slope'] < 0 and not row['Higher is Better'])) else 'Negative',
+            axis=1
+        )
 
-                    # In debug mode: log raw subset shape and per-seed sample counts
-                    if args.debug:
-                        print(
-                            f"  Subset shape: {subset.shape}")  # e.g. (225, n_columns)
-                        for seed_val in sorted(subset['seed'].unique()):
-                            count = subset[subset['seed'] == seed_val].shape[0]
-                            print(f"  Seed {seed_val}: {count} samples")
+        direction_df['Significant'] = direction_df.apply(
+            lambda row: row['Conclusion'] in ['Significant Improvement', 'Significant Deterioration'],
+            axis=1
+        )
 
-                    if metric == "accuracy@1":
-                        # Check if binary_acc1 exists and has valid values
-                        if "binary_acc1" in subset.columns and not subset[
-                            "binary_acc1"].isna().all():
-                            # Make sure we're dealing with binary data
-                            try:
-                                res = model_binary_metrics_from_examples(subset,
-                                                                         "binary_acc1",
-                                                                         not higher_is_better)
-                                metric_display = "binary_accuracy@1"
-                            except Exception as e:
-                                print(
-                                    f"  Error in binary accuracy@1 modeling: {e}. Using continuous model instead.")
-                                res = model_continuous_metric(subset, metric,
-                                                              not higher_is_better,
-                                                              max_entropy_lookup)
-                                metric_display = metric
-                        else:
-                            res = model_continuous_metric(subset, metric,
-                                                          not higher_is_better,
-                                                          max_entropy_lookup)
-                            metric_display = metric
-                    elif metric == "accuracy@5":
-                        # use binary accuracy if available
-                        if "binary_acc5" in subset.columns and not subset[
-                            "binary_acc5"].isna().all():
-                            try:
-                                res = model_binary_metrics_from_examples(subset,
-                                                                         "binary_acc5",
-                                                                         not higher_is_better)
-                                metric_display = "binary_accuracy@5"
-                            except Exception as e:
-                                print(
-                                    f"  Error in binary accuracy@5 modeling: {e}. Using continuous model instead.")
-                                res = model_continuous_metric(subset, metric,
-                                                              not higher_is_better,
-                                                              max_entropy_lookup)
-                                metric_display = metric
-                        else:
-                            res = model_continuous_metric(subset, metric,
-                                                          not higher_is_better,
-                                                          max_entropy_lookup)
-                            metric_display = metric
-                    else:
-                        res = model_continuous_metric(subset, metric, higher_is_better,
-                                                      max_entropy_lookup)
-                        metric_display = metric
+        direction_summary = direction_df.pivot_table(
+            index=['Corpus', 'LLM', 'Threat Model'],
+            columns='Metric',
+            values=['Effect', 'Significant']
+        )
 
-                    if res is None:
-                        print(f"  Skipping {metric}: Modeling failed")
-                        continue
+        direction_path = output_dir / "effect_direction_summary.csv"
+        direction_summary.to_csv(direction_path)
+        print(f"Saved effect direction summary to {direction_path}")
+    else:
+        print("Warning: No results were generated")
 
-                    records.append({
-                        "Corpus": corpus.upper(),
-                        "Threat Model": threat_model,
-                        "LLM": llm,
-                        "Metric": metric_display,
-                        "Higher is Better": higher_is_better,
-                        "Slope": res['slope_mean'],
-                        "Slope Std": res['slope_std'],
-                        "Slope HDI Lower": res['slope_hdi'][0],
-                        "Slope HDI Upper": res['slope_hdi'][1],
-                        "P(Improvement)": res['prob_benefit'],
-                        "In ROPE": res['in_rope'],
-                        "Conclusion": res['conclusion']
-                    })
-                    print(f"  Added results for {metric_display}")
 
-                    if args.debug:
-                        import matplotlib.pyplot as plt
+def main():
+    """main function to analyze exemplar length data."""
+    parser = argparse.ArgumentParser(description="Analyze exemplar length data")
+    parser.add_argument("--data_dir", type=str, default="results/prepared_data_rq3.2",
+                        help="Directory containing prepared data")
+    parser.add_argument("--output_dir", type=str, default="results/exemplar_length_analysis_rq3.2",
+                        help="Directory to save analysis results")
+    parser.add_argument("--debug", action="store_true",
+                        help="Run in debug mode (EBG corpus, Ministral vs RoBERTa only)")
 
-                        plt.figure(figsize=(12, 6))
+    args = parser.parse_args()
 
-                        # 1) Scatter points for each seed, but do NOT plot lines for each seed
-                        for seed_val in sorted(subset['seed'].unique()):
-                            seed_data = subset[subset['seed'] == seed_val]
-                            plt.scatter(
-                                seed_data['exemplar_length'],
-                                seed_data[metric],
-                                label=f"Seed {seed_val}",
-                                alpha=0.7,
-                                marker='o'
-                            )
-                            # IMPORTANT: No polyfit or plt.plot(...) here.
-
-                        # 2) One logistic (or linear) curve across *all* data
-                        x_min = subset['exemplar_length'].min()
-                        x_max = subset['exemplar_length'].max()
-                        x_vals = np.linspace(x_min, x_max, 100)
-                        x_mean = subset['exemplar_length'].mean()
-                        x_vals_scaled = (x_vals - x_mean) / 1000.0
-
-                        alpha_mean = res["alpha_mean"]
-                        beta_mean = res["beta_mean"]
-
-                        # For a logistic curve (as in your Beta or Bernoulli model):
-                        y_curve = 1.0 / (1.0 + np.exp(
-                            -(alpha_mean + beta_mean * x_vals_scaled)))
-                        plt.plot(x_vals, y_curve, "r--", linewidth=2,
-                                 label="Posterior mean fit")
-
-                        plt.title(
-                            f"{corpus.upper()} - {llm} vs {threat_model}: {metric_display}")
-                        plt.xlabel("Exemplar Length")
-                        plt.ylabel(metric_display)
-                        plt.legend(loc='best')
-                        plt.grid(True, alpha=0.3)
-
-                        # 3) Annotate slope, HDI, etc.
-                        plt.text(
-                            0.05, 0.95,
-                            f"Slope: {res['slope_mean']:.4f}\n"
-                            f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
-                            f"P(Improvement): {res['prob_benefit']:.4f}\n"
-                            f"Conclusion: {res['conclusion']}",
-                            transform=plt.gca().transAxes,
-                            verticalalignment='top',
-                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
-                        )
-
-                        plot_path = output_dir / f"debug_{corpus}_{llm}_{threat_model}_{metric_display.replace('@', '_')}.png"
-                        plt.savefig(plot_path)
-                        plt.close()
-                        print(f"  Debug plot saved to {plot_path}")
-
-    results_df = pd.DataFrame(records)
-    results_file = output_dir / "exemplar_length_results.csv"
-    results_df.to_csv(results_file, index=False)
-    print(f"Results saved to {results_file}")
+    analyze_data(Path(args.data_dir), Path(args.output_dir), args.debug)
     print("Analysis complete!")
 
 
