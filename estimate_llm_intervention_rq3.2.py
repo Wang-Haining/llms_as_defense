@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 import seaborn as sns
+from scipy.special import expit  # For sigmoid function
 
 # Constants
 CORPORA = ['ebg', 'rj']
@@ -24,7 +25,19 @@ THREAT_MODELS = ['logreg', 'svm', 'roberta']
 LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
 # Updated metrics to match the new column names in prepared data
 METRICS = ['binary_acc1', 'binary_acc5', 'true_class_confidence', 'entropy', 'bertscore', 'pinc']
+# Maximum entropy values based on corpus author counts
 MAX_ENTROPY = {"ebg": np.log2(45), "rj": np.log2(21)}
+# Chance levels for accuracy metrics
+CHANCE_LEVELS = {
+    "ebg": {
+        "binary_acc1": 1/45,
+        "binary_acc5": 5/45
+    },
+    "rj": {
+        "binary_acc1": 1/21,
+        "binary_acc5": 5/21
+    }
+}
 
 
 def model_continuous_metric(df: pd.DataFrame,
@@ -72,8 +85,14 @@ def model_continuous_metric(df: pd.DataFrame,
             alpha = pm.Normal("alpha", 0, 2)
             beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
 
-            # linear predictor
-            mu_est = alpha + beta * x_scaled
+            # add a non-linear term for more flexibility
+            beta2 = pm.StudentT("beta2", nu=3, mu=0, sigma=0.3)
+
+            # squared term for non-linearity
+            x_squared = x_scaled**2
+
+            # linear predictor with quadratic term
+            mu_est = alpha + beta * x_scaled + beta2 * x_squared
 
             # transform to probability scale
             theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
@@ -97,10 +116,16 @@ def model_continuous_metric(df: pd.DataFrame,
 
     # analyze results
     beta_samples = trace.posterior['beta'].values.flatten()
+    beta2_samples = trace.posterior['beta2'].values.flatten()
     alpha_samples = trace.posterior['alpha'].values.flatten()
 
     # calculate highest density interval
-    hdi = az.hdi(beta_samples, hdi_prob=0.95)
+    hdi_beta = az.hdi(beta_samples, hdi_prob=0.95)
+    hdi_beta2 = az.hdi(beta2_samples, hdi_prob=0.95)
+
+    # combined effect - this is more complex with quadratic term
+    # we'll use the linear term for simplicity in determining direction
+    slope_mean = float(np.mean(beta_samples))
 
     # region of practical equivalence
     rope = 0.1 * np.std(beta_samples)
@@ -115,17 +140,21 @@ def model_continuous_metric(df: pd.DataFrame,
                    ("Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive")))
 
     return {
-        "slope_mean": float(np.mean(beta_samples)),
+        "slope_mean": slope_mean,
         "slope_std": float(np.std(beta_samples)),
-        "slope_hdi": hdi.tolist(),
+        "slope_hdi": hdi_beta.tolist(),
+        "slope2_mean": float(np.mean(beta2_samples)),
+        "slope2_hdi": hdi_beta2.tolist(),
         "in_rope": float(in_rope),
         "prob_benefit": float(prob_benefit),
         "conclusion": conclusion,
         "alpha_mean": float(np.mean(alpha_samples)),
         "beta_mean": float(np.mean(beta_samples)),
+        "beta2_mean": float(np.mean(beta2_samples)),
         "metric": metric,
         "is_entropy": metric == "entropy",
         "max_entropy": max_entropy,
+        "x_mean": x_mean,  # store for plotting
         "original_values": original_y.tolist()  # store original values for plotting
     }
 
@@ -133,7 +162,7 @@ def model_continuous_metric(df: pd.DataFrame,
 def model_binary_metric(df: pd.DataFrame,
                         metric: str,
                         higher_is_better: bool) -> Optional[Dict]:
-    """fit a bayesian model for a binary metric.
+    """fit a bayesian model for a binary metric using basis functions for flexibility.
 
     args:
         df: dataframe containing exemplar length and binary metric data
@@ -168,19 +197,26 @@ def model_binary_metric(df: pd.DataFrame,
     # prepare data for modeling
     x = data_df['exemplar_length'].values
     y = data_df['binary_metric'].values
+    corpus = df['corpus'].iloc[0]
 
     # center and scale x for better inference
     x_mean = np.mean(x)
     x_scaled = (x - x_mean) / 1000  # scale to thousands for numerical stability
 
+    # create squared term for non-linearity
+    x_squared = x_scaled**2
+
     try:
         with pm.Model() as model:
             # priors
             alpha = pm.Normal("alpha", 0, 2)
-            beta = pm.Cauchy("beta", alpha=0, beta=0.5)
+            beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
 
-            # linear predictor
-            eta = alpha + beta * x_scaled
+            # Add non-linear term 
+            beta2 = pm.StudentT("beta2", nu=3, mu=0, sigma=0.3)
+
+            # linear predictor with quadratic term
+            eta = alpha + beta * x_scaled + beta2 * x_squared
 
             # transform to probability scale
             theta = pm.Deterministic("theta", pm.math.sigmoid(eta))
@@ -197,16 +233,21 @@ def model_binary_metric(df: pd.DataFrame,
 
     # analyze results
     beta_samples = trace.posterior['beta'].values.flatten()
+    beta2_samples = trace.posterior['beta2'].values.flatten()
     alpha_samples = trace.posterior['alpha'].values.flatten()
 
     # calculate highest density interval
-    hdi = az.hdi(beta_samples, hdi_prob=0.95)
+    hdi_beta = az.hdi(beta_samples, hdi_prob=0.95)
+    hdi_beta2 = az.hdi(beta2_samples, hdi_prob=0.95)
+
+    # use linear term for simplicity in determining direction
+    slope_mean = float(np.mean(beta_samples))
 
     # region of practical equivalence
     rope = 0.1 * np.std(beta_samples)
     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
 
-    # probability of benefit
+    # probability of benefit (lower accuracy is better for defensive purposes)
     prob_benefit = float(np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
 
     # determine conclusion
@@ -214,18 +255,26 @@ def model_binary_metric(df: pd.DataFrame,
                   ("Significant Improvement" if prob_benefit > 0.95 else
                    ("Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive")))
 
+    # Get chance level for this metric in this corpus
+    chance_level = CHANCE_LEVELS.get(corpus.lower(), {}).get(metric, None)
+
     return {
-        "slope_mean": float(np.mean(beta_samples)),
+        "slope_mean": slope_mean,
         "slope_std": float(np.std(beta_samples)),
-        "slope_hdi": hdi.tolist(),
+        "slope_hdi": hdi_beta.tolist(),
+        "slope2_mean": float(np.mean(beta2_samples)),
+        "slope2_hdi": hdi_beta2.tolist(),
         "in_rope": float(in_rope),
         "prob_benefit": float(prob_benefit),
         "conclusion": conclusion,
         "alpha_mean": float(np.mean(alpha_samples)),
         "beta_mean": float(np.mean(beta_samples)),
+        "beta2_mean": float(np.mean(beta2_samples)),
         "metric": metric,
         "is_binary": True,
-        "x_mean": x_mean  # store for plotting
+        "x_mean": x_mean,  # store for plotting
+        "corpus": corpus,
+        "chance_level": chance_level
     }
 
 
@@ -269,60 +318,85 @@ def create_diagnostic_plot(df: pd.DataFrame,
 
     alpha_mean = model_results["alpha_mean"]
     beta_mean = model_results["beta_mean"]
+    beta2_mean = model_results.get("beta2_mean", 0)  # Default to 0 if not present
+
+    x_mean = model_results.get("x_mean", np.mean(df['exemplar_length']))
+    x_scaled = (x_vals - x_mean) / 1000
+    x_squared = x_scaled**2
+
+    # Calculate posterior predictions using posterior samples
+    n_samples = 1000
+    alpha_samples = np.random.normal(alpha_mean, model_results["slope_std"] * 0.5, n_samples)
+    beta_samples = np.random.normal(beta_mean, model_results["slope_std"], n_samples)
+
+    # Get beta2 samples if available
+    if "slope2_std" in model_results:
+        beta2_std = model_results["slope2_std"]
+    else:
+        beta2_std = model_results["slope_std"] * 0.6  # Estimate
+
+    beta2_samples = np.random.normal(beta2_mean, beta2_std, n_samples)
+
+    # Create matrix to hold all predicted values
+    pred_samples = np.zeros((n_samples, len(x_vals)))
 
     if use_binary or model_results.get("is_binary", False):
-        # For binary metrics, use the sigmoid function directly
-        x_mean = model_results.get("x_mean", np.mean(df['exemplar_length']))
-        x_scaled = (x_vals - x_mean) / 1000
-        y_pred = 1.0 / (1.0 + np.exp(-(alpha_mean + beta_mean * x_scaled)))
+        # For binary metrics
+        for i in range(n_samples):
+            logit_val = alpha_samples[i] + beta_samples[i] * x_scaled + beta2_samples[i] * x_squared
+            pred_samples[i, :] = expit(logit_val)  # Use sigmoid function
 
-        # Add confidence intervals for binary predictions using Monte Carlo simulation
-        alpha_samples = np.random.normal(alpha_mean, model_results["slope_std"] * 0.5, 1000)
-        beta_samples = np.random.normal(beta_mean, model_results["slope_std"], 1000)
+        # Calculate the mean prediction and HDI
+        y_pred = np.mean(pred_samples, axis=0)
+        hdi_lower = np.zeros(len(x_vals))
+        hdi_upper = np.zeros(len(x_vals))
 
-        pred_samples = np.zeros((1000, len(x_vals)))
-        for i in range(1000):
-            pred_samples[i, :] = 1.0 / (1.0 + np.exp(-(alpha_samples[i] + beta_samples[i] * x_scaled)))
+        for j in range(len(x_vals)):
+            hdi = az.hdi(pred_samples[:, j], hdi_prob=0.95)
+            hdi_lower[j] = hdi[0]
+            hdi_upper[j] = hdi[1]
 
-        lower_ci = np.percentile(pred_samples, 2.5, axis=0)
-        upper_ci = np.percentile(pred_samples, 97.5, axis=0)
-
+        # Plot curve and HDI
         plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
-        plt.fill_between(x_vals, lower_ci, upper_ci, color='red', alpha=0.2, label="95% CI")
+        plt.fill_between(x_vals, hdi_lower, hdi_upper, color='red', alpha=0.2, label="95% HDI")
+
+        # Add chance level if available
+        chance_level = model_results.get("chance_level", None)
+        if chance_level is not None:
+            plt.axhline(y=chance_level, color='green', linestyle='--',
+                        label=f"Chance level ({chance_level:.3f})")
     else:
         # For continuous metrics
-        x_mean = np.mean(df['exemplar_length'])
-        x_scaled = (x_vals - x_mean) / 1000
+        for i in range(n_samples):
+            logit_val = alpha_samples[i] + beta_samples[i] * x_scaled + beta2_samples[i] * x_squared
+            prob_val = expit(logit_val)
 
-        # transformed to probability scale
-        logit_pred = alpha_mean + beta_mean * x_scaled
-        prob_pred = 1.0 / (1.0 + np.exp(-logit_pred))
-
-        # If this is entropy, scale it back up to original scale
-        if model_results.get("is_entropy", False):
-            max_entropy = model_results.get("max_entropy", 5.49)  # default to ebg
-            y_pred = prob_pred * max_entropy
-        else:
-            y_pred = prob_pred
-
-        # Add confidence intervals for continuous predictions
-        alpha_samples = np.random.normal(alpha_mean, model_results["slope_std"] * 0.5, 1000)
-        beta_samples = np.random.normal(beta_mean, model_results["slope_std"], 1000)
-
-        pred_samples = np.zeros((1000, len(x_vals)))
-        for i in range(1000):
-            logit_val = alpha_samples[i] + beta_samples[i] * x_scaled
-            prob_val = 1.0 / (1.0 + np.exp(-logit_val))
+            # If this is entropy, scale it back up to original scale
             if model_results.get("is_entropy", False):
+                max_entropy = model_results.get("max_entropy", 5.49)  # default to ebg
                 pred_samples[i, :] = prob_val * max_entropy
             else:
                 pred_samples[i, :] = prob_val
 
-        lower_ci = np.percentile(pred_samples, 2.5, axis=0)
-        upper_ci = np.percentile(pred_samples, 97.5, axis=0)
+        # Calculate the mean prediction and HDI
+        y_pred = np.mean(pred_samples, axis=0)
+        hdi_lower = np.zeros(len(x_vals))
+        hdi_upper = np.zeros(len(x_vals))
 
+        for j in range(len(x_vals)):
+            hdi = az.hdi(pred_samples[:, j], hdi_prob=0.95)
+            hdi_lower[j] = hdi[0]
+            hdi_upper[j] = hdi[1]
+
+        # Plot curve and HDI
         plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
-        plt.fill_between(x_vals, lower_ci, upper_ci, color='red', alpha=0.2, label="95% CI")
+        plt.fill_between(x_vals, hdi_lower, hdi_upper, color='red', alpha=0.2, label="95% HDI")
+
+        # For entropy, also add the max possible entropy
+        if model_results.get("is_entropy", False):
+            max_entropy = model_results.get("max_entropy", 5.49)
+            plt.axhline(y=max_entropy, color='green', linestyle='--',
+                        label=f"Max entropy ({max_entropy:.2f})")
 
     # create plot title
     llm = df['llm'].iloc[0] if df['llm'].nunique() == 1 else "Various"
@@ -333,12 +407,25 @@ def create_diagnostic_plot(df: pd.DataFrame,
     plt.xlabel("Exemplar Length (words)", fontsize=12)
     plt.ylabel(f"{plot_metric}", fontsize=12)
 
-    # add annotations
-    plt.annotate(
-        f"Slope: {model_results['slope_mean']:.4f}\n"
+    # add annotations with linear and quadratic effects
+    effect_text = (
+        f"Linear Effect: {model_results['slope_mean']:.4f}\n"
         f"95% HDI: [{model_results['slope_hdi'][0]:.4f}, {model_results['slope_hdi'][1]:.4f}]\n"
+    )
+
+    if "slope2_mean" in model_results:
+        effect_text += (
+            f"Quadratic Effect: {model_results['slope2_mean']:.4f}\n"
+            f"95% HDI: [{model_results['slope2_hdi'][0]:.4f}, {model_results['slope2_hdi'][1]:.4f}]\n"
+        )
+
+    effect_text += (
         f"P(Improvement): {model_results['prob_benefit']:.4f}\n"
-        f"Conclusion: {model_results['conclusion']}",
+        f"Conclusion: {model_results['conclusion']}"
+    )
+
+    plt.annotate(
+        effect_text,
         xy=(0.05, 0.95),
         xycoords='axes fraction',
         bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.8),
@@ -440,6 +527,12 @@ def analyze_scenario_data(data_dir: Path,
             "In ROPE": model_results['in_rope'],
             "Conclusion": model_results['conclusion']
         }
+
+        # Add quadratic effect if available
+        if "slope2_mean" in model_results:
+            result["Slope2"] = model_results['slope2_mean']
+            result["Slope2 HDI Lower"] = model_results['slope2_hdi'][0]
+            result["Slope2 HDI Upper"] = model_results['slope2_hdi'][1]
 
         results.append(result)
 
