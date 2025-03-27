@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -28,7 +28,7 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
         with open(prompt_file, "r", encoding="utf-8") as f:
             prompt_data = json.load(f)
 
-        # extract prompt index from filename
+        # Extract prompt index from filename
         match = re.search(r'prompt(\d+)\.json', prompt_file.name)
         if match:
             idx = int(match.group(1))
@@ -69,19 +69,9 @@ def prepare_exemplar_length_data(
         DataFrame with exemplar lengths and evaluation metrics
     """
     rows = []
-    found_data = False
-
     for corpus in CORPORA:
         print(f"Processing corpus: {corpus}")
-        rq3_path = Path(llm_outputs_dir).joinpath(corpus, 'rq3')
-        if not rq3_path.exists():
-            print(f"Warning: Path not found: {rq3_path}")
-            continue
-
-        rq_folders = list(rq3_path.glob("rq3.2_*"))
-        print(f"Found {len(rq_folders)} research question folders in {rq3_path}")
-
-        for rq_folder in rq_folders:
+        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
             # Get the experiment name (e.g., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
             print(f"Processing experiment: {experiment_name}")
@@ -92,51 +82,44 @@ def prepare_exemplar_length_data(
                 print(f"Warning: Prompt directory not found: {prompt_dir}")
                 continue
 
-            prompt_files = list(prompt_dir.glob("*.json"))
-            print(f"Found {len(prompt_files)} prompt files in {prompt_dir}")
-
             prompt_lengths = extract_exemplar_lengths(prompt_dir)
             print(f"Extracted exemplar lengths for {len(prompt_lengths)} prompts")
-            if not prompt_lengths:
-                print(f"Warning: No exemplar lengths extracted from {prompt_dir}")
 
-            eval_path = Path(eval_base_dir, corpus, 'rq3', rq_folder.name)
-            if not eval_path.exists():
-                print(f"Warning: Evaluation path not found: {eval_path}")
-                continue
-
-            model_dirs = list(eval_path.glob("*"))
-            print(f"Found {len(model_dirs)} model directories in {eval_path}")
-
-            for model_dir in model_dirs:
+            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob("*"):
                 model_name = model_dir.name.lower()
                 print(f"Processing model: {model_name}")
 
-                eval_files = list(model_dir.glob("seed_*.json"))
-                print(f"Found {len(eval_files)} evaluation files for {model_name}")
-
-                for eval_file in eval_files:
+                for eval_file in model_dir.glob("seed_*.json"):
                     seed = eval_file.stem.split("_")[-1]
-                    print(f"Processing seed file: {eval_file}")
+
+                    # Load detailed evaluation data for binary accuracy
+                    binary_acc1 = None
+                    binary_acc5 = None
+                    try:
+                        with open(eval_file, "r") as f:
+                            detailed_eval_data = json.load(f)
+                        if "example_metrics" in detailed_eval_data:
+                            binary_acc1 = [
+                                1 if ex["transformed_rank"] == 0 else 0
+                                for ex in detailed_eval_data["example_metrics"]
+                            ]
+                            binary_acc5 = [
+                                1 if ex["transformed_rank"] < 5 else 0
+                                for ex in detailed_eval_data["example_metrics"]
+                            ]
+                    except Exception as e:
+                        print(f"Warning: Could not extract binary metrics from {eval_file}: {e}")
 
                     # Find the corresponding file in llm_outputs to get prompt_index
-                    llm_output_path = Path(
-                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name
-                    if not llm_output_path.exists():
-                        print(f"Warning: LLM output path not found: {llm_output_path}")
-                        continue
+                    llm_output_file = Path(
+                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name / f"seed_{seed}.json"
 
-                    llm_output_file = llm_output_path / f"seed_{seed}.json"
                     if not llm_output_file.exists():
                         print(f"Warning: LLM output file not found: {llm_output_file}")
                         continue
 
-                    try:
-                        with open(llm_output_file) as f:
-                            llm_data = json.load(f)
-                    except json.JSONDecodeError:
-                        print(f"Error: Could not parse JSON in {llm_output_file}")
-                        continue
+                    with open(llm_output_file) as f:
+                        llm_data = json.load(f)
 
                     # Extract prompt_index from the first entry in llm_data
                     prompt_idx = -1
@@ -144,26 +127,14 @@ def prepare_exemplar_length_data(
                         if "prompt_index" in llm_data[0]:
                             prompt_idx = llm_data[0]["prompt_index"]
                         else:
-                            print(
-                                f"Warning: 'prompt_index' not found in first entry of {llm_output_file}")
-                            # Try to find it in any entry
                             for entry in llm_data:
                                 if "prompt_index" in entry:
                                     prompt_idx = entry["prompt_index"]
                                     break
-                    else:
-                        print(
-                            f"Warning: Expected list format in {llm_output_file}, got {type(llm_data)}")
-
-                    if prompt_idx == -1:
-                        print(
-                            f"Warning: Could not find prompt_index in {llm_output_file}")
-                        continue
 
                     length = prompt_lengths.get(prompt_idx, -1)
                     if length == -1:
-                        print(
-                            f"Warning: No exemplar length found for prompt index {prompt_idx}")
+                        print(f"Warning: Could not find exemplar length for prompt index {prompt_idx}")
                         continue
 
                     # Load evaluation data
@@ -172,37 +143,26 @@ def prepare_exemplar_length_data(
                         print(f"Warning: Evaluation JSON not found: {json_path}")
                         continue
 
-                    try:
-                        with open(json_path) as f:
-                            all_data = json.load(f)
-                    except json.JSONDecodeError:
-                        print(f"Error: Could not parse JSON in {json_path}")
-                        continue
+                    with open(json_path) as f:
+                        all_data = json.load(f)
 
                     if seed not in all_data:
                         print(f"Warning: Seed {seed} not found in {json_path}")
                         continue
 
                     record = all_data[seed]
-                    found_data = True
 
                     for threat_model in THREAT_MODELS:
                         if threat_model not in record:
-                            print(
-                                f"Warning: Threat model {threat_model} not found in record for seed {seed}")
+                            print(f"Warning: Threat model {threat_model} not found in record for seed {seed}")
                             continue
 
-                        attr = record[threat_model].get("attribution", {}).get("post",
-                                                                               {})
-                        if not attr:
-                            print(
-                                f"Warning: No attribution data for {threat_model} in seed {seed}")
-                            continue
-
+                        attr = record[threat_model].get("attribution", {}).get("post", {})
                         quality = record[threat_model].get("quality", {})
-                        if not quality:
-                            print(
-                                f"Warning: No quality data for {threat_model} in seed {seed}")
+
+                        # Use raw accuracy values (not binary conversion)
+                        acc1 = float(attr.get("accuracy@1", 0.0))
+                        acc5 = float(attr.get("accuracy@5", 0.0))
 
                         row = {
                             "corpus": corpus,
@@ -210,24 +170,24 @@ def prepare_exemplar_length_data(
                             "threat_model": threat_model,
                             "seed": seed,
                             "exemplar_length": length,
-                            "accuracy@1": int(attr.get("accuracy@1") == 1.0),
-                            "accuracy@5": int(attr.get("accuracy@5") == 1.0),
+                            "accuracy@1": acc1,
+                            "accuracy@5": acc5,
                             "true_class_confidence": attr.get("true_class_confidence"),
                             "entropy": attr.get("entropy"),
-                            "bertscore": quality.get("bertscore", {}).get(
-                                "bertscore_f1_avg"),
+                            "bertscore": quality.get("bertscore", {}).get("bertscore_f1_avg"),
                             "pinc": np.mean([
                                 quality.get("pinc", {}).get(f"pinc_{k}_avg", np.nan)
                                 for k in range(1, 5)
                             ])
                         }
-                        rows.append(row)
-                        print(
-                            f"Added row for {corpus}-{threat_model}-{model_name}-{seed}")
 
-    if not found_data:
-        print(
-            "ERROR: No data was found. Please check your directory structure and file formats.")
+                        # Add binary accuracy metrics if available
+                        if binary_acc1 is not None:
+                            row["binary_acc1"] = binary_acc1
+                        if binary_acc5 is not None:
+                            row["binary_acc5"] = binary_acc5
+
+                        rows.append(row)
 
     df = pd.DataFrame(rows)
     print(f"Created DataFrame with {len(df)} rows")
@@ -258,17 +218,23 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
         y = y / max_entropy_lookup.get(corpus, np.log2(100))
     epsilon = 1e-6
     y = np.clip(y, epsilon, 1 - epsilon)
-    with pm.Model() as model:
-        alpha = pm.Normal("alpha", 0, 2)
-        beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
-        mu_est = alpha + beta * x_scaled
-        theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
-        concentration = pm.HalfNormal("concentration", 10.0)
-        a_beta = theta * concentration
-        b_beta = (1 - theta) * concentration
-        _ = pm.Beta("likelihood", alpha=a_beta, beta=b_beta, observed=y)
-        trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
-                          return_inferencedata=True)
+
+    try:
+        with pm.Model() as model:
+            alpha = pm.Normal("alpha", 0, 2)
+            beta = pm.StudentT("beta", nu=3, mu=0, sigma=0.5)
+            mu_est = alpha + beta * x_scaled
+            theta = pm.Deterministic("theta", pm.math.invlogit(mu_est))
+            concentration = pm.HalfNormal("concentration", 10.0)
+            a_beta = theta * concentration
+            b_beta = (1 - theta) * concentration
+            _ = pm.Beta("likelihood", alpha=a_beta, beta=b_beta, observed=y)
+            trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
+                              return_inferencedata=True)
+    except Exception as e:
+        print(f"Error in modeling {metric}: {str(e)}")
+        return None
+
     beta_samples = trace.posterior['beta'].values.flatten()
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
     rope = 0.1 * np.std(beta_samples)
@@ -287,34 +253,59 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     }
 
 
-def model_binary_metric(df, metric, higher_is_better):
-    """Model the relationship between exemplar length and a binary metric.
+def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
+    """Model binary metrics extracted from example-level data.
 
     Args:
-        df: DataFrame with exemplar_length and metric columns
-        metric: Name of the metric to model
+        df: DataFrame with binary metrics
+        metric_name: Base name of the metric (binary_acc1 or binary_acc5)
         higher_is_better: Whether higher values of the metric are better
 
     Returns:
         Dictionary with modeling results or None if modeling failed
     """
-    df = df.dropna(subset=["exemplar_length", metric])
-    if df.empty or df['exemplar_length'].nunique() <= 1:
+    # Expand the lists of binary metrics and corresponding exemplar lengths
+    binary_metrics = []
+    exemplar_lengths = []
+    for idx, row in df.iterrows():
+        if metric_name not in row or row[metric_name] is None:
+            continue
+
+        binary_list = row[metric_name]
+        for binary_value in binary_list:
+            binary_metrics.append(binary_value)
+            exemplar_lengths.append(row['exemplar_length'])
+
+    if not binary_metrics or len(set(binary_metrics)) < 2:
         return None
-    x = df['exemplar_length'].values
+
+    # Create a new dataframe with expanded data
+    expanded_df = pd.DataFrame({
+        'exemplar_length': exemplar_lengths,
+        'binary_metric': binary_metrics
+    })
+
+    if expanded_df.empty or expanded_df['exemplar_length'].nunique() <= 1:
+        return None
+
+    x = expanded_df['exemplar_length'].values
     x_mean = np.mean(x)
     x_scaled = (x - x_mean) / 1000
-    y = (df[metric] == 1).astype(int).values
-    if len(np.unique(y)) < 2:
+    y = expanded_df['binary_metric'].values
+
+    try:
+        with pm.Model() as model:
+            alpha = pm.Normal("alpha", 0, 2)
+            beta = pm.Cauchy("beta", alpha=0, beta=0.5)
+            eta = alpha + beta * x_scaled
+            theta = pm.Deterministic("theta", pm.math.sigmoid(eta))
+            _ = pm.Bernoulli("likelihood", p=theta, observed=y)
+            trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
+                              return_inferencedata=True)
+    except Exception as e:
+        print(f"Error in modeling {metric_name}: {str(e)}")
         return None
-    with pm.Model() as model:
-        alpha = pm.Normal("alpha", 0, 2)
-        beta = pm.Cauchy("beta", alpha=0, beta=0.5)
-        eta = alpha + beta * x_scaled
-        theta = pm.Deterministic("theta", pm.math.sigmoid(eta))
-        _ = pm.Bernoulli("likelihood", p=theta, observed=y)
-        trace = pm.sample(2000, tune=1000, chains=4, target_accept=0.95, cores=4,
-                          return_inferencedata=True)
+
     beta_samples = trace.posterior['beta'].values.flatten()
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
     rope = 0.1 * np.std(beta_samples)
@@ -339,8 +330,7 @@ def main():
     output_dir = Path("results/exemplar_length_analysis_rq3.2")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = argparse.ArgumentParser(
-        description="Analyze the impact of exemplar length on defense performance")
+    parser = argparse.ArgumentParser(description="Analyze the impact of exemplar length on defense performance")
     parser.add_argument("--eval_dir", type=str, default="defense_evaluation",
                         help="Directory containing evaluation results")
     parser.add_argument("--llm_dir", type=str, default="llm_outputs",
@@ -354,7 +344,6 @@ def main():
 
     # Save raw data before any processing
     df.to_csv(output_dir / "raw_data.csv", index=False)
-    print(f"Created DataFrame with {len(df)} rows")
     print(f"Raw data saved to {output_dir / 'raw_data.csv'}")
 
     # Print the unique values for key columns to help with debugging
@@ -364,7 +353,6 @@ def main():
     print(f"LLMs: {df['llm'].unique()}")
 
     # Map model names to standardized names for analysis
-    # This handles variations like 'gpt-4o-2024-08-06' -> 'gpt-4o'
     model_mapping = {
         'gpt-4o-2024-08-06': 'gpt-4o',
         'claude-3-5-sonnet-20241022': 'claude-3.5',
@@ -374,8 +362,7 @@ def main():
     }
 
     # Apply mapping to standardize model names
-    df['llm_standardized'] = df['llm'].map(
-        lambda x: next((v for k, v in model_mapping.items() if k in x), x))
+    df['llm_standardized'] = df['llm'].map(lambda x: next((v for k, v in model_mapping.items() if k in x), x))
 
     max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
     records = []
@@ -393,23 +380,30 @@ def main():
                     print(f"Warning: No data for {corpus}-{threat_model}-{llm}")
                     continue
 
-                print(
-                    f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
+                print(f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
 
                 for metric in METRICS:
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
 
-                    # Check if we have enough distinct exemplar lengths for modeling
-                    if subset['exemplar_length'].nunique() <= 1:
-                        print(
-                            f"  Skipping {metric}: Not enough distinct exemplar lengths")
-                        continue
-
-                    if metric in ["accuracy@1", "accuracy@5"]:
-                        res = model_binary_metric(subset, metric, higher_is_better)
+                    if metric == "accuracy@1":
+                        # Use binary accuracy if available
+                        if "binary_acc1" in subset.columns and not subset["binary_acc1"].isna().all():
+                            res = model_binary_metrics_from_examples(subset, "binary_acc1", not higher_is_better)
+                            metric_display = "binary_accuracy@1"
+                        else:
+                            res = model_continuous_metric(subset, metric, not higher_is_better, max_entropy_lookup)
+                            metric_display = metric
+                    elif metric == "accuracy@5":
+                        # Use binary accuracy if available
+                        if "binary_acc5" in subset.columns and not subset["binary_acc5"].isna().all():
+                            res = model_binary_metrics_from_examples(subset, "binary_acc5", not higher_is_better)
+                            metric_display = "binary_accuracy@5"
+                        else:
+                            res = model_continuous_metric(subset, metric, not higher_is_better, max_entropy_lookup)
+                            metric_display = metric
                     else:
-                        res = model_continuous_metric(subset, metric, higher_is_better,
-                                                      max_entropy_lookup)
+                        res = model_continuous_metric(subset, metric, higher_is_better, max_entropy_lookup)
+                        metric_display = metric
 
                     if res is None:
                         print(f"  Skipping {metric}: Modeling failed")
@@ -419,7 +413,7 @@ def main():
                         "Corpus": corpus.upper(),
                         "Threat Model": threat_model,
                         "LLM": llm,
-                        "Metric": metric,
+                        "Metric": metric_display,
                         "Higher is Better": higher_is_better,
                         "Slope": res['slope_mean'],
                         "Slope Std": res['slope_std'],
@@ -429,7 +423,7 @@ def main():
                         "In ROPE": res['in_rope'],
                         "Conclusion": res['conclusion']
                     })
-                    print(f"  Added results for {metric}")
+                    print(f"  Added results for {metric_display}")
 
     results_df = pd.DataFrame(records)
     results_file = output_dir / "exemplar_length_results.csv"
