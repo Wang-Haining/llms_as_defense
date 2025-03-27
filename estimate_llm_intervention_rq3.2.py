@@ -493,36 +493,36 @@ def main():
                     })
                     print(f"  Added results for {metric_display}")
 
-                    # In debug mode, add a simple plot to visualize the relationship
                     if args.debug:
                         import matplotlib.pyplot as plt
 
                         plt.figure(figsize=(12, 6))
 
-                        # Scatter all points (colored by seed)
+                        # 1) Scatter points for each seed, but do NOT plot lines for each seed
                         for seed_val in sorted(subset['seed'].unique()):
                             seed_data = subset[subset['seed'] == seed_val]
                             plt.scatter(
                                 seed_data['exemplar_length'],
                                 seed_data[metric],
                                 label=f"Seed {seed_val}",
-                                alpha=0.7
+                                alpha=0.7,
+                                marker='o'
                             )
+                            # IMPORTANT: No polyfit or plt.plot(...) here.
 
-                        # Create a smooth range for x-values over the entire range
+                        # 2) One logistic (or linear) curve across *all* data
                         x_min = subset['exemplar_length'].min()
                         x_max = subset['exemplar_length'].max()
                         x_vals = np.linspace(x_min, x_max, 100)
-                        x_mean = np.mean(subset['exemplar_length'].values)
+                        x_mean = subset['exemplar_length'].mean()
                         x_vals_scaled = (x_vals - x_mean) / 1000.0
 
-                        # Get posterior mean parameters (returned from your modeling functions)
                         alpha_mean = res["alpha_mean"]
                         beta_mean = res["beta_mean"]
 
-                        # Plot the logistic (squiggle) curve based on the model's parameters:
+                        # For a logistic curve (as in your Beta or Bernoulli model):
                         y_curve = 1.0 / (1.0 + np.exp(
-                            - (alpha_mean + beta_mean * x_vals_scaled)))
+                            -(alpha_mean + beta_mean * x_vals_scaled)))
                         plt.plot(x_vals, y_curve, "r--", linewidth=2,
                                  label="Posterior mean fit")
 
@@ -533,18 +533,17 @@ def main():
                         plt.legend(loc='best')
                         plt.grid(True, alpha=0.3)
 
-                        # Add model statistics as text (avoid printing std if it might be NA)
-                        stats_text = (
+                        # 3) Annotate slope, HDI, etc.
+                        plt.text(
+                            0.05, 0.95,
                             f"Slope: {res['slope_mean']:.4f}\n"
                             f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
                             f"P(Improvement): {res['prob_benefit']:.4f}\n"
-                            f"Conclusion: {res['conclusion']}"
+                            f"Conclusion: {res['conclusion']}",
+                            transform=plt.gca().transAxes,
+                            verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
                         )
-                        plt.text(0.05, 0.95, stats_text,
-                                 transform=plt.gca().transAxes,
-                                 verticalalignment='top',
-                                 bbox=dict(boxstyle='round', facecolor='white',
-                                           alpha=0.8))
 
                         plot_path = output_dir / f"debug_{corpus}_{llm}_{threat_model}_{metric_display.replace('@', '_')}.png"
                         plt.savefig(plot_path)
