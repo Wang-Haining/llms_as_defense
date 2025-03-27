@@ -73,7 +73,7 @@ def prepare_exemplar_length_data(
         for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_imitation_variable_length"):
             # get the experiment name (i.e., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
-
+            print(experiment_name)
             # load prompt lengths from the corresponding prompts directory
             prompt_dir = Path(prompts_dir) / experiment_name
             if not prompt_dir.exists():
