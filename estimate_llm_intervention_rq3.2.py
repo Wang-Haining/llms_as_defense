@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Script to model and analyze the relationship between exemplar length and defense metrics.
+Script to analyze the relationship between exemplar length and defense metrics for RQ3.2.
 
-This script uses Bayesian modeling to assess how exemplar length affects various
-metrics in defending against authorship attribution attacks.
+This script models how exemplar length affects various metrics in defending against
+authorship attribution attacks using Bayesian methods.
 """
 
 import argparse
@@ -274,10 +274,6 @@ def create_diagnostic_plot(df: pd.DataFrame,
 
     plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
 
-    # add confidence band
-    def curve_function(alpha, beta, x_scaled):
-        return 1.0 / (1.0 + np.exp(-(alpha + beta * x_scaled)))
-
     # create plot title
     llm = df['llm'].iloc[0] if df['llm'].nunique() == 1 else "Various"
     threat_model = df['threat_model'].iloc[0] if df['threat_model'].nunique() == 1 else "Various"
@@ -467,18 +463,21 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
         results_df.to_csv(results_path, index=False)
         print(f"Saved combined results to {results_path}")
 
-        # create summary table of conclusions
-        summary = results_df.pivot_table(
+        # Fix for the non-numeric 'Conclusion' field - create summary without using pivot_table's aggregation
+        conclusion_df = results_df[['Corpus', 'LLM', 'Threat Model', 'Metric', 'Conclusion']]
+
+        # Reshape the data to have metrics as columns without aggregation
+        conclusion_wide = conclusion_df.pivot(
             index=['Corpus', 'LLM', 'Threat Model'],
             columns='Metric',
             values='Conclusion'
         )
 
         summary_path = output_dir / "conclusion_summary.csv"
-        summary.to_csv(summary_path)
+        conclusion_wide.to_csv(summary_path)
         print(f"Saved conclusion summary to {summary_path}")
 
-        # create summary of effect directions
+        # Create effect direction summary without aggregation
         direction_df = results_df.copy()
         direction_df['Effect'] = direction_df.apply(
             lambda row: 'Positive' if ((row['Slope'] > 0 and row['Higher is Better']) or
@@ -491,15 +490,40 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
             axis=1
         )
 
-        direction_summary = direction_df.pivot_table(
+        # Create separate dataframes for Effect and Significant
+        effect_df = direction_df[['Corpus', 'LLM', 'Threat Model', 'Metric', 'Effect']]
+        significant_df = direction_df[['Corpus', 'LLM', 'Threat Model', 'Metric', 'Significant']]
+
+        # Reshape the data using pivot instead of pivot_table
+        effect_wide = effect_df.pivot(
             index=['Corpus', 'LLM', 'Threat Model'],
             columns='Metric',
-            values=['Effect', 'Significant']
+            values='Effect'
         )
 
-        direction_path = output_dir / "effect_direction_summary.csv"
-        direction_summary.to_csv(direction_path)
-        print(f"Saved effect direction summary to {direction_path}")
+        significant_wide = significant_df.pivot(
+            index=['Corpus', 'LLM', 'Threat Model'],
+            columns='Metric',
+            values='Significant'
+        )
+
+        # Save effect directions
+        effect_path = output_dir / "effect_direction.csv"
+        effect_wide.to_csv(effect_path)
+
+        # Save significance
+        significant_path = output_dir / "significant_effects.csv"
+        significant_wide.to_csv(significant_path)
+
+        # Save combined summary with multi-level columns
+        combined_summary = pd.concat([
+            effect_wide.add_prefix('Effect_'),
+            significant_wide.add_prefix('Significant_')
+        ], axis=1)
+
+        combined_path = output_dir / "effect_direction_summary.csv"
+        combined_summary.to_csv(combined_path)
+        print(f"Saved effect direction summaries to {output_dir}")
     else:
         print("Warning: No results were generated")
 
@@ -507,7 +531,7 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
 def main():
     """main function to analyze exemplar length data."""
     parser = argparse.ArgumentParser(description="Analyze exemplar length data")
-    parser.add_argument("--data_dir", type=str, default="results/prepared_data_rq3.2",
+    parser.add_argument("--data_dir", type=str, default="prepared_data_rq3.2",
                         help="Directory containing prepared data")
     parser.add_argument("--output_dir", type=str, default="results/exemplar_length_analysis_rq3.2",
                         help="Directory to save analysis results")
