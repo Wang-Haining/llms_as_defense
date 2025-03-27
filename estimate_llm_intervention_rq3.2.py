@@ -531,7 +531,7 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
 def main():
     """main function to analyze exemplar length data."""
     parser = argparse.ArgumentParser(description="Analyze exemplar length data")
-    parser.add_argument("--data_dir", type=str, default="prepared_data_rq3.2",
+    parser.add_argument("--data_dir", type=str, default="results/prepared_data_rq3.2",
                         help="Directory containing prepared data")
     parser.add_argument("--output_dir", type=str, default="results/exemplar_length_analysis_rq3.2",
                         help="Directory to save analysis results")
