@@ -7,7 +7,6 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-from sacremoses import MosesTokenizer
 
 CORPORA = ['ebg', 'rj']
 THREAT_MODELS = ['logreg', 'svm', 'roberta']
@@ -16,17 +15,24 @@ METRICS = ['accuracy@1', 'accuracy@5', 'true_class_confidence', 'entropy', 'bert
 
 
 def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
-    tokenizer = MosesTokenizer(lang='en')
+    """Extract exemplar lengths from prompt files.
+
+    Args:
+        prompt_dir: Directory containing prompt JSON files
+
+    Returns:
+        Dictionary mapping prompt index to exemplar length
+    """
     lengths = {}
     for prompt_file in prompt_dir.glob("*.json"):
         with open(prompt_file, "r", encoding="utf-8") as f:
             prompt_data = json.load(f)
+
+        # extract prompt index from filename
         match = re.search(r'prompt(\d+)\.json', prompt_file.name)
         if match:
             idx = int(match.group(1))
-            text = extract_exemplar_from_prompt(prompt_data)
-            if text:
-                lengths[idx] = len(tokenizer.tokenize(text, escape=False))
+            lengths[idx] = prompt_data["metadata"]["word_count"]
     return lengths
 
 
@@ -40,15 +46,36 @@ def extract_exemplar_from_prompt(data: Dict) -> Optional[str]:
 
 
 def prepare_exemplar_length_data(
-    eval_base_dir: str,
-    llm_outputs_dir: str,
-    prompts_dir: str
+        eval_base_dir: str,
+        llm_outputs_dir: str,
+        prompts_dir: str
 ) -> pd.DataFrame:
+    """Prepare dataframe containing exemplar length data and evaluation metrics.
+
+    Args:
+        eval_base_dir: Base directory for evaluation results
+        llm_outputs_dir: Directory containing LLM outputs
+        prompts_dir: Directory containing prompt files
+
+    Returns:
+        DataFrame with exemplar lengths and evaluation metrics
+    """
     rows = []
     for corpus in CORPORA:
         for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
-            prompt_lengths = extract_exemplar_lengths(Path(prompts_dir) / rq_folder.name)
-            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob("*"):
+            # get the experiment name (e.g., "rq3.2_imitation_variable_length")
+            experiment_name = rq_folder.name
+
+            # load prompt lengths from the corresponding prompts directory
+            prompt_dir = Path(prompts_dir) / experiment_name
+            if not prompt_dir.exists():
+                print(f"Warning: Prompt directory not found: {prompt_dir}")
+                continue
+
+            prompt_lengths = extract_exemplar_lengths(prompt_dir)
+
+            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob(
+                    "*"):
                 model_name = model_dir.name.lower()
                 for eval_file in model_dir.glob("seed_*.json"):
                     with open(eval_file) as f:
@@ -67,7 +94,8 @@ def prepare_exemplar_length_data(
                     for threat_model in THREAT_MODELS:
                         if threat_model not in record:
                             continue
-                        attr = record[threat_model].get("attribution", {}).get("post", {})
+                        attr = record[threat_model].get("attribution", {}).get("post",
+                                                                               {})
                         quality = record[threat_model].get("quality", {})
                         rows.append({
                             "corpus": corpus,
@@ -79,7 +107,8 @@ def prepare_exemplar_length_data(
                             "accuracy@5": int(attr.get("accuracy@5") == 1.0),
                             "true_class_confidence": attr.get("true_class_confidence"),
                             "entropy": attr.get("entropy"),
-                            "bertscore": quality.get("bertscore", {}).get("bertscore_f1_avg"),
+                            "bertscore": quality.get("bertscore", {}).get(
+                                "bertscore_f1_avg"),
                             "pinc": np.mean([
                                 quality.get("pinc", {}).get(f"pinc_{k}_avg", np.nan)
                                 for k in range(1, 5)
