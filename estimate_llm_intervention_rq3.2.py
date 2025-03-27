@@ -69,66 +69,142 @@ def prepare_exemplar_length_data(
         DataFrame with exemplar lengths and evaluation metrics
     """
     rows = []
-    for corpus in CORPORA:
-        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_imitation_variable_length"):
-            # get the experiment name (i.e., "rq3.2_imitation_variable_length")
-            experiment_name = rq_folder.name
+    found_data = False
 
-            # load prompt lengths from the corresponding prompts directory
+    for corpus in CORPORA:
+        print(f"Processing corpus: {corpus}")
+        rq3_path = Path(llm_outputs_dir).joinpath(corpus, 'rq3')
+        if not rq3_path.exists():
+            print(f"Warning: Path not found: {rq3_path}")
+            continue
+
+        rq_folders = list(rq3_path.glob("rq3.2_*"))
+        print(f"Found {len(rq_folders)} research question folders in {rq3_path}")
+
+        for rq_folder in rq_folders:
+            # Get the experiment name (e.g., "rq3.2_imitation_variable_length")
+            experiment_name = rq_folder.name
+            print(f"Processing experiment: {experiment_name}")
+
+            # Load prompt lengths from the corresponding prompts directory
             prompt_dir = Path(prompts_dir) / experiment_name
             if not prompt_dir.exists():
                 print(f"Warning: Prompt directory not found: {prompt_dir}")
                 continue
 
+            prompt_files = list(prompt_dir.glob("*.json"))
+            print(f"Found {len(prompt_files)} prompt files in {prompt_dir}")
+
             prompt_lengths = extract_exemplar_lengths(prompt_dir)
+            print(f"Extracted exemplar lengths for {len(prompt_lengths)} prompts")
+            if not prompt_lengths:
+                print(f"Warning: No exemplar lengths extracted from {prompt_dir}")
 
-            for model_dir in Path(eval_base_dir, corpus, 'rq3', rq_folder.name).glob(
-                    "*"):
+            eval_path = Path(eval_base_dir, corpus, 'rq3', rq_folder.name)
+            if not eval_path.exists():
+                print(f"Warning: Evaluation path not found: {eval_path}")
+                continue
+
+            model_dirs = list(eval_path.glob("*"))
+            print(f"Found {len(model_dirs)} model directories in {eval_path}")
+
+            for model_dir in model_dirs:
                 model_name = model_dir.name.lower()
+                print(f"Processing model: {model_name}")
 
-                for eval_file in model_dir.glob("seed_*.json"):
+                eval_files = list(model_dir.glob("seed_*.json"))
+                print(f"Found {len(eval_files)} evaluation files for {model_name}")
+
+                for eval_file in eval_files:
                     seed = eval_file.stem.split("_")[-1]
+                    print(f"Processing seed file: {eval_file}")
 
-                    # find the corresponding file in llm_outputs to get prompt_index
-                    llm_output_file = Path(
-                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name / f"seed_{seed}.json"
+                    # Find the corresponding file in llm_outputs to get prompt_index
+                    llm_output_path = Path(
+                        llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name
+                    if not llm_output_path.exists():
+                        print(f"Warning: LLM output path not found: {llm_output_path}")
+                        continue
 
+                    llm_output_file = llm_output_path / f"seed_{seed}.json"
                     if not llm_output_file.exists():
                         print(f"Warning: LLM output file not found: {llm_output_file}")
                         continue
 
-                    with open(llm_output_file) as f:
-                        llm_data = json.load(f)
+                    try:
+                        with open(llm_output_file) as f:
+                            llm_data = json.load(f)
+                    except json.JSONDecodeError:
+                        print(f"Error: Could not parse JSON in {llm_output_file}")
+                        continue
 
                     # Extract prompt_index from the first entry in llm_data
                     prompt_idx = -1
                     if isinstance(llm_data, list) and llm_data:
-                        prompt_idx = llm_data[0].get("prompt_index", -1)
+                        if "prompt_index" in llm_data[0]:
+                            prompt_idx = llm_data[0]["prompt_index"]
+                        else:
+                            print(
+                                f"Warning: 'prompt_index' not found in first entry of {llm_output_file}")
+                            # Try to find it in any entry
+                            for entry in llm_data:
+                                if "prompt_index" in entry:
+                                    prompt_idx = entry["prompt_index"]
+                                    break
+                    else:
+                        print(
+                            f"Warning: Expected list format in {llm_output_file}, got {type(llm_data)}")
+
+                    if prompt_idx == -1:
+                        print(
+                            f"Warning: Could not find prompt_index in {llm_output_file}")
+                        continue
 
                     length = prompt_lengths.get(prompt_idx, -1)
+                    if length == -1:
+                        print(
+                            f"Warning: No exemplar length found for prompt index {prompt_idx}")
+                        continue
 
                     # Load evaluation data
                     json_path = model_dir / "evaluation.json"
                     if not json_path.exists():
+                        print(f"Warning: Evaluation JSON not found: {json_path}")
                         continue
 
-                    with open(json_path) as f:
-                        all_data = json.load(f)
+                    try:
+                        with open(json_path) as f:
+                            all_data = json.load(f)
+                    except json.JSONDecodeError:
+                        print(f"Error: Could not parse JSON in {json_path}")
+                        continue
 
                     if seed not in all_data:
+                        print(f"Warning: Seed {seed} not found in {json_path}")
                         continue
 
                     record = all_data[seed]
+                    found_data = True
 
                     for threat_model in THREAT_MODELS:
                         if threat_model not in record:
+                            print(
+                                f"Warning: Threat model {threat_model} not found in record for seed {seed}")
                             continue
 
                         attr = record[threat_model].get("attribution", {}).get("post",
                                                                                {})
-                        quality = record[threat_model].get("quality", {})
+                        if not attr:
+                            print(
+                                f"Warning: No attribution data for {threat_model} in seed {seed}")
+                            continue
 
-                        rows.append({
+                        quality = record[threat_model].get("quality", {})
+                        if not quality:
+                            print(
+                                f"Warning: No quality data for {threat_model} in seed {seed}")
+
+                        row = {
                             "corpus": corpus,
                             "llm": model_name,
                             "threat_model": threat_model,
@@ -144,9 +220,18 @@ def prepare_exemplar_length_data(
                                 quality.get("pinc", {}).get(f"pinc_{k}_avg", np.nan)
                                 for k in range(1, 5)
                             ])
-                        })
+                        }
+                        rows.append(row)
+                        print(
+                            f"Added row for {corpus}-{threat_model}-{model_name}-{seed}")
 
-    return pd.DataFrame(rows)
+    if not found_data:
+        print(
+            "ERROR: No data was found. Please check your directory structure and file formats.")
+
+    df = pd.DataFrame(rows)
+    print(f"Created DataFrame with {len(df)} rows")
+    return df
 
 
 def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
