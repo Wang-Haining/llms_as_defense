@@ -28,29 +28,26 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
         with open(prompt_file, "r", encoding="utf-8") as f:
             prompt_data = json.load(f)
 
-        # Extract prompt index from filename
-        match = re.search(r'prompt(\d+)\.json', prompt_file.name)
-        if match:
-            idx = int(match.group(1))
-            lengths[idx] = prompt_data["metadata"]["word_count"]
+        # extract prompt index from the metadata
+        prompt_idx = prompt_data.get("metadata", {}).get("prompt_index")
+        if prompt_idx is None:
+            # fall back to extracting from filename if not in metadata
+            match = re.search(r'prompt(\d+)\.json', prompt_file.name)
+            if match:
+                prompt_idx = int(match.group(1))
+            else:
+                print(f"Warning: Could not determine prompt index for {prompt_file}")
+                continue
+
+        # get the word_count from metadata
+        word_count = prompt_data.get("metadata", {}).get("word_count")
+        if word_count is not None:
+            lengths[prompt_idx] = word_count
+        else:
+            print(
+                f"Warning: No word_count found in metadata for prompt {prompt_idx}")
+
     return lengths
-
-
-def extract_exemplar_from_prompt(data: Dict) -> Optional[str]:
-    """Extract exemplar text from a prompt.
-
-    Args:
-        data: Prompt data dictionary
-
-    Returns:
-        Extracted exemplar text or None if not found
-    """
-    user_instruction = data.get("user", "")
-    start = user_instruction.find("expected to mimic:")
-    end = user_instruction.find("Please rewrite", start)
-    if start != -1 and end != -1:
-        return user_instruction[start + 18:end].strip()
-    return None
 
 
 def prepare_exemplar_length_data(
@@ -72,11 +69,11 @@ def prepare_exemplar_length_data(
     for corpus in CORPORA:
         print(f"Processing corpus: {corpus}")
         for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
-            # Get the experiment name (e.g., "rq3.2_imitation_variable_length")
+            # get the experiment name (e.g., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
             print(f"Processing experiment: {experiment_name}")
 
-            # Load prompt lengths from the corresponding prompts directory
+            # load prompt lengths from the corresponding prompts directory
             prompt_dir = Path(prompts_dir) / experiment_name
             if not prompt_dir.exists():
                 print(f"Warning: Prompt directory not found: {prompt_dir}")
@@ -330,17 +327,27 @@ def main():
     output_dir = Path("results/exemplar_length_analysis_rq3.2")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = argparse.ArgumentParser(description="Analyze the impact of exemplar length on defense performance")
+    parser = argparse.ArgumentParser(
+        description="Analyze the impact of exemplar length on defense performance")
     parser.add_argument("--eval_dir", type=str, default="defense_evaluation",
                         help="Directory containing evaluation results")
     parser.add_argument("--llm_dir", type=str, default="llm_outputs",
                         help="Directory containing LLM outputs")
     parser.add_argument("--prompt_dir", type=str, default="prompts",
                         help="Directory containing prompt files")
+    parser.add_argument("--debug", action="store_true",
+                        help="Run in debug mode (EBG corpus, Ministral vs RoBERTa only)")
     args = parser.parse_args()
 
     print("Preparing exemplar length data...")
+    # in debug mode, we still gather all data to verify exemplar lengths
     df = prepare_exemplar_length_data(args.eval_dir, args.llm_dir, args.prompt_dir)
+
+    # check if we have varying exemplar lengths in the data
+    print(f"\nExemplar length statistics:")
+    print(f"Min length: {df['exemplar_length'].min()}")
+    print(f"Max length: {df['exemplar_length'].max()}")
+    print(f"Unique lengths: {sorted(df['exemplar_length'].unique())}")
 
     # save raw data before any processing
     df.to_csv(output_dir / "raw_data.csv", index=False)
@@ -362,15 +369,22 @@ def main():
     }
 
     # apply mapping to standardize model names
-    df['llm_standardized'] = df['llm'].map(lambda x: next((v for k, v in model_mapping.items() if k in x), x))
+    df['llm_standardized'] = df['llm'].map(
+        lambda x: next((v for k, v in model_mapping.items() if k in x), x))
 
     max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
     records = []
 
     print("\nModeling the relationship between exemplar length and metrics...")
-    for corpus in CORPORA:
-        for threat_model in THREAT_MODELS:
-            for llm in LLMS:
+
+    # filter corpora, models, and threat models for debug mode
+    corpora_to_process = ['ebg'] if args.debug else CORPORA
+    llms_to_process = ['ministral'] if args.debug else LLMS
+    threat_models_to_process = ['roberta'] if args.debug else THREAT_MODELS
+
+    for corpus in corpora_to_process:
+        for threat_model in threat_models_to_process:
+            for llm in llms_to_process:
                 # use the standardized model names for filtering
                 subset = df[(df.corpus == corpus) &
                             (df.threat_model == threat_model) &
@@ -380,29 +394,57 @@ def main():
                     print(f"Warning: No data for {corpus}-{threat_model}-{llm}")
                     continue
 
-                print(f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
+                print(
+                    f"Processing {corpus}-{threat_model}-{llm} with {len(subset)} samples")
+
+                # In debug mode, print additional information about the subset
+                if args.debug:
+                    print(
+                        f"  Exemplar lengths in subset: {sorted(subset['exemplar_length'].unique())}")
+                    print(f"  Number of samples by exemplar length:")
+                    print(subset['exemplar_length'].value_counts().sort_index())
 
                 for metric in METRICS:
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
 
+                    if args.debug:
+                        print(f"  Processing metric: {metric}")
+                        print(f"  Metric values by exemplar length:")
+
+                        # Group by exemplar length and show metric statistics
+                        stats = subset.groupby('exemplar_length')[metric].agg(
+                            ['mean', 'std', 'count'])
+                        print(stats)
+
                     if metric == "accuracy@1":
                         # use binary accuracy if available
-                        if "binary_acc1" in subset.columns and not subset["binary_acc1"].isna().all():
-                            res = model_binary_metrics_from_examples(subset, "binary_acc1", not higher_is_better)
+                        if "binary_acc1" in subset.columns and not subset[
+                            "binary_acc1"].isna().all():
+                            res = model_binary_metrics_from_examples(subset,
+                                                                     "binary_acc1",
+                                                                     not higher_is_better)
                             metric_display = "binary_accuracy@1"
                         else:
-                            res = model_continuous_metric(subset, metric, not higher_is_better, max_entropy_lookup)
+                            res = model_continuous_metric(subset, metric,
+                                                          not higher_is_better,
+                                                          max_entropy_lookup)
                             metric_display = metric
                     elif metric == "accuracy@5":
                         # use binary accuracy if available
-                        if "binary_acc5" in subset.columns and not subset["binary_acc5"].isna().all():
-                            res = model_binary_metrics_from_examples(subset, "binary_acc5", not higher_is_better)
+                        if "binary_acc5" in subset.columns and not subset[
+                            "binary_acc5"].isna().all():
+                            res = model_binary_metrics_from_examples(subset,
+                                                                     "binary_acc5",
+                                                                     not higher_is_better)
                             metric_display = "binary_accuracy@5"
                         else:
-                            res = model_continuous_metric(subset, metric, not higher_is_better, max_entropy_lookup)
+                            res = model_continuous_metric(subset, metric,
+                                                          not higher_is_better,
+                                                          max_entropy_lookup)
                             metric_display = metric
                     else:
-                        res = model_continuous_metric(subset, metric, higher_is_better, max_entropy_lookup)
+                        res = model_continuous_metric(subset, metric, higher_is_better,
+                                                      max_entropy_lookup)
                         metric_display = metric
 
                     if res is None:
@@ -424,6 +466,46 @@ def main():
                         "Conclusion": res['conclusion']
                     })
                     print(f"  Added results for {metric_display}")
+
+                    # in debug mode, add a simple plot to visualize the relationship
+                    if args.debug:
+                        try:
+                            import matplotlib.pyplot as plt
+
+                            plt.figure(figsize=(10, 6))
+                            plt.scatter(subset['exemplar_length'], subset[metric])
+
+                            # add regression line
+                            x = subset['exemplar_length'].values
+                            y = subset[metric].values
+                            z = np.polyfit(x, y, 1)
+                            p = np.poly1d(z)
+                            plt.plot(x, p(x), "r--")
+
+                            plt.title(
+                                f"{corpus.upper()} - {llm} vs {threat_model}: {metric_display}")
+                            plt.xlabel("Exemplar Length")
+                            plt.ylabel(metric_display)
+                            plt.grid(True, alpha=0.3)
+
+                            # add slope and other statistics as text
+                            plt.text(0.05, 0.95,
+                                     f"Slope: {res['slope_mean']:.4f}\n"
+                                     f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
+                                     f"P(Improvement): {res['prob_benefit']:.4f}\n"
+                                     f"Conclusion: {res['conclusion']}",
+                                     transform=plt.gca().transAxes,
+                                     verticalalignment='top',
+                                     bbox=dict(boxstyle='round', facecolor='white',
+                                               alpha=0.8))
+
+                            # save the plot
+                            plot_path = output_dir / f"debug_{corpus}_{llm}_{threat_model}_{metric_display.replace('@', '_')}.png"
+                            plt.savefig(plot_path)
+                            plt.close()
+                            print(f"  Debug plot saved to {plot_path}")
+                        except Exception as e:
+                            print(f"  Could not generate debug plot: {e}")
 
     results_df = pd.DataFrame(records)
     results_file = output_dir / "exemplar_length_results.csv"
