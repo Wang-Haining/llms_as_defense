@@ -149,7 +149,7 @@ def collect_variable_length_sample(
     target_length = random.randint(min_words, max_words)
     logger.info(f"Target length for author {author_id}: {target_length} words")
 
-    # Get training texts and shuffle
+    # get training texts and shuffle
     author_texts = train_df['text'].tolist()
     random.shuffle(author_texts)
 

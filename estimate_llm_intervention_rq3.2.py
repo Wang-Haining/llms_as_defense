@@ -92,7 +92,7 @@ def prepare_exemplar_length_data(
                 for eval_file in model_dir.glob("seed_*.json"):
                     seed = eval_file.stem.split("_")[-1]
 
-                    # Load detailed evaluation data for binary accuracy
+                    # load detailed evaluation data for binary accuracy
                     binary_acc1 = None
                     binary_acc5 = None
                     try:
@@ -110,7 +110,7 @@ def prepare_exemplar_length_data(
                     except Exception as e:
                         print(f"Warning: Could not extract binary metrics from {eval_file}: {e}")
 
-                    # Find the corresponding file in llm_outputs to get prompt_index
+                    # find the corresponding file in llm_outputs to get prompt_index
                     llm_output_file = Path(
                         llm_outputs_dir) / corpus / 'rq3' / rq_folder.name / model_name / f"seed_{seed}.json"
 
@@ -121,7 +121,7 @@ def prepare_exemplar_length_data(
                     with open(llm_output_file) as f:
                         llm_data = json.load(f)
 
-                    # Extract prompt_index from the first entry in llm_data
+                    # extract prompt_index from the first entry in llm_data
                     prompt_idx = -1
                     if isinstance(llm_data, list) and llm_data:
                         if "prompt_index" in llm_data[0]:
@@ -160,7 +160,7 @@ def prepare_exemplar_length_data(
                         attr = record[threat_model].get("attribution", {}).get("post", {})
                         quality = record[threat_model].get("quality", {})
 
-                        # Use raw accuracy values (not binary conversion)
+                        # use raw accuracy values (not binary conversion)
                         acc1 = float(attr.get("accuracy@1", 0.0))
                         acc5 = float(attr.get("accuracy@5", 0.0))
 
@@ -181,7 +181,7 @@ def prepare_exemplar_length_data(
                             ])
                         }
 
-                        # Add binary accuracy metrics if available
+                        # add binary accuracy metrics if available
                         if binary_acc1 is not None:
                             row["binary_acc1"] = binary_acc1
                         if binary_acc5 is not None:
@@ -264,7 +264,7 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     Returns:
         Dictionary with modeling results or None if modeling failed
     """
-    # Expand the lists of binary metrics and corresponding exemplar lengths
+    # expand the lists of binary metrics and corresponding exemplar lengths
     binary_metrics = []
     exemplar_lengths = []
     for idx, row in df.iterrows():
@@ -279,7 +279,7 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     if not binary_metrics or len(set(binary_metrics)) < 2:
         return None
 
-    # Create a new dataframe with expanded data
+    # create a new dataframe with expanded data
     expanded_df = pd.DataFrame({
         'exemplar_length': exemplar_lengths,
         'binary_metric': binary_metrics
@@ -342,17 +342,17 @@ def main():
     print("Preparing exemplar length data...")
     df = prepare_exemplar_length_data(args.eval_dir, args.llm_dir, args.prompt_dir)
 
-    # Save raw data before any processing
+    # save raw data before any processing
     df.to_csv(output_dir / "raw_data.csv", index=False)
     print(f"Raw data saved to {output_dir / 'raw_data.csv'}")
 
-    # Print the unique values for key columns to help with debugging
+    # print the unique values for key columns to help with debugging
     print("\nUnique values in the dataset:")
     print(f"Corpus: {df['corpus'].unique()}")
     print(f"Threat Models: {df['threat_model'].unique()}")
     print(f"LLMs: {df['llm'].unique()}")
 
-    # Map model names to standardized names for analysis
+    # map model names to standardized names for analysis
     model_mapping = {
         'gpt-4o-2024-08-06': 'gpt-4o',
         'claude-3-5-sonnet-20241022': 'claude-3.5',
@@ -361,7 +361,7 @@ def main():
         'ministral-8b-instruct-2410': 'ministral'
     }
 
-    # Apply mapping to standardize model names
+    # apply mapping to standardize model names
     df['llm_standardized'] = df['llm'].map(lambda x: next((v for k, v in model_mapping.items() if k in x), x))
 
     max_entropy_lookup = {"ebg": np.log2(45), "rj": np.log2(21)}
@@ -371,7 +371,7 @@ def main():
     for corpus in CORPORA:
         for threat_model in THREAT_MODELS:
             for llm in LLMS:
-                # Use the standardized model names for filtering
+                # use the standardized model names for filtering
                 subset = df[(df.corpus == corpus) &
                             (df.threat_model == threat_model) &
                             (df.llm_standardized == llm)]
@@ -386,7 +386,7 @@ def main():
                     higher_is_better = metric in ["entropy", "bertscore", "pinc"]
 
                     if metric == "accuracy@1":
-                        # Use binary accuracy if available
+                        # use binary accuracy if available
                         if "binary_acc1" in subset.columns and not subset["binary_acc1"].isna().all():
                             res = model_binary_metrics_from_examples(subset, "binary_acc1", not higher_is_better)
                             metric_display = "binary_accuracy@1"
@@ -394,7 +394,7 @@ def main():
                             res = model_continuous_metric(subset, metric, not higher_is_better, max_entropy_lookup)
                             metric_display = metric
                     elif metric == "accuracy@5":
-                        # Use binary accuracy if available
+                        # use binary accuracy if available
                         if "binary_acc5" in subset.columns and not subset["binary_acc5"].isna().all():
                             res = model_binary_metrics_from_examples(subset, "binary_acc5", not higher_is_better)
                             metric_display = "binary_accuracy@5"
