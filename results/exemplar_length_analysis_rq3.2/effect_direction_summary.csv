@@ -1,2 +1,2 @@
 Corpus,LLM,Threat Model,Effect_bertscore,Effect_binary_acc1,Effect_binary_acc5,Effect_entropy,Effect_pinc,Effect_true_class_confidence,Significant_bertscore,Significant_binary_acc1,Significant_binary_acc5,Significant_entropy,Significant_pinc,Significant_true_class_confidence
-EBG,ministral,roberta,Negative,Negative,Negative,Positive,Positive,Positive,False,False,False,False,False,False
+EBG,ministral,roberta,Negative,Negative,Negative,Positive,Positive,Negative,False,False,False,False,False,False
