@@ -18,7 +18,7 @@ import pandas as pd
 import pymc as pm
 import seaborn as sns
 
-# Constants
+# constants
 CORPORA = ['ebg', 'rj']
 THREAT_MODELS = ['logreg', 'svm', 'roberta']
 LLMS = ['gemma-2', 'llama-3.1', 'ministral', 'claude-3.5', 'gpt-4o']
@@ -463,10 +463,7 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
         results_df.to_csv(results_path, index=False)
         print(f"Saved combined results to {results_path}")
 
-        # Fix for the non-numeric 'Conclusion' field - create summary without using pivot_table's aggregation
         conclusion_df = results_df[['Corpus', 'LLM', 'Threat Model', 'Metric', 'Conclusion']]
-
-        # Reshape the data to have metrics as columns without aggregation
         conclusion_wide = conclusion_df.pivot(
             index=['Corpus', 'LLM', 'Threat Model'],
             columns='Metric',
@@ -476,8 +473,6 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
         summary_path = output_dir / "conclusion_summary.csv"
         conclusion_wide.to_csv(summary_path)
         print(f"Saved conclusion summary to {summary_path}")
-
-        # Create effect direction summary without aggregation
         direction_df = results_df.copy()
         direction_df['Effect'] = direction_df.apply(
             lambda row: 'Positive' if ((row['Slope'] > 0 and row['Higher is Better']) or
@@ -507,15 +502,15 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
             values='Significant'
         )
 
-        # Save effect directions
+        # save effect directions
         effect_path = output_dir / "effect_direction.csv"
         effect_wide.to_csv(effect_path)
 
-        # Save significance
+        # save significance
         significant_path = output_dir / "significant_effects.csv"
         significant_wide.to_csv(significant_path)
 
-        # Save combined summary with multi-level columns
+        # save combined summary with multi-level columns
         combined_summary = pd.concat([
             effect_wide.add_prefix('Effect_'),
             significant_wide.add_prefix('Significant_')
