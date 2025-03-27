@@ -64,7 +64,7 @@ def extract_exemplar_lengths(prompt_dir: Path) -> Dict[int, int]:
     return lengths
 
 
-def get_binary_metrics(eval_file: Path) -> tuple:
+def get_sample_metrics(eval_file: Path) -> tuple:
     """extract binary accuracy metrics from evaluation file.
 
     args:
