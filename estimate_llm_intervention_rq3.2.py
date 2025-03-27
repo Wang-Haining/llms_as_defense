@@ -68,7 +68,7 @@ def prepare_exemplar_length_data(
     rows = []
     for corpus in CORPORA:
         print(f"Processing corpus: {corpus}")
-        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_*"):
+        for rq_folder in Path(llm_outputs_dir).joinpath(corpus, 'rq3').glob("rq3.2_imitation_variable_length"):
             # get the experiment name (e.g., "rq3.2_imitation_variable_length")
             experiment_name = rq_folder.name
             print(f"Processing experiment: {experiment_name}")
