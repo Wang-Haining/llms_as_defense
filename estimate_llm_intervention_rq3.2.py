@@ -58,6 +58,7 @@ def model_continuous_metric(df: pd.DataFrame,
     x_scaled = (x - x_mean) / 1000  # scale to thousands for numerical stability
 
     # normalize metrics if needed
+    original_y = y.copy()  # store original values for later
     if metric == 'entropy':
         y = y / max_entropy  # normalize entropy to [0,1]
 
@@ -121,7 +122,11 @@ def model_continuous_metric(df: pd.DataFrame,
         "prob_benefit": float(prob_benefit),
         "conclusion": conclusion,
         "alpha_mean": float(np.mean(alpha_samples)),
-        "beta_mean": float(np.mean(beta_samples))
+        "beta_mean": float(np.mean(beta_samples)),
+        "metric": metric,
+        "is_entropy": metric == "entropy",
+        "max_entropy": max_entropy,
+        "original_values": original_y.tolist()  # store original values for plotting
     }
 
 
@@ -217,7 +222,10 @@ def model_binary_metric(df: pd.DataFrame,
         "prob_benefit": float(prob_benefit),
         "conclusion": conclusion,
         "alpha_mean": float(np.mean(alpha_samples)),
-        "beta_mean": float(np.mean(beta_samples))
+        "beta_mean": float(np.mean(beta_samples)),
+        "metric": metric,
+        "is_binary": True,
+        "x_mean": x_mean  # store for plotting
     }
 
 
@@ -258,16 +266,63 @@ def create_diagnostic_plot(df: pd.DataFrame,
     x_min = df['exemplar_length'].min()
     x_max = df['exemplar_length'].max()
     x_vals = np.linspace(x_min, x_max, 100)
-    x_mean = np.mean(df['exemplar_length'])
-    x_scaled = (x_vals - x_mean) / 1000
 
     alpha_mean = model_results["alpha_mean"]
     beta_mean = model_results["beta_mean"]
 
-    # calculate predicted values based on model type (both use the same equation)
-    y_pred = 1.0 / (1.0 + np.exp(-(alpha_mean + beta_mean * x_scaled)))
+    if use_binary or model_results.get("is_binary", False):
+        # For binary metrics, use the sigmoid function directly
+        x_mean = model_results.get("x_mean", np.mean(df['exemplar_length']))
+        x_scaled = (x_vals - x_mean) / 1000
+        y_pred = 1.0 / (1.0 + np.exp(-(alpha_mean + beta_mean * x_scaled)))
 
-    plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
+        # Add confidence intervals for binary predictions using Monte Carlo simulation
+        alpha_samples = np.random.normal(alpha_mean, model_results["slope_std"] * 0.5, 1000)
+        beta_samples = np.random.normal(beta_mean, model_results["slope_std"], 1000)
+
+        pred_samples = np.zeros((1000, len(x_vals)))
+        for i in range(1000):
+            pred_samples[i, :] = 1.0 / (1.0 + np.exp(-(alpha_samples[i] + beta_samples[i] * x_scaled)))
+
+        lower_ci = np.percentile(pred_samples, 2.5, axis=0)
+        upper_ci = np.percentile(pred_samples, 97.5, axis=0)
+
+        plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
+        plt.fill_between(x_vals, lower_ci, upper_ci, color='red', alpha=0.2, label="95% CI")
+    else:
+        # For continuous metrics
+        x_mean = np.mean(df['exemplar_length'])
+        x_scaled = (x_vals - x_mean) / 1000
+
+        # transformed to probability scale
+        logit_pred = alpha_mean + beta_mean * x_scaled
+        prob_pred = 1.0 / (1.0 + np.exp(-logit_pred))
+
+        # If this is entropy, scale it back up to original scale
+        if model_results.get("is_entropy", False):
+            max_entropy = model_results.get("max_entropy", 5.49)  # default to ebg
+            y_pred = prob_pred * max_entropy
+        else:
+            y_pred = prob_pred
+
+        # Add confidence intervals for continuous predictions
+        alpha_samples = np.random.normal(alpha_mean, model_results["slope_std"] * 0.5, 1000)
+        beta_samples = np.random.normal(beta_mean, model_results["slope_std"], 1000)
+
+        pred_samples = np.zeros((1000, len(x_vals)))
+        for i in range(1000):
+            logit_val = alpha_samples[i] + beta_samples[i] * x_scaled
+            prob_val = 1.0 / (1.0 + np.exp(-logit_val))
+            if model_results.get("is_entropy", False):
+                pred_samples[i, :] = prob_val * max_entropy
+            else:
+                pred_samples[i, :] = prob_val
+
+        lower_ci = np.percentile(pred_samples, 2.5, axis=0)
+        upper_ci = np.percentile(pred_samples, 97.5, axis=0)
+
+        plt.plot(x_vals, y_pred, 'r-', linewidth=2, label="Model fit")
+        plt.fill_between(x_vals, lower_ci, upper_ci, color='red', alpha=0.2, label="95% CI")
 
     # create plot title
     llm = df['llm'].iloc[0] if df['llm'].nunique() == 1 else "Various"
