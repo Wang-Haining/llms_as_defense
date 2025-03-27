@@ -171,11 +171,13 @@ def prepare_exemplar_length_data(
                             "accuracy@5": acc5,
                             "true_class_confidence": attr.get("true_class_confidence"),
                             "entropy": attr.get("entropy"),
-                            "bertscore": quality.get("bertscore", {}).get("bertscore_f1_avg"),
+                            "bertscore": quality.get("bertscore", {}).get(
+                                "bertscore_f1_avg"),
                             "pinc": np.mean([
                                 quality.get("pinc", {}).get(f"pinc_{k}_avg", np.nan)
                                 for k in range(1, 5)
-                            ])
+                            ]),
+                            "sample_id": prompt_idx
                         }
 
                         # add binary accuracy metrics if available
@@ -203,16 +205,26 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     Returns:
         Dictionary with modeling results or None if modeling failed
     """
+    # Drop rows with missing values
     df = df.dropna(subset=["exemplar_length", metric])
+
     if df.empty or df['exemplar_length'].nunique() <= 1:
         return None
+
+    # Use all data points - each sample-seed combination is a unique observation
     x = df['exemplar_length'].values
+    y = df[metric].values
+    corpus = df['corpus'].iloc[0]
+
+    # Scale x for better numerical stability
     x_mean = np.mean(x)
     x_scaled = (x - x_mean) / 1000
-    y = df[metric].values
+
+    # Normalize entropy if needed
     if metric == 'entropy':
-        corpus = df['corpus'].iloc[0]
         y = y / max_entropy_lookup.get(corpus, np.log2(100))
+
+    # Ensure y is in (0, 1) for beta regression
     epsilon = 1e-6
     y = np.clip(y, epsilon, 1 - epsilon)
 
@@ -236,7 +248,8 @@ def model_continuous_metric(df, metric, higher_is_better, max_entropy_lookup):
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
     rope = 0.1 * np.std(beta_samples)
     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
-    prob_benefit = float(np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
+    prob_benefit = float(
+        np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
     conclusion = "Practically Equivalent" if in_rope > 0.95 else (
         "Significant Improvement" if prob_benefit > 0.95 else (
             "Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive"))
@@ -261,9 +274,10 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     Returns:
         Dictionary with modeling results or None if modeling failed
     """
-    # expand the lists of binary metrics and corresponding exemplar lengths
+    # Expand the lists of binary metrics and corresponding exemplar lengths
     binary_metrics = []
     exemplar_lengths = []
+
     for idx, row in df.iterrows():
         if metric_name not in row or row[metric_name] is None:
             continue
@@ -276,7 +290,7 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     if not binary_metrics or len(set(binary_metrics)) < 2:
         return None
 
-    # create a new dataframe with expanded data
+    # Create a new dataframe with expanded data
     expanded_df = pd.DataFrame({
         'exemplar_length': exemplar_lengths,
         'binary_metric': binary_metrics
@@ -285,10 +299,13 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     if expanded_df.empty or expanded_df['exemplar_length'].nunique() <= 1:
         return None
 
+    # Use all data points - each binary outcome is a distinct observation
     x = expanded_df['exemplar_length'].values
+    y = expanded_df['binary_metric'].values
+
+    # Scale x for better numerical stability
     x_mean = np.mean(x)
     x_scaled = (x - x_mean) / 1000
-    y = expanded_df['binary_metric'].values
 
     try:
         with pm.Model() as model:
@@ -307,7 +324,8 @@ def model_binary_metrics_from_examples(df, metric_name, higher_is_better):
     hdi = az.hdi(beta_samples, hdi_prob=0.95)
     rope = 0.1 * np.std(beta_samples)
     in_rope = np.mean((beta_samples >= -rope) & (beta_samples <= rope))
-    prob_benefit = float(np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
+    prob_benefit = float(
+        np.mean(beta_samples > 0) if higher_is_better else np.mean(beta_samples < 0))
     conclusion = "Practically Equivalent" if in_rope > 0.95 else (
         "Significant Improvement" if prob_benefit > 0.95 else (
             "Significant Deterioration" if prob_benefit < 0.05 else "Inconclusive"))
@@ -468,27 +486,38 @@ def main():
                     print(f"  Added results for {metric_display}")
 
                     # in debug mode, add a simple plot to visualize the relationship
+                    # In debug mode, add a simple plot to visualize the relationship
+                    # In debug mode, add a simple plot to visualize the relationship
                     if args.debug:
                         try:
                             import matplotlib.pyplot as plt
 
-                            plt.figure(figsize=(10, 6))
-                            plt.scatter(subset['exemplar_length'], subset[metric])
+                            plt.figure(figsize=(12, 6))
 
-                            # add regression line
+                            # Scatter plot with points colored by seed
+                            for seed in sorted(subset['seed'].unique()):
+                                seed_data = subset[subset['seed'] == seed]
+                                plt.scatter(seed_data['exemplar_length'],
+                                            seed_data[metric],
+                                            label=f"Seed {seed}", alpha=0.7)
+
+                            # Add regression line
                             x = subset['exemplar_length'].values
                             y = subset[metric].values
                             z = np.polyfit(x, y, 1)
                             p = np.poly1d(z)
-                            plt.plot(x, p(x), "r--")
+                            sorted_x = np.sort(x)
+                            plt.plot(sorted_x, p(sorted_x), "r--", linewidth=2,
+                                     label="Linear trend")
 
                             plt.title(
                                 f"{corpus.upper()} - {llm} vs {threat_model}: {metric_display}")
                             plt.xlabel("Exemplar Length")
                             plt.ylabel(metric_display)
+                            plt.legend(loc='best')
                             plt.grid(True, alpha=0.3)
 
-                            # add slope and other statistics as text
+                            # Add slope and other statistics as text
                             plt.text(0.05, 0.95,
                                      f"Slope: {res['slope_mean']:.4f}\n"
                                      f"95% HDI: [{res['slope_hdi'][0]:.4f}, {res['slope_hdi'][1]:.4f}]\n"
@@ -499,7 +528,7 @@ def main():
                                      bbox=dict(boxstyle='round', facecolor='white',
                                                alpha=0.8))
 
-                            # save the plot
+                            # Save the plot
                             plot_path = output_dir / f"debug_{corpus}_{llm}_{threat_model}_{metric_display.replace('@', '_')}.png"
                             plt.savefig(plot_path)
                             plt.close()
