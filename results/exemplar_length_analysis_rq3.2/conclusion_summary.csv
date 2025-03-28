@@ -1,2 +1,31 @@
 Corpus,LLM,Threat Model,bertscore,binary_acc1,binary_acc5,entropy,pinc,true_class_confidence
+EBG,claude-3.5,logreg,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,claude-3.5,roberta,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,claude-3.5,svm,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gemma-2,logreg,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gemma-2,roberta,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gemma-2,svm,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gpt-4o,logreg,Inconclusive,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gpt-4o,roberta,Inconclusive,Significant Improvement,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,gpt-4o,svm,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,llama-3.1,logreg,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,llama-3.1,roberta,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,llama-3.1,svm,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,ministral,logreg,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
 EBG,ministral,roberta,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+EBG,ministral,svm,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+RJ,claude-3.5,logreg,Inconclusive,Significant Improvement,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,claude-3.5,roberta,Inconclusive,Significant Improvement,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,claude-3.5,svm,Inconclusive,Significant Improvement,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,gemma-2,logreg,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,gemma-2,roberta,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,gemma-2,svm,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Inconclusive,Inconclusive
+RJ,gpt-4o,logreg,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Significant Deterioration,Inconclusive
+RJ,gpt-4o,roberta,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Significant Deterioration,Inconclusive
+RJ,gpt-4o,svm,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Significant Deterioration,Inconclusive
+RJ,llama-3.1,logreg,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+RJ,llama-3.1,roberta,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+RJ,llama-3.1,svm,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive,Inconclusive
+RJ,ministral,logreg,Inconclusive,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Significant Deterioration
+RJ,ministral,roberta,Inconclusive,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Significant Deterioration
+RJ,ministral,svm,Inconclusive,Inconclusive,Inconclusive,Significant Improvement,Inconclusive,Significant Deterioration
