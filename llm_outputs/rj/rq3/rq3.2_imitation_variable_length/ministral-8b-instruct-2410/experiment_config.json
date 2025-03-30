@@ -2,7 +2,7 @@
   "corpus": "rj",
   "research_question": "rq3",
   "sub_question": "rq3.2_imitation_variable_length",
-  "num_seeds": 5,
+  "num_seeds": 10,
   "model": {
     "name": "mistralai/Ministral-8B-Instruct-2410",
     "provider": "local",
