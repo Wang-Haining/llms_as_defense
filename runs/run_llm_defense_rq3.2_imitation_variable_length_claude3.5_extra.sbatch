@@ -1,8 +1,7 @@
 #!/bin/sh
-#SBATCH --job-name=run_llm_defense_rq3.2_imitation_variable_length_gemma2_9b
+#SBATCH --job-name=run_llm_defense_rq3.2_imitation_variable_length_claude3.5
 #SBATCH --account=group-jasonclark
-#SBATCH --partition=gpuunsafe
-#SBATCH --gres=gpu:a40:1
+#SBATCH --partition=unsafe
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 #SBATCH --time=2-00:00:00
@@ -16,18 +15,20 @@ module load Python/3.10.8-GCCcore-12.2.0
 module load CUDA/12.2.0
 . .venv/bin/activate
 
-MODEL="google/gemma-2-9b-it"
+MODEL="claude-3-5-sonnet-20241022"
 RQ="rq3.2_imitation_variable_length"
-PROVIDER="local"
+PROVIDER="anthropic"
 SLEEP_TIME=30
 CORPORA=("ebg" "rj")
+
 
 for corpus in "${CORPORA[@]}"; do
     CUDA_VISIBLE_DEVICES=0 python -m run_llm_defense \
         --corpus "$corpus" \
         --rq "$RQ" \
         --model "$MODEL" \
-        --provider "$PROVIDER"
+        --provider "$PROVIDER" \
+        --seed_offset 5
 
     if [ "$corpus" != "${CORPORA[-1]}" ]; then
         sleep $SLEEP_TIME

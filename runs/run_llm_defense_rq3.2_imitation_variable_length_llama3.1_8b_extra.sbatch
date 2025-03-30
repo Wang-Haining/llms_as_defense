@@ -1,11 +1,11 @@
 #!/bin/sh
 #SBATCH --job-name=run_llm_defense_rq3.2_imitation_variable_length_llama3.1_8b
 #SBATCH --account=group-jasonclark
-#SBATCH --partition=gpuunsafe
-#SBATCH --gres=gpu:a40:1
+#SBATCH --partition=nextgen-gpu
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --output=logs/%j.out
 #SBATCH --error=logs/%j.err
 #SBATCH --mail-user=haining.wang@montana.edu
@@ -27,7 +27,8 @@ for corpus in "${CORPORA[@]}"; do
         --corpus "$corpus" \
         --rq "$RQ" \
         --model "$MODEL" \
-        --provider "$PROVIDER"
+        --provider "$PROVIDER" \
+        --seed_offset 5
 
     if [ "$corpus" != "${CORPORA[-1]}" ]; then
         sleep $SLEEP_TIME
