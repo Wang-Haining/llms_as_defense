@@ -460,14 +460,6 @@ def analyze_data(data_dir: Path, output_dir: Path, debug: bool = False):
         results_path = output_dir / "exemplar_length_results.csv"
         results_df.to_csv(results_path, index=False)
         print(f"Saved combined results to {results_path}")
-
-        # save a summary table with the new statistics
-        summary_cols = ["Corpus", "Threat Model", "LLM", "Metric", "Higher is Better",
-                        "Slope", "Slope Std", "Slope HDI Lower", "Slope HDI Upper", "ROPE", "Conclusion"]
-        summary_df = results_df[summary_cols]
-        summary_path = output_dir / "exemplar_length_summary.csv"
-        summary_df.to_csv(summary_path, index=False)
-        print(f"Saved summary to {summary_path}")
     else:
         print("Warning: No results were generated")
 
