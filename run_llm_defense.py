@@ -115,6 +115,7 @@ class ExperimentConfig:
     temperature: float = 0.7
     max_tokens: int = 4096
     num_seeds: int = 5
+    seed_offset: int = 0
     debug: bool = False
 
     @classmethod
@@ -129,6 +130,7 @@ class ExperimentConfig:
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             num_seeds=args.num_seeds,
+            seed_offset=args.seed_offset,
             debug=args.debug
         )
 
@@ -666,7 +668,9 @@ class ExperimentManager:
             global_instructions: Dict[str, str] = None,
             global_prompt_index: Optional[int] = None
     ) -> Dict:
-        selected_seeds = FIXED_SEEDS[:5]  # always use 5 seeds
+        start = self.config.seed_offset
+        end = self.config.seed_offset + self.config.num_seeds
+        selected_seeds = FIXED_SEEDS[start:end]
         all_results = []
 
         for seed_idx, seed in enumerate(selected_seeds):
@@ -714,8 +718,9 @@ class ExperimentManager:
             return await self._generate_gpt4o_rewrites(
                 texts, prompt_path, global_instructions, global_prompt_index
             )
-
-        selected_seeds = FIXED_SEEDS[: self.config.num_seeds]
+        start = self.config.seed_offset
+        end = self.config.seed_offset + self.config.num_seeds
+        selected_seeds = FIXED_SEEDS[start:end]
 
         async def process_seed(s_idx: int) -> Dict:
             seed = selected_seeds[s_idx]
@@ -832,6 +837,12 @@ async def main():
         type=int,
         default=5,
         help='Number of seeds to use (also concurrency). Max 10.'
+    )
+    parser.add_argument(
+        '--seed_offset',
+        type=int,
+        default=0,
+        help='Starting index in the FIXED_SEEDS list (0-indexed). For example, use 5 to start from the 6th seed.'
     )
     parser.add_argument(
         '--debug',
