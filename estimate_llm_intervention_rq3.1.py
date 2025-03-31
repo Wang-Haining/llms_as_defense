@@ -29,8 +29,6 @@ class DifferenceResult(NamedTuple):
     difference_std: float
     difference_ci_lower: float
     difference_ci_upper: float
-    prob_improvement: float  # p(difference > 0)
-    in_rope: float  # proportion within region of practical equivalence
     conclusion: str  # overall conclusion about effectiveness
 
 
@@ -239,7 +237,12 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         baseline_values /= log_base
         enhanced_values /= log_base
 
-    differences = enhanced_values - baseline_values if higher_is_better else baseline_values - enhanced_values
+    # Calculate raw differences (always enhanced - baseline)
+    raw_differences = enhanced_values - baseline_values
+
+    # Adjust sign based on whether higher is better
+    differences = raw_differences if higher_is_better else -raw_differences
+
     min_diff = min(0, np.min(differences))
     max_diff = max(0, np.max(differences))
     range_diff = max_diff - min_diff
@@ -262,8 +265,6 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
             difference_std=0.0,
             difference_ci_lower=difference_mean,
             difference_ci_upper=difference_mean,
-            prob_improvement=0.5,
-            in_rope=1.0,
             conclusion="Practically Equivalent"
         )
 
@@ -281,8 +282,10 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
     with pm.Model() as model:
         mu = pm.Beta("mu", alpha=alpha_prior, beta=beta_prior)
         kappa = pm.HalfNormal("kappa", sigma=10)
-        _ = pm.Beta("obs", alpha=mu * kappa, beta=(1 - mu) * kappa, observed=normalized_diffs)
-        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42, cores=4, return_inferencedata=True)
+        _ = pm.Beta("obs", alpha=mu * kappa, beta=(1 - mu) * kappa,
+                    observed=normalized_diffs)
+        trace = pm.sample(2000, tune=1000, chains=4, random_seed=42, cores=4,
+                          return_inferencedata=True)
 
     mu_samples = trace.posterior["mu"].values.flatten()
     diff_samples = mu_samples * range_diff + min_diff
@@ -295,25 +298,28 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         baseline_mean = float(np.mean(baseline_values))
         enhanced_mean = float(np.mean(enhanced_values))
 
-    difference_mean = float(np.mean(diff_samples))
-    difference_std = float(np.std(diff_samples))
-    ci_lower, ci_upper = az.hdi(diff_samples)
+    # Get the original sign of the difference for final reporting
+    diff_samples_original = diff_samples if higher_is_better else -diff_samples
+
+    difference_mean = float(np.mean(diff_samples_original))
+    difference_std = float(np.std(diff_samples_original))
+
+    # Get 95% HDI of the difference in original units
+    ci_lower, ci_upper = az.hdi(diff_samples_original)
     difference_ci_lower = float(ci_lower)
     difference_ci_upper = float(ci_upper)
-    prob_improvement = float(np.mean(diff_samples > 0))
 
-    # adaptive ROPE width
+    # Define ROPE width as 0.1 times the standard deviation
     rope_width = 0.1 * difference_std
     if metric == 'entropy':
         rope_width *= log_base
 
-    in_rope = float(np.mean((-rope_width <= diff_samples) & (diff_samples <= rope_width)))
-
-    if in_rope > 0.95:
+    # Use consistent decision rule based on HDI and ROPE
+    if -rope_width <= difference_ci_lower and difference_ci_upper <= rope_width:
         conclusion = "Practically Equivalent"
-    elif prob_improvement > 0.95:
+    elif difference_ci_lower > rope_width:
         conclusion = "Significant Increase (Enhanced > Baseline)" if higher_is_better else "Significant Decrease (Enhanced < Baseline)"
-    elif prob_improvement < 0.05:
+    elif difference_ci_upper < -rope_width:
         conclusion = "Significant Decrease (Enhanced < Baseline)" if higher_is_better else "Significant Increase (Enhanced > Baseline)"
     else:
         conclusion = "Inconclusive"
@@ -325,11 +331,8 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         difference_std=difference_std,
         difference_ci_lower=difference_ci_lower,
         difference_ci_upper=difference_ci_upper,
-        prob_improvement=prob_improvement,
-        in_rope=in_rope,
         conclusion=conclusion
     )
-
 
 
 def compare_defenses(
@@ -410,10 +413,8 @@ def compare_defenses(
                     'Enhanced Mean': diff_result.enhanced_mean,
                     'Mean Difference': diff_result.difference_mean,
                     'Difference Std': diff_result.difference_std,
-                    '95% CI Lower': diff_result.difference_ci_lower,
-                    '95% CI Upper': diff_result.difference_ci_upper,
-                    'P(Improvement)': diff_result.prob_improvement,
-                    'In ROPE': diff_result.in_rope,
+                    '95% HDI Lower': diff_result.difference_ci_lower,
+                    '95% HDI Upper': diff_result.difference_ci_upper,
                     'Conclusion': diff_result.conclusion
                 })
 
@@ -443,10 +444,8 @@ def compare_defenses(
                     'Enhanced Mean': diff_result.enhanced_mean,
                     'Mean Difference': diff_result.difference_mean,
                     'Difference Std': diff_result.difference_std,
-                    '95% CI Lower': diff_result.difference_ci_lower,
-                    '95% CI Upper': diff_result.difference_ci_upper,
-                    'P(Improvement)': diff_result.prob_improvement,
-                    'In ROPE': diff_result.in_rope,
+                    '95% HDI Lower': diff_result.difference_ci_lower,
+                    '95% HDI Upper': diff_result.difference_ci_upper,
                     'Conclusion': diff_result.conclusion
                 })
 
@@ -460,8 +459,8 @@ def compare_defenses(
         filename = f"{corpus}_{baseline_rq}_vs_{enhanced_rq}_comparison.csv"
         df.to_csv(output_path / filename, index=False)
 
-        # also save a summary for just significant results
-        significant_df = df[df['Conclusion'].isin(['Significant Improvement', 'Significant Decline'])]
+        # also save a summary for just significant changes
+        significant_df = df[df['Conclusion'].str.startswith('Significant')]
         if not significant_df.empty:
             significant_df.to_csv(output_path / f"{corpus}_significant_changes.csv", index=False)
 
@@ -544,23 +543,24 @@ def main():
             output_dir=args.output
         )
 
-        # print summary of significant improvements
-        improvements = results_df[results_df['Conclusion'] == 'Significant Improvement']
-        if not improvements.empty:
-            logging.info(f"\nSignificant improvements ({corpus}):")
-            for _, row in improvements.iterrows():
+        # print summary of significant changes
+        increases = results_df[results_df['Conclusion'].str.contains('Increase')]
+        if not increases.empty:
+            logging.info(f"\nSignificant increases ({corpus}):")
+            for _, row in increases.iterrows():
                 logging.info(f"- {row['Defense Model']} | {row['Threat Model']} | {row['Metric']}: "
                              f"{row['Baseline Mean']:.4f} → {row['Enhanced Mean']:.4f} "
-                             f"(diff: {row['Mean Difference']:.4f}, p: {row['P(Improvement)']:.4f})")
+                             f"(diff: {row['Mean Difference']:.4f}, "
+                             f"95% HDI: [{row['95% HDI Lower']:.4f}, {row['95% HDI Upper']:.4f}])")
 
-        # print summary of significant declines
-        declines = results_df[results_df['Conclusion'] == 'Significant Decline']
-        if not declines.empty:
-            logging.info(f"\nSignificant declines ({corpus}):")
-            for _, row in declines.iterrows():
+        decreases = results_df[results_df['Conclusion'].str.contains('Decrease')]
+        if not decreases.empty:
+            logging.info(f"\nSignificant decreases ({corpus}):")
+            for _, row in decreases.iterrows():
                 logging.info(f"- {row['Defense Model']} | {row['Threat Model']} | {row['Metric']}: "
                              f"{row['Baseline Mean']:.4f} → {row['Enhanced Mean']:.4f} "
-                             f"(diff: {row['Mean Difference']:.4f}, p: {1-row['P(Improvement)']:.4f})")
+                             f"(diff: {row['Mean Difference']:.4f}, "
+                             f"95% HDI: [{row['95% HDI Lower']:.4f}, {row['95% HDI Upper']:.4f}])")
 
         logging.info(f"\nResults saved to {args.output}")
 
