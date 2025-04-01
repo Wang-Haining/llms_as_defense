@@ -111,11 +111,11 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
     """
     paired_observations = {}
 
-    # for each model present in both datasets
+    # For each model present in both datasets
     for model_name in set(baseline_data.keys()) & set(enhanced_data.keys()):
         model_pairs = []
 
-        # handle run-level metrics from attribution data
+        # Handle run-level metrics from attribution data (except entropy)
         if metric_type == 'attribution' and metric != 'entropy':
             for seed in set(baseline_data[model_name].keys()) & set(enhanced_data[model_name].keys()):
                 if 'attribution' in baseline_data[model_name][seed] and 'attribution' in enhanced_data[model_name][seed]:
@@ -125,7 +125,7 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                     if baseline_val is not None and enhanced_val is not None:
                         model_pairs.append((baseline_val, enhanced_val))
 
-        # handle entropy (sample-level metric from attribution data)
+        # Handle entropy (sample-level metric from attribution data)
         elif metric_type == 'attribution' and metric == 'entropy':
             for seed in set(baseline_data[model_name].keys()) & set(enhanced_data[model_name].keys()):
                 if ('attribution' in baseline_data[model_name][seed] and
@@ -133,11 +133,9 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                         'raw_predictions' in baseline_data[model_name][seed]['attribution'] and
                         'raw_predictions' in enhanced_data[model_name][seed]['attribution']):
 
-                    # get raw predictions
                     baseline_preds = baseline_data[model_name][seed]['attribution']['raw_predictions']['transformed']
                     enhanced_preds = enhanced_data[model_name][seed]['attribution']['raw_predictions']['transformed']
 
-                    # calculate entropy for each sample and make pairs
                     if len(baseline_preds) == len(enhanced_preds):
                         for b_pred, e_pred in zip(baseline_preds, enhanced_preds):
                             b_pred = np.array(b_pred)
@@ -148,10 +146,9 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
 
                             model_pairs.append((b_entropy, e_entropy))
 
-        # handle quality metrics
+        # Handle quality metrics
         elif metric_type == 'quality':
             if metric == 'pinc':
-                # process PINC scores from all seeds
                 for seed in set(baseline_data[model_name].keys()) & set(enhanced_data[model_name].keys()):
                     if ('quality' in baseline_data[model_name][seed] and
                             'quality' in enhanced_data[model_name][seed] and
@@ -161,7 +158,6 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                         baseline_pinc = baseline_data[model_name][seed]['quality']['pinc']
                         enhanced_pinc = enhanced_data[model_name][seed]['quality']['pinc']
 
-                        # match up PINC scores by example if possible
                         n_samples = min(
                             len(baseline_pinc.get("pinc_1_scores", [])),
                             len(enhanced_pinc.get("pinc_1_scores", []))
@@ -172,7 +168,7 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                                 baseline_scores = []
                                 enhanced_scores = []
 
-                                for k in range(1, 5):  # PINC1 to PINC4
+                                for k in range(1, 5):
                                     b_scores_key = f"pinc_{k}_scores"
                                     e_scores_key = f"pinc_{k}_scores"
 
@@ -180,7 +176,6 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                                             e_scores_key in enhanced_pinc and
                                             i < len(baseline_pinc[b_scores_key]) and
                                             i < len(enhanced_pinc[e_scores_key])):
-
                                         baseline_scores.append(baseline_pinc[b_scores_key][i])
                                         enhanced_scores.append(enhanced_pinc[e_scores_key][i])
 
@@ -190,7 +185,6 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                                     model_pairs.append((avg_baseline_pinc, avg_enhanced_pinc))
 
             elif metric == 'bertscore':
-                # process BERTScore results from all seeds
                 for seed in set(baseline_data[model_name].keys()) & set(enhanced_data[model_name].keys()):
                     if ('quality' in baseline_data[model_name][seed] and
                             'quality' in enhanced_data[model_name][seed] and
@@ -198,13 +192,11 @@ def extract_paired_observations(baseline_data: Dict, enhanced_data: Dict,
                             'bertscore' in enhanced_data[model_name][seed]['quality'] and
                             'bertscore_individual' in baseline_data[model_name][seed]['quality']['bertscore'] and
                             'bertscore_individual' in enhanced_data[model_name][seed]['quality']['bertscore']):
-
                         baseline_scores = [item['f1'] for item in
                                            baseline_data[model_name][seed]['quality']['bertscore']['bertscore_individual']]
                         enhanced_scores = [item['f1'] for item in
                                            enhanced_data[model_name][seed]['quality']['bertscore']['bertscore_individual']]
 
-                        # pair up scores
                         if len(baseline_scores) == len(enhanced_scores):
                             for b_score, e_score in zip(baseline_scores, enhanced_scores):
                                 model_pairs.append((b_score, e_score))
@@ -237,10 +229,7 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         baseline_values /= log_base
         enhanced_values /= log_base
 
-    # Calculate raw differences (always enhanced - baseline)
     raw_differences = enhanced_values - baseline_values
-
-    # Adjust sign based on whether higher is better
     differences = raw_differences if higher_is_better else -raw_differences
 
     min_diff = min(0, np.min(differences))
@@ -248,7 +237,6 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
     range_diff = max_diff - min_diff
 
     if range_diff < 1e-6:
-        # handle degenerate case
         if metric == 'entropy':
             baseline_mean = float(np.mean(baseline_values * log_base))
             enhanced_mean = float(np.mean(enhanced_values * log_base))
@@ -298,23 +286,19 @@ def analyze_difference(paired_samples: List[Tuple[float, float]], metric: str,
         baseline_mean = float(np.mean(baseline_values))
         enhanced_mean = float(np.mean(enhanced_values))
 
-    # Get the original sign of the difference for final reporting
     diff_samples_original = diff_samples if higher_is_better else -diff_samples
 
     difference_mean = float(np.mean(diff_samples_original))
     difference_std = float(np.std(diff_samples_original))
 
-    # Get 95% HDI of the difference in original units
     ci_lower, ci_upper = az.hdi(diff_samples_original)
     difference_ci_lower = float(ci_lower)
     difference_ci_upper = float(ci_upper)
 
-    # Define ROPE width as 0.1 times the standard deviation
     rope_width = 0.1 * difference_std
     if metric == 'entropy':
         rope_width *= log_base
 
-    # Use consistent decision rule based on HDI and ROPE
     if -rope_width <= difference_ci_lower and difference_ci_upper <= rope_width:
         conclusion = "Practically Equivalent"
     elif difference_ci_lower > rope_width:
@@ -356,21 +340,23 @@ def compare_defenses(
 
     Returns:
         DataFrame with comparison results
+
+    Raises:
+        ValueError: If fewer than 3 paired observations are found for any model, metric, and threat model combination.
     """
     if threat_models is None:
         threat_models = ['logreg', 'svm', 'roberta']
 
-    # define metrics to analyze
     attribution_metrics = {
-        'accuracy@1': False,  # higher is NOT better
-        'accuracy@5': False,  # higher is NOT better
-        'true_class_confidence': False,  # higher is NOT better
-        'entropy': True,  # higher IS better
+        'accuracy@1': False,
+        'accuracy@5': False,
+        'true_class_confidence': False,
+        'entropy': True,
     }
 
     quality_metrics = {
-        'pinc': True,  # higher IS better
-        'bertscore': True,  # higher IS better
+        'pinc': True,
+        'bertscore': True,
     }
 
     results = []
@@ -378,28 +364,27 @@ def compare_defenses(
     for threat_model in threat_models:
         logging.info(f"Analyzing {corpus} - {threat_model}")
 
-        # load data
         baseline_data, enhanced_data = load_defense_data(
             base_dir, corpus, baseline_rq, enhanced_rq, threat_model
         )
 
         if not baseline_data or not enhanced_data:
-            logging.warning(f"No data found for {corpus} - {threat_model}")
-            continue
+            raise ValueError(f"No data found for {corpus} - {threat_model}")
 
-        # process attribution metrics
+        # Process attribution metrics
         for metric, higher_is_better in attribution_metrics.items():
             paired_observations = extract_paired_observations(
                 baseline_data, enhanced_data, metric, 'attribution'
             )
 
             for model_name, pairs in paired_observations.items():
-                if len(pairs) < 3:  # need at least 3 samples for meaningful analysis
-                    continue
+                if len(pairs) < 3:
+                    raise ValueError(
+                        f"Insufficient paired observations for model '{model_name}', metric '{metric}', threat model '{threat_model}'. "
+                        f"Found {len(pairs)} samples; at least 3 are required."
+                    )
 
                 diff_result = analyze_difference(pairs, metric, higher_is_better)
-
-                # format display name
                 display_name = _get_model_display_name(model_name)
 
                 results.append({
@@ -418,19 +403,20 @@ def compare_defenses(
                     'Conclusion': diff_result.conclusion
                 })
 
-        # process quality metrics
+        # Process quality metrics
         for metric, higher_is_better in quality_metrics.items():
             paired_observations = extract_paired_observations(
                 baseline_data, enhanced_data, metric, 'quality'
             )
 
             for model_name, pairs in paired_observations.items():
-                if len(pairs) < 3:  # Need at least 3 samples for meaningful analysis
-                    continue
+                if len(pairs) < 3:
+                    raise ValueError(
+                        f"Insufficient paired observations for model '{model_name}', metric '{metric}', threat model '{threat_model}' (quality). "
+                        f"Found {len(pairs)} samples; at least 3 are required."
+                    )
 
                 diff_result = analyze_difference(pairs, metric, higher_is_better)
-
-                # format display name
                 display_name = _get_model_display_name(model_name)
 
                 results.append({
@@ -451,7 +437,6 @@ def compare_defenses(
 
     df = pd.DataFrame(results)
 
-    # save to file if output directory is provided
     if output_dir:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -459,7 +444,6 @@ def compare_defenses(
         filename = f"{corpus}_{baseline_rq}_vs_{enhanced_rq}_comparison.csv"
         df.to_csv(output_path / filename, index=False)
 
-        # also save a summary for just significant changes
         significant_df = df[df['Conclusion'].str.startswith('Significant')]
         if not significant_df.empty:
             significant_df.to_csv(output_path / f"{corpus}_significant_changes.csv", index=False)
@@ -488,7 +472,6 @@ def main():
     import argparse
     from datetime import datetime
 
-    # setup logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
@@ -543,7 +526,6 @@ def main():
             output_dir=args.output
         )
 
-        # print summary of significant changes
         increases = results_df[results_df['Conclusion'].str.contains('Increase')]
         if not increases.empty:
             logging.info(f"\nSignificant increases ({corpus}):")
