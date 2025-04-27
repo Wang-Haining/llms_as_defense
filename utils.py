@@ -63,7 +63,6 @@ def get_corpus_stats() -> None:
 
     corpus_to_function = {"rj": load_rj,
                           "ebg": load_ebg,
-                          # "lcmc": load_lcmc
                           }
 
     def _corpus_stat(corpus, task):
